@@ -373,7 +373,7 @@ int main(int argc, char **argv) {
 	int pos_y = (screen_cy - wnd_h) >> 1;
 	glutInitWindowPosition(pos_x, pos_y);
 	glutInitWindowSize(wnd_w, wnd_h);
-	glutCreateWindow("Terrain Demo [right button to bring up the context menu]");
+	glutCreateWindow("Terrain Demo [right click to bring up the context menu]");
 
 	if (!GL_Init()) {
 		return 1;
