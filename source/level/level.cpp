@@ -578,12 +578,12 @@ void Level::LoadLevelObjects(const QSC* qsc_objects, IRenderResLoader* render_re
 		float rx = 0, ry = 0, rz = 0;
 		const char* model_id = "";
 		while (arg) {
-			if (arg_idx == 3) px = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
-			if (arg_idx == 4) py = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
-			if (arg_idx == 5) pz = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
-			if (arg_idx == 6) rx = arg->dbl_;
-			if (arg_idx == 7) ry = arg->dbl_;
-			if (arg_idx == 8) rz = arg->dbl_;
+			if (arg_idx == 3 && arg->type_ == QSC::arg_s::type_t::DBL) px = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
+			if (arg_idx == 4 && arg->type_ == QSC::arg_s::type_t::DBL) py = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
+			if (arg_idx == 5 && arg->type_ == QSC::arg_s::type_t::DBL) pz = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
+			if (arg_idx == 6 && arg->type_ == QSC::arg_s::type_t::DBL) rx = arg->dbl_;
+			if (arg_idx == 7 && arg->type_ == QSC::arg_s::type_t::DBL) ry = arg->dbl_;
+			if (arg_idx == 8 && arg->type_ == QSC::arg_s::type_t::DBL) rz = arg->dbl_;
 			if (arg_idx == 9 && arg->type_ == QSC::arg_s::type_t::STR) {
 				model_id = arg->str_;
 			}
@@ -604,12 +604,12 @@ void Level::LoadLevelObjects(const QSC* qsc_objects, IRenderResLoader* render_re
 		float rx = 0, ry = 0, rz = 0;
 		const char* model_id = "";
 		while (arg) {
-			if (arg_idx == 3) px = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
-			if (arg_idx == 4) py = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
-			if (arg_idx == 5) pz = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
-			if (arg_idx == 6) rx = arg->dbl_;
-			if (arg_idx == 7) ry = arg->dbl_;
-			if (arg_idx == 8) rz = arg->dbl_;
+			if (arg_idx == 3 && arg->type_ == QSC::arg_s::type_t::DBL) px = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
+			if (arg_idx == 4 && arg->type_ == QSC::arg_s::type_t::DBL) py = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
+			if (arg_idx == 5 && arg->type_ == QSC::arg_s::type_t::DBL) pz = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
+			if (arg_idx == 6 && arg->type_ == QSC::arg_s::type_t::DBL) rx = arg->dbl_;
+			if (arg_idx == 7 && arg->type_ == QSC::arg_s::type_t::DBL) ry = arg->dbl_;
+			if (arg_idx == 8 && arg->type_ == QSC::arg_s::type_t::DBL) rz = arg->dbl_;
 			if (arg_idx == 9 && arg->type_ == QSC::arg_s::type_t::STR) {
 				model_id = arg->str_;
 			}

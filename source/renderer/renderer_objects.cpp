@@ -44,15 +44,23 @@ void Renderer_Objects::Shutdown() {
 }
 
 void Renderer_Objects::AddObject(const glm::vec3& pos, float yaw, const char* model_id) {
+	// Validate model_id is not null
+	if (!model_id) {
+		return;
+	}
+
+	// Load model first and verify success
+	if (cached_models_.find(model_id) == cached_models_.end()) {
+		if (!LoadModel(model_id)) {
+			return;
+		}
+	}
+
 	render_object_s obj;
 	obj.pos = pos;
 	obj.yaw = yaw;
 	obj.model_id = model_id;
 	objects_.push_back(obj);
-
-	if (cached_models_.find(model_id) == cached_models_.end()) {
-		LoadModel(model_id);
-	}
 }
 
 void Renderer_Objects::ClearObjects() {
@@ -74,9 +82,19 @@ bool Renderer_Objects::LoadModel(const std::string& model_id) {
 	std::vector<uint16_t> indices;
 	for (const auto& submesh : mef.submeshes) {
 		for (const auto& face : submesh.faces) {
-			indices.push_back(face.v0 + submesh.vertex_offset);
-			indices.push_back(face.v1 + submesh.vertex_offset);
-			indices.push_back(face.v2 + submesh.vertex_offset);
+			// Check for overflow when adding vertex_offset
+			uint32_t idx0 = (uint32_t)face.v0 + (uint32_t)submesh.vertex_offset;
+			uint32_t idx1 = (uint32_t)face.v1 + (uint32_t)submesh.vertex_offset;
+			uint32_t idx2 = (uint32_t)face.v2 + (uint32_t)submesh.vertex_offset;
+
+			if (idx0 > 0xFFFF || idx1 > 0xFFFF || idx2 > 0xFFFF) {
+				// Skip faces with out-of-range indices
+				continue;
+			}
+
+			indices.push_back((uint16_t)idx0);
+			indices.push_back((uint16_t)idx1);
+			indices.push_back((uint16_t)idx2);
 		}
 	}
 	cached.index_count = indices.size();
@@ -125,6 +143,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats) {
 	GLint ubo_idx = glGetUniformBlockIndex(shader_prog_, "ubo_mats");
 	if (ubo_idx != GL_INVALID_INDEX) {
 		glUniformBlockBinding(shader_prog_, ubo_idx, 0);
+		glBindBufferBase(GL_UNIFORM_BUFFER, 0, ubo_mats);
 	}
 
 	GLint u_model_mat = glGetUniformLocation(shader_prog_, "u_model_mat");
