@@ -222,6 +222,37 @@ bool Terrain::Load(load_params_s & params) {
 	return true;
 }
 
+bool Terrain::Save(int level_no) {
+	char filename[1024];
+	Str_SPrintf(filename, 1024,
+		"%s/missions/location0/level%d/terrain/terrain.hmp",
+		g_folders.res_folder_, level_no);
+
+	if (!hmp_) {
+		return false;
+	}
+
+	// We need to know the total size of the buffer to save it.
+	// Since File_LoadBinary didn't store the size globally, we recalculate it.
+	int32_t total_body_size = 0;
+	hmp_item_s* head = (hmp_item_s*)hmp_;
+	for (int i = 0; i < MAX_HMP; ++i) {
+		uint32_t sz = head[i].size_;
+		if (sz) {
+			total_body_size += SQUARE(sz + 1);
+		}
+	}
+
+	int32_t total_file_size = sizeof(hmp_item_s) * MAX_HMP + total_body_size;
+
+	if (File_SaveBinary(filename, hmp_, total_file_size)) {
+		printf("Successfully saved terrain modifications to %s\n", filename);
+		return true;
+	}
+
+	return false;
+}
+
 void Terrain::Unload() {
 	File_FreeBuf(hmp_);
 	hmp_ = nullptr;
@@ -494,8 +525,8 @@ bool Terrain::LoadHMPFile(load_params_s & params) {
 
 	hmp_item_s* head = (hmp_item_s*)hmp_;
 
-	const int8_t * body = (const int8_t*)(head + MAX_HMP);
-	const int8_t * cur_body = body;
+	int8_t * body = (int8_t*)(head + MAX_HMP);
+	int8_t * cur_body = body;
 
 	for (int i = 0; i < MAX_HMP; ++i) {
 		uint32_t sz = head[i].size_;
@@ -807,7 +838,7 @@ void Terrain::LoadHeightMapInfo(ILevelDynCube* level_dyn_cube, const QSC* qsc_ob
 
 		height_map->height_map_line_width_shift_ = get_highest_bit(qtask_height_map->height_map_size_);
 		height_map->local_pos_to_hmp_pos_ = 1.0f / (1 << (cube_half_size_shift - hmp_half_size_shift));
-		height_map->height_map_item_ = height_map_items_[qtask_height_map->height_map_id_];
+		height_map->height_map_item_ = (int8_t*)height_map_items_[qtask_height_map->height_map_id_];
 
 		num_height_map_++;
 	}
@@ -989,6 +1020,19 @@ void Terrain::Update(update_params_s& params, const dyn_cube_s* root_dyn_cube) {
 	params.num_terrain_vert_ = num_vertex_;
 	params.num_terrain_idx_ = num_index_;
 	params.num_terrain_render_chunk_ = num_render_chunk_;
+}
+
+bool Terrain::GetFirstHMPCenter(glm::vec3& out_pos) const {
+	if (num_height_map_ > 0) {
+		const height_map_s* hmp = height_maps_ + qtask_height_maps_[0].idx_in_array_;
+		int hmp_dim = 1 << hmp->height_map_line_width_shift_;
+		double width = hmp_dim / hmp->local_pos_to_hmp_pos_;
+		out_pos.x = (float)(hmp->cube_min_x_ + width * 0.5);
+		out_pos.y = (float)(hmp->cube_min_y_ + width * 0.5);
+		out_pos.z = 175000000.0f; // High up
+		return true;
+	}
+	return false;
 }
 
 bool Terrain::GetZ(const dyn_cube_s* root_dyn_cube, const glm::vec3& pos, float & ret_z) {
@@ -2733,4 +2777,99 @@ DONE:
 	}
 
 	return found;
+}
+
+void Terrain::EditorRaycastAndModify(const dyn_cube_s* root_dyn_cube, const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type) {
+	// Basic Raymarch
+	glm::vec3 current_pos = ray_origin;
+	float step_size = 500.0f; // 500 units per step
+	bool hit = false;
+	
+	for (int i = 0; i < 10000; ++i) { // max 5,000,000 units distance
+		current_pos += ray_dir * step_size;
+		
+		float terrain_z = 0.0f;
+		if (GetZ(root_dyn_cube, current_pos, terrain_z)) {
+			if (current_pos.z <= terrain_z + 100.0f) { // Added a tiny tolerance to prevent slipping through cracks
+				hit = true;
+				break;
+			}
+		}
+	}
+	
+	if (!hit) {
+		printf("Raymarch miss\n");
+		return;
+	}
+
+	printf("Raymarch HIT at (%.2f, %.2f, %.2f)\n", current_pos.x, current_pos.y, current_pos.z);
+
+	// We have an approximate hit point on the terrain (current_pos.x, current_pos.y)
+	// Now we need to modify the height map at this location.
+	// Iterate over all active height maps to find which one covers this X/Y area.
+	
+	double radius = 50000.0; // Brush radius
+	double max_strength = 15.0; // Max height change per frame at center
+	
+	int changed_count = 0;
+
+	for (int i = 0; i < num_height_map_; ++i) {
+		height_map_s* hmp = height_maps_ + qtask_height_maps_[i].idx_in_array_;
+		
+		int hmp_dim = 1 << hmp->height_map_line_width_shift_;
+		
+		// Find world coordinate bounds for this height map
+		double min_x = hmp->cube_min_x_;
+		double min_y = hmp->cube_min_y_;
+		double max_x = min_x + (hmp_dim / hmp->local_pos_to_hmp_pos_);
+		double max_y = min_y + (hmp_dim / hmp->local_pos_to_hmp_pos_);
+		
+		// Does the brush intersect this height map bounding box?
+		if (current_pos.x + radius < min_x || current_pos.x - radius > max_x ||
+			current_pos.y + radius < min_y || current_pos.y - radius > max_y) {
+			continue;
+		}
+		
+		// Modify pixels in the height map
+		for (int y = 0; y <= hmp_dim; ++y) {
+			for (int x = 0; x <= hmp_dim; ++x) {
+				double world_x = min_x + x / hmp->local_pos_to_hmp_pos_;
+				double world_y = min_y + y / hmp->local_pos_to_hmp_pos_;
+				
+				double dx = (double)current_pos.x - world_x;
+				double dy = (double)current_pos.y - world_y;
+				double dist_sq = dx*dx + dy*dy;
+				
+				double rad_sq = radius * radius;
+				if (dist_sq <= rad_sq) {
+					int idx = y * (hmp_dim + 1) + x;
+					// Read as uint8_t because CalcHMPDeltaZ casts it to uint8_t!
+					int current_val = (uint8_t)hmp->height_map_item_[idx];
+					
+					// Smooth falloff based on distance
+					double falloff = 1.0 - (dist_sq / rad_sq);
+					int applied_strength = (int)(max_strength * falloff);
+					if (applied_strength < 1) applied_strength = 1;
+
+					if (brush_type == 0) { // BRUSH_RAISE
+						current_val += applied_strength;
+					} else {
+						current_val -= applied_strength;
+					}
+					
+					// Clamp to uint8 bounds (0 to 255)
+					if (current_val > 255) current_val = 255;
+					if (current_val < 0) current_val = 0;
+					
+					hmp->height_map_item_[idx] = (int8_t)current_val;
+					changed_count++;
+				}
+			}
+		}
+	}
+	
+	printf("Modified %d pixels across height maps\n", changed_count);
+
+	// Force the terrain engine to rebuild the chunks since data changed
+	ClearCubeDataHash();
 }

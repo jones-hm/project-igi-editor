@@ -34,6 +34,7 @@ public:
 	void					FreeCubeDataPools();
 
 	bool					Load(load_params_s & params);
+	bool					Save(int level_no);
 	void					Unload();
 
 	const ctr_node_s*		GetCtr() const;
@@ -41,6 +42,8 @@ public:
 	void					Update(update_params_s& params, const dyn_cube_s* root_dyn_cube);
 
 	bool					GetZ(const dyn_cube_s* root_dyn_cube, const glm::vec3 & pos, float & ret_z);
+	void					EditorRaycastAndModify(const dyn_cube_s* root_dyn_cube, const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type);
+	bool					GetFirstHMPCenter(glm::vec3& out_pos) const;
 
 public:
 
@@ -121,7 +124,7 @@ private:
 		float				local_pos_to_hmp_pos_;
 		double				cube_min_x_;
 		double				cube_min_y_;
-		const int8_t*		height_map_item_;
+		int8_t*				height_map_item_;
 	};
 
 	// objects.qsc "DiscardTerrain"
@@ -195,7 +198,7 @@ private:
 	};
 
 	struct cube_data_parent_vert_uv_s {
-		// high 16 bits: self vert index
+		// hi6 bits: self vert index
 		uint32_t			packed_indices_;
 		float				u_;
 		float				v_;

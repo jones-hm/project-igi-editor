@@ -36,6 +36,8 @@ constexpr int MK_ROLL_DEC		= FLAG_BIT(8);
 App::App():
 	frame_(0),
 	terrain_mod_options_(-1),
+	edit_mode_(false),
+	edit_brush_(0), // 0: raise, 1: lower
 	prior_frame_time_(0),
 	skip_input_on_motion_once_(false)
 {
@@ -133,6 +135,10 @@ void App::LoadLevel(int level_no) {
 		UpdateViewerVectors();
 	}
 
+}
+
+void App::SaveCurrentLevel() {
+	level_.SaveChanges();
 }
 
 int App::GetCurLevelNo() const {
@@ -383,6 +389,14 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			return;
 		}
 	}
+
+	if (key == 't' || key == 'T') {
+		level_.TeleportToHMP(viewer_.pos_);
+		viewer_.pitch_ = -30.0f; // Look down at the terrain
+		UpdateViewerVectors();
+		printf("Teleported to Height Map Zone\n");
+		return;
+	}
 }
 
 void App::Input_OnKeyboardUp(unsigned char key, int x, int y) {
@@ -413,6 +427,10 @@ void App::Frame(float delta_seconds) {
 	frame_ %= 0xFFFFFFFF;	// reserve value 0xFFFFFFFF (-1) for INVALID_FRAME
 
 	ProcessInput(delta_seconds);
+
+	if (edit_mode_ && mouse_state_.left_button_down_) {
+		EditorProcessClick();
+	}
 
 	UpdateViewDefine();
 
@@ -455,8 +473,10 @@ void App::Frame(float delta_seconds) {
 }
 
 void App::ProcessInput(float delta_seconds) {
-	viewer_.yaw_ += -input_.mouse_delta_x_ * MOUSE_SENSITIVE;
-	viewer_.pitch_ += -input_.mouse_delta_y_ * MOUSE_SENSITIVE;
+	if (!edit_mode_) {
+		viewer_.yaw_ += -input_.mouse_delta_x_ * MOUSE_SENSITIVE;
+		viewer_.pitch_ += -input_.mouse_delta_y_ * MOUSE_SENSITIVE;
+	}
 
 	input_.mouse_delta_x_ = 0;
 	input_.mouse_delta_y_ = 0;
@@ -665,4 +685,64 @@ void App::UpdateViewDefine() {
 	view_define_.mat_rot_[0][2] = view_define_.forward_.x;
 	view_define_.mat_rot_[1][2] = view_define_.forward_.y;
 	view_define_.mat_rot_[2][2] = view_define_.forward_.z;
+}
+
+void App::ToggleEditMode() {
+	edit_mode_ = !edit_mode_;
+	
+	window_state_.cursor_visible_ = edit_mode_;
+	glutSetCursor(window_state_.cursor_visible_ ? GLUT_CURSOR_CROSSHAIR : GLUT_CURSOR_NONE);
+
+	if (!window_state_.cursor_visible_) {
+		glutWarpPointer(window_state_.viewport_width_ >> 1, window_state_.viewport_height_ >> 1);
+		input_.mouse_delta_x_ = input_.mouse_delta_y_ = 0;
+	}
+}
+
+bool App::GetEditMode() const {
+	return edit_mode_;
+}
+
+void App::SetEditBrush(int brush) {
+	edit_brush_ = brush;
+}
+
+int App::GetEditBrush() const {
+	return edit_brush_;
+}
+
+#include <glm/ext/matrix_projection.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_transform.hpp>
+
+void App::EditorProcessClick() {
+	if (!window_state_.viewport_width_ || !window_state_.viewport_height_) return;
+
+	// Build matrices exactly as Renderer does
+	glm::dmat4 proj_matrix = glm::perspective(
+		(double)view_define_.fovy_,
+		(double)window_state_.viewport_width_ / (double)window_state_.viewport_height_,
+		(double)view_define_.render_z_near_,
+		(double)view_define_.render_z_far_
+	);
+
+	glm::dvec3 scaled_down_pos = glm::dvec3(view_define_.pos_) * 0.001; // RENDERER_MODEL_SCALE_DOWN
+	glm::dmat4 mat_view = glm::lookAt(scaled_down_pos, scaled_down_pos + glm::dvec3(view_define_.forward_), glm::dvec3(view_define_.up_));
+	glm::dmat4 mat_scale = glm::scale(glm::dmat4(1.0), glm::dvec3(0.001));
+	glm::dmat4 view_matrix = mat_view * mat_scale;
+
+	glm::dvec4 viewport(0.0, 0.0, (double)window_state_.viewport_width_, (double)window_state_.viewport_height_);
+	
+	double winX = (double)mouse_state_.prior_x_;
+	double winY = (double)window_state_.viewport_height_ - (double)mouse_state_.prior_y_;
+	
+	glm::dvec3 start_pos = glm::unProject(glm::dvec3(winX, winY, 0.0), view_matrix, proj_matrix, viewport);
+	glm::dvec3 end_pos = glm::unProject(glm::dvec3(winX, winY, 1.0), view_matrix, proj_matrix, viewport);
+	
+	glm::vec3 ray_origin = (glm::vec3)start_pos;
+	glm::vec3 ray_dir = glm::normalize((glm::vec3)(end_pos - start_pos));
+
+	printf("EditorClick: Mouse(%.0f, %.0f), RayDir(%.2f, %.2f, %.2f)\n", winX, winY, ray_dir.x, ray_dir.y, ray_dir.z);
+
+	level_.EditorRaycastAndModify(ray_origin, ray_dir, edit_brush_);
 }

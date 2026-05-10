@@ -1,0 +1,10 @@
+^D:\CODE\PROJECT-IGI-TERRAIN\VCBUILD\CMAKEFILES\056C72761B1CCBB94AA9E14F1D82C9AE\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SD:/Code/project-igi-terrain -BD:/Code/project-igi-terrain/vcbuild --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file D:/Code/project-igi-terrain/vcbuild/igi_terrain.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

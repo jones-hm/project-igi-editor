@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\Code\project-igi-terrain\vcbuild\CMakeFiles\056c72761b1ccbb94aa9e14f1d82c9ae\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{E3E56CEF-21E4-3863-A07C-61CBE74752B0}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

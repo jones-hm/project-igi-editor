@@ -678,6 +678,25 @@ bool File_LoadBinary(const char* filename, void*& buf, int32_t& len) {
 	}
 }
 
+bool File_SaveBinary(const char* filename, const void* buf, int32_t len) {
+	FILE* f = File_Open(filename, "wb");
+
+	if (!f) {
+		Log(log_type_t::LOG_ERROR, __FILE__, __LINE__, "could not write file \"%s\"\n", filename);
+		return false;
+	}
+
+	size_t write_size = fwrite(buf, 1, len, f);
+	fclose(f);
+
+	if (write_size != (size_t)len) {
+		Log(log_type_t::LOG_ERROR, __FILE__, __LINE__, "incomplete write to file \"%s\"\n", filename);
+		return false;
+	}
+
+	return true;
+}
+
 void File_FreeBuf(void * buf) {
 	if (buf) {
 		MEM_FREE_(buf);

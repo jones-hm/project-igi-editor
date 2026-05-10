@@ -129,6 +129,10 @@ void Level::Update(update_params_s& params) {
 	terrain_.Update(params, root_dyn_cube_);
 }
 
+void Level::SaveChanges() {
+	terrain_.Save(cur_level_no_);
+}
+
 bool Level::GetTerrainZ(const glm::vec3& pos, float& z) {
 	if (root_dyn_cube_) {
 		return terrain_.GetZ(root_dyn_cube_, pos, z);
@@ -138,8 +142,17 @@ bool Level::GetTerrainZ(const glm::vec3& pos, float& z) {
 	}
 }
 
-void Level::LoadStartPosInfo(const QSC* qsc_objects, glm::vec3& start_pos, float& start_yaw) const
-{
+void Level::EditorRaycastAndModify(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type) {
+	if (root_dyn_cube_) {
+		terrain_.EditorRaycastAndModify(root_dyn_cube_, ray_origin, ray_dir, brush_type);
+	}
+}
+
+void Level::TeleportToHMP(glm::vec3& pos) const {
+	terrain_.GetFirstHMPCenter(pos);
+}
+
+void Level::LoadStartPosInfo(const QSC* qsc_objects, glm::vec3& start_pos, float& start_yaw) const {
 	start_pos.x = 0.0f;
 	start_pos.y = 0.0f;
 	start_pos.z = 175000000.0f;

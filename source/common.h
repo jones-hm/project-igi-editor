@@ -150,7 +150,8 @@ bool	File_Exists(const char* filename);
 FILE *	File_Open(const char* filename, const char* mod);
 bool	File_LoadText(const char* filename, char *& buf);
 bool	File_LoadBinary(const char* filename, void*& buf, int32_t& len);
-void	File_FreeBuf(void * buf);
+bool	File_SaveBinary(const char* filename, const void* buf, int32_t len);
+void	File_FreeBuf(void* ptr);
 
 /*
 ================================================================================

@@ -1,0 +1,218 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="D:\Code\project-igi-terrain\vcbuild\CMakeFiles\terrain.dir\cmake_pch.cxx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\app.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\common.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\level\flat_sky_layer.cpp">
+      <Filter>level</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\level\level.cpp">
+      <Filter>level</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\level\level_common.cpp">
+      <Filter>level</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\level\terrain.cpp">
+      <Filter>level</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\level\terrain_files.cpp">
+      <Filter>level</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\renderer\gl_helper.cpp">
+      <Filter>renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\renderer\renderer.cpp">
+      <Filter>renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\renderer\renderer_flat_sky_layer.cpp">
+      <Filter>renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\renderer\renderer_flat_sky_layers.cpp">
+      <Filter>renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\renderer\renderer_skydome.cpp">
+      <Filter>renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\renderer\renderer_terrain.cpp">
+      <Filter>renderer</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\app.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\pch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\level\flat_sky_layer.h">
+      <Filter>level</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\level\flat_sky_layer.inl">
+      <Filter>level</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\level\level.h">
+      <Filter>level</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\level\level_common.h">
+      <Filter>level</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\level\terrain.h">
+      <Filter>level</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\level\terrain_files.h">
+      <Filter>level</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\renderer\gl_helper.h">
+      <Filter>renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\renderer\renderer.h">
+      <Filter>renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\renderer\renderer_flat_sky_layer.h">
+      <Filter>renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\renderer\renderer_flat_sky_layers.h">
+      <Filter>renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\renderer\renderer_skydome.h">
+      <Filter>renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\renderer\renderer_terrain.h">
+      <Filter>renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\vcbuild\CMakeFiles\terrain.dir\Debug\cmake_pch.hxx">
+      <Filter>Precompile Header File</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\vcbuild\CMakeFiles\terrain.dir\Release\cmake_pch.hxx">
+      <Filter>Precompile Header File</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\vcbuild\CMakeFiles\terrain.dir\MinSizeRel\cmake_pch.hxx">
+      <Filter>Precompile Header File</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\vcbuild\CMakeFiles\terrain.dir\RelWithDebInfo\cmake_pch.hxx">
+      <Filter>Precompile Header File</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="D:\Code\project-igi-terrain\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="D:\Code\project-igi-terrain\shaders\41\flat_sky_layer.frag">
+      <Filter>shaders\41</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\41\flat_sky_layer.vert">
+      <Filter>shaders\41</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\41\flat_sky_layer_wireframe.frag">
+      <Filter>shaders\41</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\41\flat_sky_layer_wireframe.vert">
+      <Filter>shaders\41</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\41\skydome.frag">
+      <Filter>shaders\41</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\41\skydome.vert">
+      <Filter>shaders\41</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\41\skydome_wireframe.frag">
+      <Filter>shaders\41</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\41\terrain_fog.frag">
+      <Filter>shaders\41</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\41\terrain_fog.vert">
+      <Filter>shaders\41</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\41\terrain_lmp.frag">
+      <Filter>shaders\41</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\41\terrain_mat.frag">
+      <Filter>shaders\41</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\41\terrain_passing.vert">
+      <Filter>shaders\41</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\41\terrain_wireframe.frag">
+      <Filter>shaders\41</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\45\flat_sky_layer.frag">
+      <Filter>shaders\45</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\45\flat_sky_layer.vert">
+      <Filter>shaders\45</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\45\flat_sky_layer_wireframe.frag">
+      <Filter>shaders\45</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\45\flat_sky_layer_wireframe.vert">
+      <Filter>shaders\45</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\45\skydome.frag">
+      <Filter>shaders\45</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\45\skydome.vert">
+      <Filter>shaders\45</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\45\skydome_wireframe.frag">
+      <Filter>shaders\45</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\45\terrain_fog.frag">
+      <Filter>shaders\45</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\45\terrain_fog.vert">
+      <Filter>shaders\45</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\45\terrain_lmp.frag">
+      <Filter>shaders\45</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\45\terrain_mat.frag">
+      <Filter>shaders\45</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\45\terrain_passing.vert">
+      <Filter>shaders\45</Filter>
+    </None>
+    <None Include="D:\Code\project-igi-terrain\shaders\45\terrain_wireframe.frag">
+      <Filter>shaders\45</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{58FB1E9E-38E0-3C11-8012-CFC8521D6F78}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Precompile Header File">
+      <UniqueIdentifier>{6C71E501-64F0-3218-80CF-6B6E47FE5651}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{590F02D6-BF0F-3B04-91EF-AD9B1DA69B38}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="level">
+      <UniqueIdentifier>{BAD42D5D-7480-3F14-81AA-8E0037187A20}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="renderer">
+      <UniqueIdentifier>{55150187-6C29-3B3B-A4D2-75A89D0BB3FA}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shaders">
+      <UniqueIdentifier>{C728441E-D09D-336A-91A0-A6A372BC44C3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shaders\41">
+      <UniqueIdentifier>{D7D091ED-99A2-340A-957E-4A24CD94CCDE}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shaders\45">
+      <UniqueIdentifier>{0CA2B17F-D72C-3903-9558-C9C18574C4E1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

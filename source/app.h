@@ -21,6 +21,7 @@ public:
 
 	// level_no: 1 ~ 13
 	void					LoadLevel(int level_no);
+	void					SaveCurrentLevel();
 	int						GetCurLevelNo() const;
 
 	// draw wireframe on top of solid mesh
@@ -28,6 +29,11 @@ public:
 	void					ToggleDrawParts(int part);
 	void					ToggleTerrainDrawOption(int opt);
 	void					ToggleTerrainModOption(int opt);
+
+	void					ToggleEditMode();
+	bool					GetEditMode() const;
+	void					SetEditBrush(int brush);
+	int						GetEditBrush() const;
 
 	bool					GetOverlayWireframe() const;
 	int						GetDrawParts() const;
@@ -80,6 +86,10 @@ private:
 	Renderer::draw_params_s	draw_params_;
 	int						terrain_mod_options_;
 
+	// editor
+	bool					edit_mode_;
+	int						edit_brush_;
+
 	int64_t					prior_frame_time_;
 
 	window_state_s			window_state_;
@@ -109,5 +119,6 @@ private:
 	void					ProcessInput(float delta_seconds);
 	void					UpdateViewerVectors();
 	void					UpdateViewDefine();
+	void					EditorProcessClick();
 
 };
