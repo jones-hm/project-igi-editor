@@ -81,22 +81,19 @@ Desktop.ini
 .DS_Store
 
 # Others
-.cache
-.gemini
-.claude
-.log
-.tlog
+.cache/
+.gemini/
+.claude/
+*.log
+*.tlog
 .env
 .env.*
-.env.example
-
-# Others
-.agent
-.claude
-.gemini
-.log
-.tlog
-.env
-.env.*
-.env.example
-vcbuild
+!.env.example
+.agent/
+vcbuild/
+bin/
+build/
+x64/
+x86/
+Debug/
+Release/

@@ -1,3 +1,0 @@
-D:/Code/project-igi-terrain/vcbuild/CMakeFiles/terrain.dir
-D:/Code/project-igi-terrain/vcbuild/CMakeFiles/ALL_BUILD.dir
-D:/Code/project-igi-terrain/vcbuild/CMakeFiles/ZERO_CHECK.dir
