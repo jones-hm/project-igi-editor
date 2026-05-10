@@ -62,6 +62,7 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 		LoadFogInfo(qsc_objects, params.render_res_loader_);
 		LoadSkydomeInfo(qsc_objects, params.render_res_loader_);
 		LoadFlatSkyLayersInfo(qsc_objects, params.render_res_loader_);
+		LoadLevelObjects(qsc_objects, params.render_res_loader_);
 
 		Terrain::load_params_s terrain_load_params = {
 			.level_no_ = params.level_no_,
@@ -564,6 +565,61 @@ dyn_cube_s* Level::GetDynCube(const double pos[3], int cube_lod_level, glm::ivec
 	}
 
 	return dyn_cube;
+}
+
+void Level::LoadLevelObjects(const QSC* qsc_objects, IRenderResLoader* render_res_loader) {
+	const QSC::func_s* qsc_funcs[4096];
+	int num_rigid = qsc_objects->FindFuncByStr("EditRigidObj", qsc_funcs);
+	for (int i = 0; i < num_rigid; i++) {
+		const QSC::arg_s* arg = qsc_funcs[i]->args_;
+		// EditRigidObj: id, type, name, px, py, pz, rx, ry, rz, model_id
+		int arg_idx = 0;
+		float px = 0, py = 0, pz = 0;
+		float rx = 0, ry = 0, rz = 0;
+		const char* model_id = "";
+		while (arg) {
+			if (arg_idx == 3) px = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
+			if (arg_idx == 4) py = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
+			if (arg_idx == 5) pz = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
+			if (arg_idx == 6) rx = arg->dbl_;
+			if (arg_idx == 7) ry = arg->dbl_;
+			if (arg_idx == 8) rz = arg->dbl_;
+			if (arg_idx == 9 && arg->type_ == QSC::arg_s::type_t::STR) {
+				model_id = arg->str_;
+			}
+			arg = arg->next_;
+			arg_idx++;
+		}
+		if (model_id[0] != '\0') {
+			render_res_loader->AddLevelObject(glm::vec3(px, py, pz), rz, model_id);
+		}
+	}
+
+	int num_building = qsc_objects->FindFuncByStr("Building", qsc_funcs);
+	for (int i = 0; i < num_building; i++) {
+		const QSC::arg_s* arg = qsc_funcs[i]->args_;
+		// Building: id, type, name, px, py, pz, rx, ry, rz, model_id
+		int arg_idx = 0;
+		float px = 0, py = 0, pz = 0;
+		float rx = 0, ry = 0, rz = 0;
+		const char* model_id = "";
+		while (arg) {
+			if (arg_idx == 3) px = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
+			if (arg_idx == 4) py = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
+			if (arg_idx == 5) pz = arg->dbl_ * RENDERER_MODEL_SCALE_DOWN;
+			if (arg_idx == 6) rx = arg->dbl_;
+			if (arg_idx == 7) ry = arg->dbl_;
+			if (arg_idx == 8) rz = arg->dbl_;
+			if (arg_idx == 9 && arg->type_ == QSC::arg_s::type_t::STR) {
+				model_id = arg->str_;
+			}
+			arg = arg->next_;
+			arg_idx++;
+		}
+		if (model_id[0] != '\0') {
+			render_res_loader->AddLevelObject(glm::vec3(px, py, pz), rz, model_id);
+		}
+	}
 }
 
 void Level::AddQTaskToDynCube(dyn_cube_s* dyn_cube, qtask_s* qtask) {

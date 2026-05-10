@@ -180,6 +180,7 @@ void	Pic_FreePics(pics_s & pics);
 struct folders_s {
 	char					res_folder_[1024];
 	char					shader_folder_[1024];
+	char					mef_folder_[1024];
 };
 
 extern folders_s	g_folders;
@@ -342,5 +343,7 @@ public:
 	virtual void			LoadFlatSkyLayerTex(int layer_no, const pic_s* pic) = 0;
 	virtual void			LoadTerrainMatTex(const pic_s* pic) = 0;
 	virtual void			LoadTerrainLMPTex(const pic_s* pic) = 0;
+
+	virtual void			AddLevelObject(const glm::vec3& pos, float yaw, const char* model_id) = 0;
 
 };

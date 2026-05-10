@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include "renderer_objects.h"
+
 /*
 ================================================================================
  Renderer
@@ -44,6 +46,8 @@ public:
 	void					LoadTerrainMatTex(const pic_s* pic) override;
 	void					LoadTerrainLMPTex(const pic_s* pic) override;
 
+	void					AddLevelObject(const glm::vec3& pos, float yaw, const char* model_id) override;
+
 	vert_flat_sky_layer_s *	MapFlatSkyLayersVB();
 	void					UnmapFlatSkyLayersVB();
 
@@ -76,6 +80,7 @@ private:
 	Renderer_Skydome		skydome_;
 	Renderer_FlatSkyLayers	flat_sky_layers_;
 	Renderer_Terrain		terrain_;
+	Renderer_Objects		objects_;
 
 	void					SetupUBOMats(const view_define_s& vd);
 };

@@ -40,6 +40,10 @@ bool Renderer::Init() {
 		return false;
 	}
 
+	if (!objects_.Init()) {
+		return false;
+	}
+
 	// init default state
 	glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 
@@ -65,6 +69,7 @@ bool Renderer::Init() {
 }
 
 void Renderer::Shutdown() {
+	objects_.Shutdown();
 	terrain_.Shutdown();
 	flat_sky_layers_.Shutdown();
 	skydome_.Shutdown();
@@ -76,6 +81,7 @@ void Renderer::Shutdown() {
 void Renderer::BeginLoadLevel() {
 	flat_sky_layers_.UnloadAllTexs();
 	terrain_.UnloadAllTexs();
+	objects_.ClearObjects();
 }
 
 void Renderer::SetupClearColor(const glm::vec4& color) {
@@ -105,6 +111,10 @@ void Renderer::LoadTerrainMatTex(const pic_s* pic) {
 
 void Renderer::LoadTerrainLMPTex(const pic_s* pic) {
 	terrain_.LoadLMPTex(pic);
+}
+
+void Renderer::AddLevelObject(const glm::vec3& pos, float yaw, const char* model_id) {
+	objects_.AddObject(pos, yaw, model_id);
 }
 
 vert_flat_sky_layer_s* Renderer::MapFlatSkyLayersVB() {
@@ -154,6 +164,8 @@ void Renderer::Draw(const draw_params_s& params) {
 	if (params.draw_parts_ & DRAW_TERRAIN) {
 		terrain_.Draw(ubo_mats_, ubo_fog_, params.overlay_wireframe_, params.draw_terrain_options_, params.num_terrain_render_chunk_);
 	}
+
+	objects_.Draw(ubo_mats_);
 
 	GL_CHECK_ERROR;
 

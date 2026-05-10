@@ -832,6 +832,33 @@ void Folders_Init() {
 	Str_SPrintf(g_folders.res_folder_, 1024, "%s/res", buf);
 	Str_SPrintf(g_folders.shader_folder_, 1024, "%s/shaders", buf);
 
+	Str_Copy(g_folders.mef_folder_, 1024, "res/missions/location0/common/objects/");
+
+	char config_path[1024];
+#if defined(_WIN32)
+	Str_SPrintf(config_path, 1024, "%s/bin/config.ini", buf);
+#else
+	Str_SPrintf(config_path, 1024, "%s/bin/config.ini", buf);
+#endif
+
+	char* text = nullptr;
+	if (File_LoadText(config_path, text)) {
+		char* ptr = text;
+		while (*ptr) {
+			if (strncmp(ptr, "MEFPath=", 8) == 0) {
+				ptr += 8;
+				int i = 0;
+				while (*ptr && *ptr != '\n' && *ptr != '\r' && i < 1023) {
+					g_folders.mef_folder_[i++] = *ptr++;
+				}
+				g_folders.mef_folder_[i] = '\0';
+				break;
+			}
+			ptr++;
+		}
+		File_FreeBuf(text);
+	}
+
 	// debug
 	/*
 	printf("res_folder:    \"%s\"\n", g_folders.res_folder_);
