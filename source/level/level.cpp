@@ -142,9 +142,9 @@ bool Level::GetTerrainZ(const glm::vec3& pos, float& z) {
 	}
 }
 
-void Level::EditorRaycastAndModify(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type) {
+void Level::EditorRaycastAndModify(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type, int transform_flag) {
 	if (root_dyn_cube_) {
-		terrain_.EditorRaycastAndModify(root_dyn_cube_, ray_origin, ray_dir, brush_type);
+		terrain_.EditorRaycastAndModify(root_dyn_cube_, ray_origin, ray_dir, brush_type, transform_flag);
 	}
 }
 

@@ -42,7 +42,7 @@ public:
 	void					Update(update_params_s& params, const dyn_cube_s* root_dyn_cube);
 
 	bool					GetZ(const dyn_cube_s* root_dyn_cube, const glm::vec3 & pos, float & ret_z);
-	void					EditorRaycastAndModify(const dyn_cube_s* root_dyn_cube, const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type);
+	void					EditorRaycastAndModify(const dyn_cube_s* root_dyn_cube, const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type, int transform_flag = 0);
 	bool					GetFirstHMPCenter(glm::vec3& out_pos) const;
 
 public:
@@ -227,6 +227,7 @@ private:
 
 	// octree nodes. NOTE: ctr_ + 1 is the root node
 	ctr_node_s*				ctr_;
+	int						num_ctr_node_;
 	
 	// bit file contents
 	void*					bit_;

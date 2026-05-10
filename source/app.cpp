@@ -38,6 +38,7 @@ App::App():
 	terrain_mod_options_(-1),
 	edit_mode_(false),
 	edit_brush_(0), // 0: raise, 1: lower
+	transform_flag_(0), // 0: no change
 	show_hud_(true),
 	prior_frame_time_(0),
 	skip_input_on_motion_once_(false)
@@ -434,6 +435,11 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		show_hud_ = !show_hud_;
 		return;
 	}
+
+	if (edit_mode_ && (key == 'r' || key == 'R')) {
+		CycleTransformFlag();
+		return;
+	}
 }
 
 void App::Input_OnKeyboardUp(unsigned char key, int x, int y) {
@@ -814,6 +820,33 @@ int App::GetEditBrush() const {
 	return edit_brush_;
 }
 
+void App::CycleTransformFlag() {
+	transform_flag_ = (transform_flag_ + 1) % 8;
+
+	const char* flag_names[] = {
+		"0: no change",
+		"1: rotate 90° CCW",
+		"2: rotate 180° CCW",
+		"3: rotate -90° CCW",
+		"4: flip YOZ plane",
+		"5: flip YOZ + rotate 90° CCW",
+		"6: flip YOZ + rotate 180° CCW",
+		"7: flip YOZ + rotate -90° CCW"
+	};
+
+	printf("Transform flag set to: %s\n", flag_names[transform_flag_]);
+}
+
+int App::GetTransformFlag() const {
+	return transform_flag_;
+}
+
+void App::SetTransformFlag(int flag) {
+	if (flag >= 0 && flag <= 7) {
+		transform_flag_ = flag;
+	}
+}
+
 #include <glm/ext/matrix_projection.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -847,5 +880,5 @@ void App::EditorProcessClick() {
 
 	printf("EditorClick: Mouse(%.0f, %.0f), RayDir(%.2f, %.2f, %.2f)\n", winX, winY, ray_dir.x, ray_dir.y, ray_dir.z);
 
-	level_.EditorRaycastAndModify(ray_origin, ray_dir, edit_brush_);
+	level_.EditorRaycastAndModify(ray_origin, ray_dir, edit_brush_, transform_flag_);
 }

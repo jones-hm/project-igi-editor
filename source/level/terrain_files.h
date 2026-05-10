@@ -38,6 +38,7 @@ struct ctr_s {
 
 bool	CTR_Load(const char* filename, ctr_s& ret);
 void	CTR_Free(ctr_s& ret);
+bool	CTR_Save(const char* filename, const ctr_s& src);
 
 /*
 ================================================================================

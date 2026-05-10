@@ -119,3 +119,12 @@ void CTR_Free(ctr_s& ret) {
 	ret.head_ = nullptr;
 	ret.num_item_ = 0;
 }
+
+bool CTR_Save(const char* filename, const ctr_s& src) {
+	if (!src.head_ || src.num_item_ <= 0) {
+		return false;
+	}
+
+	int32_t total_size = sizeof(ctr_item_s) * src.num_item_;
+	return File_SaveBinary(filename, src.head_, total_size);
+}

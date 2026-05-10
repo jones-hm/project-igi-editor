@@ -32,7 +32,7 @@ public:
 	void					SaveChanges();
 
 	bool					GetTerrainZ(const glm::vec3 & pos, float & z);
-	void					EditorRaycastAndModify(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type);
+	void					EditorRaycastAndModify(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type, int transform_flag = 0);
 	void					TeleportToHMP(glm::vec3& pos) const;
 
 private:

@@ -39,6 +39,9 @@ public:
 	bool					GetPauseMode() const;
 	void					SetEditBrush(int brush);
 	int						GetEditBrush() const;
+	void					CycleTransformFlag();
+	int						GetTransformFlag() const;
+	void					SetTransformFlag(int flag);
 
 	void					ToggleShowHUD();
 	bool					GetShowHUD() const;
@@ -99,6 +102,7 @@ private:
 	bool					edit_mode_;
 	bool					pause_mode_;
 	int						edit_brush_;
+	int						transform_flag_;	// 0-7 for cube transform flags
 	bool					show_hud_;
 	bool					sync_from_game_once_;
 	int						last_game_level_;
