@@ -210,7 +210,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         // Rotate — IGI uses ZYX order (Yaw, Pitch, Roll) with Param 8=Yaw, 7=Pitch, 6=Roll
         model = glm::rotate(model, obj.rot.z, glm::vec3(0.0f, 0.0f, 1.0f)); // Yaw (Around Z) - Param 8
         model = glm::rotate(model, obj.rot.y, glm::vec3(0.0f, 1.0f, 0.0f)); // Pitch (Around Y) - Param 7
-        model = glm::rotate(model, obj.rot.x, glm::vec3(1.0f, 0.0f, 1.0f)); // Roll (Around X) - Param 6
+        model = glm::rotate(model, obj.rot.x, glm::vec3(1.0f, 0.0f, 0.0f)); // Roll (Around X) - Param 6
 
         // Scale — Most models are in meters, world is in IGI units (4096 units = 1m)
         model = glm::scale(model, glm::vec3(WORLD_UNITS_PER_METER * obj.scale));

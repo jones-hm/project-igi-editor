@@ -517,10 +517,10 @@ void App::HandleMarkerInput(unsigned char key) {
 
 	else if (k == cfg.rotateYawCCW) { obj.rot.z -= rotStep; changed = true; }
 	else if (k == cfg.rotateYawCW) { obj.rot.z += rotStep; changed = true; }
-	else if (k == cfg.rotatePitchUp) { obj.rot.x += rotStep; changed = true; }
-	else if (k == cfg.rotatePitchDown) { obj.rot.x -= rotStep; changed = true; }
-	else if (k == cfg.rotateRollLeft) { obj.rot.y -= rotStep; changed = true; }
-	else if (k == cfg.rotateRollRight) { obj.rot.y += rotStep; changed = true; }
+	else if (k == cfg.rotatePitchUp) { obj.rot.y += rotStep; changed = true; }
+	else if (k == cfg.rotatePitchDown) { obj.rot.y -= rotStep; changed = true; }
+	else if (k == cfg.rotateRollLeft) { obj.rot.x -= rotStep; changed = true; }
+	else if (k == cfg.rotateRollRight) { obj.rot.x += rotStep; changed = true; }
 
 	else if (k == cfg.teleportToMarker) {
 		viewer_.pos_ = obj.pos;

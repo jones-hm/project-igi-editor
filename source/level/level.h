@@ -45,6 +45,7 @@ public:
 private:
 
 	int						cur_level_no_;
+	std::string				qsc_path_;
 
 	float					flat_sky_fog_amount_;
 	float					flat_sky_z_pos_;

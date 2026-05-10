@@ -8,6 +8,7 @@
 struct LevelObject {
     std::string name;
     std::string modelId;
+    std::string taskId;  // Task ID from QSC for save support
     glm::vec3 pos;
     glm::vec3 rot;
     bool isBuilding;
@@ -34,6 +35,7 @@ public:
     void Unload();
     void LoadModelNames();
     std::string GetModelName(const std::string& modelId);
+    void SaveToQSC(const std::string& qscPath);
 
 
     const std::vector<LevelObject>& GetObjects() const { return objects_; }

@@ -55,6 +55,8 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 	Str_SPrintf(filename, 1024, "%s/missions/location0/level%d/objects.qsc",
 		g_folders.res_folder_, params.level_no_);
 
+	qsc_path_ = filename;
+
 	if (!File_Exists(filename)) {
 		DecompileObjects(params.level_no_);
 	}
@@ -201,6 +203,7 @@ void Level::Update(update_params_s& params) {
 
 void Level::SaveChanges() {
 	terrain_.Save(cur_level_no_);
+	level_objects_.SaveToQSC(qsc_path_);
 }
 
 bool Level::GetTerrainZ(const glm::vec3& pos, float& z) {
