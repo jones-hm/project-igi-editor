@@ -1,7 +1,9 @@
 #include "pch.h"
 #include "igi_bridge.h"
 
-IGIBridge::IGIBridge() : running_(false) {}
+IGIBridge::IGIBridge() : running_(false) {
+    gt_.EnableLogs(true);
+}
 IGIBridge::~IGIBridge() { Stop(); }
 
 void IGIBridge::Start() {

@@ -10,6 +10,9 @@
     <ClCompile Include="D:\Code\project-igi-terrain\source\common.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\source\igi_bridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="D:\Code\project-igi-terrain\source\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -46,12 +49,18 @@
     <ClCompile Include="D:\Code\project-igi-terrain\source\renderer\renderer_terrain.cpp">
       <Filter>renderer</Filter>
     </ClCompile>
+    <ClCompile Include="D:\Code\project-igi-terrain\third_party\gtlibcpp\GTLibc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="D:\Code\project-igi-terrain\source\app.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="D:\Code\project-igi-terrain\source\common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Code\project-igi-terrain\source\igi_bridge.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="D:\Code\project-igi-terrain\source\pch.h">

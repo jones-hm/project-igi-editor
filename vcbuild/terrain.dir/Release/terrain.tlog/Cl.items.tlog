@@ -1,6 +1,7 @@
 D:\Code\project-igi-terrain\vcbuild\CMakeFiles\terrain.dir\cmake_pch.cxx;D:\Code\project-igi-terrain\vcbuild\terrain.dir\Release\cmake_pch.obj
 D:\Code\project-igi-terrain\source\app.cpp;D:\Code\project-igi-terrain\vcbuild\terrain.dir\Release\app.obj
 D:\Code\project-igi-terrain\source\common.cpp;D:\Code\project-igi-terrain\vcbuild\terrain.dir\Release\common.obj
+D:\Code\project-igi-terrain\source\igi_bridge.cpp;D:\Code\project-igi-terrain\vcbuild\terrain.dir\Release\igi_bridge.obj
 D:\Code\project-igi-terrain\source\main.cpp;D:\Code\project-igi-terrain\vcbuild\terrain.dir\Release\main.obj
 D:\Code\project-igi-terrain\source\level\flat_sky_layer.cpp;D:\Code\project-igi-terrain\vcbuild\terrain.dir\Release\flat_sky_layer.obj
 D:\Code\project-igi-terrain\source\level\level.cpp;D:\Code\project-igi-terrain\vcbuild\terrain.dir\Release\level.obj
@@ -13,3 +14,4 @@ D:\Code\project-igi-terrain\source\renderer\renderer_flat_sky_layer.cpp;D:\Code\
 D:\Code\project-igi-terrain\source\renderer\renderer_flat_sky_layers.cpp;D:\Code\project-igi-terrain\vcbuild\terrain.dir\Release\renderer_flat_sky_layers.obj
 D:\Code\project-igi-terrain\source\renderer\renderer_skydome.cpp;D:\Code\project-igi-terrain\vcbuild\terrain.dir\Release\renderer_skydome.obj
 D:\Code\project-igi-terrain\source\renderer\renderer_terrain.cpp;D:\Code\project-igi-terrain\vcbuild\terrain.dir\Release\renderer_terrain.obj
+D:\Code\project-igi-terrain\third_party\gtlibcpp\GTLibc.cpp;D:\Code\project-igi-terrain\vcbuild\terrain.dir\Release\GTLibc.obj
