@@ -6,6 +6,8 @@
 #pragma once
 
 #include <string>
+#include "renderer_objects.h"
+
 
 /*
 ================================================================================
@@ -19,6 +21,8 @@ public:
 	static constexpr int	DRAW_SKYDOME = FLAG_BIT(0);
 	static constexpr int	DRAW_FLAT_SKY_LAYER = FLAG_BIT(1);
 	static constexpr int	DRAW_TERRAIN = FLAG_BIT(2);
+	static constexpr int	DRAW_OBJECTS = FLAG_BIT(3);
+
 
 	struct draw_params_s {
 		const view_define_s* view_define_;
@@ -27,6 +31,8 @@ public:
 		int					draw_terrain_options_;
 		bool				flat_sky_layer_is_visible_;
 		int					num_terrain_render_chunk_;
+		const class LevelObjects* level_objects_;
+
 	};
 
 	struct hud_params_s {
@@ -92,6 +98,11 @@ private:
 	Renderer_Skydome		skydome_;
 	Renderer_FlatSkyLayers	flat_sky_layers_;
 	Renderer_Terrain		terrain_;
+	Renderer_Objects		objects_;
 
+
+	glm::mat4				mat_proj_;
+	glm::mat4				mat_view_;
 	void					SetupUBOMats(const view_define_s& vd);
+
 };

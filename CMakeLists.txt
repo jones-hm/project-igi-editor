@@ -45,18 +45,20 @@ source_group("renderer" FILES ${SOURCES_RENDERER})
 source_group("shaders/41" FILES ${SHADERS_41})
 source_group("shaders/45" FILES ${SHADERS_45})
 
-add_executable(terrain ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SHADERS_41} ${SHADERS_45})
+add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SHADERS_41} ${SHADERS_45})
 
-target_precompile_headers(terrain PRIVATE source/pch.h)
+target_precompile_headers(igi-editor PRIVATE source/pch.h)
 
-target_include_directories(terrain PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
-target_include_directories(terrain PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
-target_include_directories(terrain PRIVATE ${PROJECT_SOURCE_DIR}/source)
+target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
+target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
+target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
+target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source)
 
 
 if (WIN32)
-  target_link_directories(terrain PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/lib/x64)
-  target_link_libraries(terrain PRIVATE freeglut glew32 OpenGL32)
+  target_link_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/lib/x64)
+  target_link_libraries(igi-editor PRIVATE freeglut glew32 OpenGL32)
 else()
-  target_link_libraries(terrain PRIVATE glut GL GLEW)
+  target_link_libraries(igi-editor PRIVATE glut GL GLEW)
 endif()
+

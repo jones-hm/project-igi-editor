@@ -50,6 +50,11 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 
 	Str_SPrintf(filename, 1024, "%s/missions/location0/level%d/objects.qsc",
 		g_folders.res_folder_, params.level_no_);
+
+	if (!File_Exists(filename)) {
+		DecompileObjects(params.level_no_);
+	}
+
 	QSC* qsc_objects = new QSC();
 	if (!qsc_objects) {
 		return false;
@@ -70,7 +75,11 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 			.qsc_objects_ = qsc_objects
 		};
 
+
 		terrain_.Load(terrain_load_params);
+
+		level_objects_.Load(this, qsc_objects);
+
 
 	}
 	catch (const std::exception&) {
@@ -87,8 +96,61 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 	return true;
 }
 
+void Level::DecompileObjects(int levelNo) {
+	ConfigData& cfg = Config::Get();
+	std::string igiPath = cfg.igiPath;
+
+	char qvmPath[1024];
+	Str_SPrintf(qvmPath, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", igiPath.c_str(), levelNo);
+
+	if (!File_Exists(qvmPath)) {
+		printf("Error: QVM file not found at %s\n", qvmPath);
+		return;
+	}
+
+	char appData[1024];
+	GetEnvironmentVariableA("APPDATA", appData, 1024);
+
+	char decompileDir[1024];
+	Str_SPrintf(decompileDir, 1024, "%s\\QEditor\\QCompiler\\Decompile", appData);
+
+	char inputPath[1024];
+	Str_SPrintf(inputPath, 1024, "%s\\input\\objects.qvm", decompileDir);
+
+	try {
+		std::filesystem::create_directories(std::filesystem::path(inputPath).parent_path());
+		std::filesystem::copy_file(qvmPath, inputPath, std::filesystem::copy_options::overwrite_existing);
+
+		char cmd[2048];
+		Str_SPrintf(cmd, 2048, "cd /d \"%s\" && decompile.bat", decompileDir);
+
+		printf("Running decompiler: %s\n", cmd);
+		system(cmd);
+
+		char outputPath[1024];
+		Str_SPrintf(outputPath, 1024, "%s\\output\\objects.qsc", decompileDir);
+
+		char destPath[1024];
+		Str_SPrintf(destPath, 1024, "%s/missions/location0/level%d/objects.qsc", g_folders.res_folder_, levelNo);
+
+		std::filesystem::create_directories(std::filesystem::path(destPath).parent_path());
+		if (std::filesystem::exists(outputPath)) {
+			std::filesystem::rename(outputPath, destPath);
+			printf("Decompiled objects saved to %s\n", destPath);
+		} else {
+			printf("Error: Decompiler did not produce output at %s\n", outputPath);
+		}
+	}
+	catch (const std::exception& e) {
+		printf("DecompileObjects error: %s\n", e.what());
+	}
+}
+
+
 void Level::Unload() {
 	terrain_.Unload();
+	level_objects_.Unload();
+
 
 	for (int i = 0; i < MAX_FLAT_SKY_LAYERS; ++i) {
 		flat_sky_layers_[i].Reset();

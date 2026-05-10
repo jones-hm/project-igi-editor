@@ -6,6 +6,8 @@
 #include "pch.h"
 #include <mutex>
 #include <stdarg.h>
+#include "logger.h"
+
 
 #if defined(_WIN32)
 # define WIN32_LEAN_AND_MEAN
@@ -207,17 +209,18 @@ void Log(log_type_t tp, const char* file, int line, const char* fmt, ...) {
 	Str_VSPrintf(buf, 1024, fmt, argptr);
 	va_end(argptr);
 
+	LogLevel level = LogLevel::INFO;
+	if (tp == log_type_t::LOG_FATAL) level = LogLevel::FATAL;
+	else if (tp == log_type_t::LOG_ERROR) level = LogLevel::ERR;
+
+	Logger::Get().Log(level, buf);
+
 	if (tp == log_type_t::LOG_FATAL) {
 		char buf2[1024];
 		Str_SPrintf(buf2, 1024, "%s [%s:%d]", buf, file, line);
 		throw quit_exception(buf2);
 	}
-	else if (tp == log_type_t::LOG_ERROR) {
-		fprintf(stderr, "Error: %s\n", buf);
-	}
-	else {
-		fprintf(stdout, "Infor: %s\n", buf);
-	}
+
 }
 
 /*

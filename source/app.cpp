@@ -5,6 +5,9 @@
 
 #include "pch.h"
 #include <freeglut.h>
+#include "logger.h"
+#include <filesystem>
+
 
 /*
 ================================================================================
@@ -38,7 +41,11 @@ App::App():
 	terrain_mod_options_(-1),
 	edit_mode_(false),
 	edit_brush_(0), // 0: raise, 1: lower
+	selected_object_index_(0),
 	show_hud_(true),
+	show_debug_(false),
+
+
 	prior_frame_time_(0),
 	skip_input_on_motion_once_(false)
 {
@@ -79,9 +86,24 @@ App::~App() {
 }
 
 bool App::Init(int argc, char** argv) {
+	Logger::Get().Init("igi_terrain_editor.log");
+	Logger::Get().Log(LogLevel::INFO, "Project IGI Terrain Editor Initializing...");
+
+	char appDataPath[1024];
+	GetEnvironmentVariableA("APPDATA", appDataPath, 1024);
+	std::string qCompilerPath = std::string(appDataPath) + "\\QEditor\\QCompiler";
+	if (!std::filesystem::exists(qCompilerPath)) {
+		Log(log_type_t::LOG_FATAL, __FILE__, __LINE__, "FATAL ERROR: QCompiler directory not found at: %s\nPlease make sure QEditor is correctly installed in AppData.", qCompilerPath.c_str());
+	}
+
+
 	if (!renderer_.Init()) {
 		return false;
 	}
+
+	Config::Init();
+	ConfigData& cfg = Config::Get();
+
 
 	// read options from command line
 	draw_params_.overlay_wireframe_ = Arg_OptionIdx(argc, argv, "-wireframe") > 0;
@@ -89,10 +111,11 @@ bool App::Init(int argc, char** argv) {
 	draw_params_.draw_terrain_options_ = Arg_ReadInt(argc, argv, "-draw_terrain_opts", -1);
 	terrain_mod_options_ = Arg_ReadInt(argc, argv, "-terrain_mod_opts", terrain_mod_options_);
 
-	int start_level = Arg_ReadInt(argc, argv, "-level", 0);
+	int start_level = Arg_ReadInt(argc, argv, "-level", cfg.level);
 	if (start_level >= MIN_LEVEL_NO && start_level <= MAX_LEVEL_NO) {
 		LoadLevel(start_level);
 	}
+
 
 	if (Arg_OptionIdx(argc, argv, "-yaw") > -1) {
 		// override yaw
@@ -115,6 +138,7 @@ bool App::Init(int argc, char** argv) {
 	bridge_.SetEnabled(show_hud_);
 	bridge_.Start();
 
+
 	return true;
 }
 
@@ -123,6 +147,7 @@ void App::Shutdown() {
 	level_.Unload();
 	level_.FreeTerrainCubeDataPools();
 	renderer_.Shutdown();
+
 }
 
 void App::LoadLevel(int level_no) {
@@ -394,8 +419,22 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			printf("Level changes saved.\n");
 			TogglePauseMenu(); // Close menu after save
 		}
+		if (key == '=') {
+			ResetLevel();
+			TogglePauseMenu();
+		}
+		if (key == 'r' || key == 'R') {
+			ResetScript();
+			TogglePauseMenu();
+		}
+		if (key == 'd' || key == 'D') {
+			show_debug_ = !show_debug_;
+			TogglePauseMenu();
+		}
 		return;
+
 	}
+
 
 	if ((key == 13) && (glutGetModifiers() & GLUT_ACTIVE_ALT)) { // ALT + ENTER toggle full screen mode
 		window_state_.full_screen_ = !window_state_.full_screen_;
@@ -434,7 +473,130 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		show_hud_ = !show_hud_;
 		return;
 	}
+
+
+	if (key == '\t') {
+		LevelObjects& lo = level_.GetLevelObjects();
+		if (!lo.GetObjects().empty()) {
+			selected_object_index_ = (selected_object_index_ + 1) % (int)lo.GetObjects().size();
+			printf("Selected Object: %d / %d\n", selected_object_index_, (int)lo.GetObjects().size());
+		}
+		return;
+	}
+
+	HandleMarkerInput(key);
+
 }
+
+void App::HandleMarkerInput(unsigned char key) {
+	LevelObjects& lo = level_.GetLevelObjects();
+	std::vector<LevelObject>& objects = lo.GetObjects();
+	if (objects.empty()) return;
+
+	if (selected_object_index_ < 0 || selected_object_index_ >= (int)objects.size()) {
+		selected_object_index_ = 0;
+	}
+
+	LevelObject& obj = objects[selected_object_index_];
+	ConfigData& cfg = Config::Get();
+	char k = (char)toupper(key);
+
+	// Movement steps
+	const float moveStep = 1024.0f; // ~0.25m
+	const float rotStep = 0.05f;  // ~3 degrees
+
+	bool changed = false;
+
+	if (k == cfg.moveForward) { obj.pos.z -= moveStep; changed = true; }
+	else if (k == cfg.moveBackward) { obj.pos.z += moveStep; changed = true; }
+	else if (k == cfg.moveLeft) { obj.pos.x -= moveStep; changed = true; }
+	else if (k == cfg.moveRight) { obj.pos.x += moveStep; changed = true; }
+	else if (k == cfg.moveUp) { obj.pos.y += moveStep; changed = true; }
+	else if (k == cfg.moveDown) { obj.pos.y -= moveStep; changed = true; }
+
+	else if (k == cfg.rotateYawCCW) { obj.rot.z -= rotStep; changed = true; }
+	else if (k == cfg.rotateYawCW) { obj.rot.z += rotStep; changed = true; }
+	else if (k == cfg.rotatePitchUp) { obj.rot.x += rotStep; changed = true; }
+	else if (k == cfg.rotatePitchDown) { obj.rot.x -= rotStep; changed = true; }
+	else if (k == cfg.rotateRollLeft) { obj.rot.y -= rotStep; changed = true; }
+	else if (k == cfg.rotateRollRight) { obj.rot.y += rotStep; changed = true; }
+
+	else if (k == cfg.teleportToMarker) {
+		viewer_.pos_ = obj.pos;
+		UpdateViewerVectors();
+	}
+	else if (k == cfg.resetMarkerToPlayer) {
+		obj.pos = viewer_.pos_;
+		changed = true;
+	}
+
+	if (changed) {
+		printf("Marker [%d] Manipulated: Pos(%.0f, %.0f, %.0f) Rot(%.2f, %.2f, %.2f)\n",
+			selected_object_index_, obj.pos.x, obj.pos.y, obj.pos.z, obj.rot.x, obj.rot.y, obj.rot.z);
+	}
+}
+
+void App::ResetLevel() {
+	char appData[1024];
+	GetEnvironmentVariableA("APPDATA", appData, 1024);
+
+	int levelNo = level_.GetLevelNo();
+	ConfigData& cfg = Config::Get();
+
+	char srcDir[1024];
+	Str_SPrintf(srcDir, 1024, "%s\\QEditor\\QFiles\\IGI_QVM\\missions\\location0\\level%d", appData, levelNo);
+
+	char dstDir[1024];
+	Str_SPrintf(dstDir, 1024, "%s\\missions\\location0\\level%d", cfg.igiPath.c_str(), levelNo);
+
+	printf("Resetting Level %d from %s to %s\n", levelNo, srcDir, dstDir);
+
+	try {
+		if (std::filesystem::exists(srcDir)) {
+			std::filesystem::copy(srcDir, dstDir, std::filesystem::copy_options::overwrite_existing | std::filesystem::copy_options::recursive);
+			printf("Level reset successful.\n");
+		}
+		else {
+			printf("Error: Source directory %s does not exist.\n", srcDir);
+		}
+	}
+	catch (const std::exception& e) {
+		printf("ResetLevel error: %s\n", e.what());
+	}
+}
+
+void App::ResetScript() {
+	char appData[1024];
+	GetEnvironmentVariableA("APPDATA", appData, 1024);
+
+	int levelNo = level_.GetLevelNo();
+
+	char srcPath[1024];
+	Str_SPrintf(srcPath, 1024, "%s\\QEditor\\QFiles\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", appData, levelNo);
+
+	char dstPath[1024];
+	Str_SPrintf(dstPath, 1024, "%s/missions/location0/level%d/objects.qsc", g_folders.res_folder_, levelNo);
+
+	printf("Resetting Script for Level %d from %s to %s\n", levelNo, srcPath, dstPath);
+
+	try {
+		if (std::filesystem::exists(srcPath)) {
+			std::filesystem::copy_file(srcPath, dstPath, std::filesystem::copy_options::overwrite_existing);
+			printf("Script reset successful.\n");
+
+			// Reload the level to apply changes
+			LoadLevel(levelNo);
+		}
+		else {
+			printf("Error: Source file %s does not exist.\n", srcPath);
+		}
+	}
+	catch (const std::exception& e) {
+		printf("ResetScript error: %s\n", e.what());
+	}
+}
+
+
 
 void App::Input_OnKeyboardUp(unsigned char key, int x, int y) {
 	for (int i = 0; i < count_of(MOVEMENT_KEYS); ++i) {
@@ -481,7 +643,9 @@ void App::Frame(float delta_seconds) {
 			.cam_fov_ = 60.0f,
 			.pause_mode_ = true
 		};
+		draw_params_.level_objects_ = &level_.GetLevelObjects();
 		renderer_.Draw(draw_params_, hud);
+
 		glutSwapBuffers();
 		return;
 	}
@@ -529,6 +693,8 @@ void App::Frame(float delta_seconds) {
 
 	draw_params_.flat_sky_layer_is_visible_ = update_params.flat_sky_layer_is_visible_;
 	draw_params_.num_terrain_render_chunk_ = update_params.num_terrain_render_chunk_;
+	draw_params_.level_objects_ = &level_.GetLevelObjects();
+
 
 	float ground_z = 0.0f;
 	bridge_.SetEnabled(show_hud_);
@@ -553,6 +719,7 @@ void App::Frame(float delta_seconds) {
 	};
 
 	renderer_.Draw(draw_params_, hud);
+
 
 	glutSwapBuffers();
 }

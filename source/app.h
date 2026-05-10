@@ -6,6 +6,9 @@
 #pragma once
 
 #include "igi_bridge.h"
+#include "renderer/model.h"
+#include "config.h"
+
 
 /*
 ================================================================================
@@ -20,6 +23,9 @@ public:
 
 	bool					Init(int argc, char** argv);
 	void					Shutdown();
+	void					ResetLevel();
+	void					ResetScript();
+
 
 	// level_no: 1 ~ 13
 	void					LoadLevel(int level_no);
@@ -63,6 +69,9 @@ public:
 	// idle
 	void					OnIdle();
 
+	void					HandleMarkerInput(unsigned char key);
+
+
 private:
 
 	struct window_state_s {
@@ -99,11 +108,17 @@ private:
 	bool					edit_mode_;
 	bool					pause_mode_;
 	int						edit_brush_;
+	int						selected_object_index_;
+	int						transform_flag_;	// 0-7 for cube transform flags
 	bool					show_hud_;
+	bool					show_debug_;
+
 	bool					sync_from_game_once_;
 	int						last_game_level_;
 
+
 	int64_t					prior_frame_time_;
+
 
 	window_state_s			window_state_;
 	mouse_state_s			mouse_state_;

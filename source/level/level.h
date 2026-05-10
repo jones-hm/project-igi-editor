@@ -4,6 +4,8 @@
  *****************************************************************************/
 
 #pragma once
+#include "level_objects.h"
+
 
 /*
 ================================================================================
@@ -35,6 +37,11 @@ public:
 	void					EditorRaycastAndModify(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type);
 	void					TeleportToHMP(glm::vec3& pos) const;
 
+	const LevelObjects&		GetLevelObjects() const { return level_objects_; }
+	LevelObjects&			GetLevelObjects() { return level_objects_; }
+
+
+
 private:
 
 	int						cur_level_no_;
@@ -44,6 +51,8 @@ private:
 	float					flat_sky_distance_;
 	FlatSkyLayer			flat_sky_layers_[MAX_FLAT_SKY_LAYERS];
 	Terrain					terrain_;
+	LevelObjects			level_objects_;
+
 
 	fixed_size_item_pool_s	dyn_cube_item_pool_;
 	dyn_cube_s *			root_dyn_cube_;
@@ -54,6 +63,7 @@ private:
 	void					LoadFogInfo(const QSC * qsc_objects, IRenderResLoader* render_res_loader);
 	void					LoadSkydomeInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loader);
 	void					LoadFlatSkyLayersInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loader);
+	void					DecompileObjects(int levelNo);
 
 	// pos range: [-2^30, 2^30]
 	dyn_cube_s *			GetDynCube(const double pos[3], int cube_lod_level, glm::ivec3& cube_ctr) override;

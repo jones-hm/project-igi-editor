@@ -7,6 +7,8 @@
  *****************************************************************************/
 
 #include "pch.h"
+#include "logger.h"
+
 #include <freeglut.h>
 
 /*
@@ -41,6 +43,11 @@ bool Renderer::Init() {
 		return false;
 	}
 
+	if (!objects_.Init()) {
+		return false;
+	}
+
+
 	// init default state
 	glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 
@@ -67,7 +74,9 @@ bool Renderer::Init() {
 
 void Renderer::Shutdown() {
 	terrain_.Shutdown();
+	objects_.Shutdown();
 	flat_sky_layers_.Shutdown();
+
 	skydome_.Shutdown();
 
 	GL_DeleteBuffer(ubo_fog_);
@@ -156,6 +165,16 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                 terrain_.Draw(ubo_mats_, ubo_fog_, params.overlay_wireframe_, params.draw_terrain_options_, params.num_terrain_render_chunk_);      
         }
 
+        if ((params.draw_parts_ & DRAW_OBJECTS) && params.level_objects_) {
+                glMatrixMode(GL_PROJECTION);
+                glLoadMatrixf(glm::value_ptr(mat_proj_));
+                glMatrixMode(GL_MODELVIEW);
+                glLoadMatrixf(glm::value_ptr(mat_view_));
+                objects_.Draw(ubo_mats_, params.overlay_wireframe_, params.level_objects_->GetObjects());
+        }
+
+
+
         if (hud.show_hud_) {
                 glUseProgram(0); // Disable any active shaders for fixed-function HUD
                 glActiveTexture(GL_TEXTURE0);
@@ -225,7 +244,8 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
 
                 if (hud.pause_mode_) {
                         int menu_w = 200;
-                        int menu_h = 100;
+                        int menu_h = 160;
+
                         int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
                         int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
 
@@ -247,11 +267,31 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                         glVertex2i(menu_x, menu_y + menu_h);
                         glEnd();
 
-                        draw_text(menu_x + 60, params.view_define_->viewport_height_ - (menu_y + 80), "PAUSE MENU", 1.0f, 1.0f, 0.0f);
-                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y + 50), "[ESC] RESUME", 1.0f, 1.0f, 1.0f);
-                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y + 30), "[S]   SAVE LEVEL", 1.0f, 1.0f, 1.0f);
-                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y + 10), "[Q]   EXIT", 1.0f, 0.5f, 0.5f);
+                        draw_text(menu_x + 60, params.view_define_->viewport_height_ - (menu_y + 120), "PAUSE MENU", 1.0f, 1.0f, 0.0f);
+                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y + 90), "[ESC] RESUME", 1.0f, 1.0f, 1.0f);
+                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y + 70), "[S]   SAVE LEVEL", 1.0f, 1.0f, 1.0f);
+                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y + 50), "[=]   RESET LEVEL", 0.5f, 1.0f, 1.0f);
+                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y + 30), "[R]   RESET SCRIPT", 1.0f, 0.7f, 0.3f);
+                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y + 10), "[D]   DEBUG", 0.0f, 1.0f, 0.0f);
+                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y - 10), "[Q]   EXIT", 1.0f, 0.5f, 0.5f);
+
+
                 }
+
+                if (hud.show_debug_) {
+                        const auto& entries = Logger::Get().GetEntries();
+                        int startY = 250;
+                        int count = 0;
+                        for (auto it = entries.rbegin(); it != entries.rend() && count < 15; ++it, ++count) {
+                                float r = 1.0f, g = 1.0f, b = 1.0f;
+                                if (it->level == LogLevel::ERR) { r = 1.0f; g = 0.2f; b = 0.2f; }
+                                else if (it->level == LogLevel::FATAL) { r = 1.0f; g = 0.0f; b = 0.0f; }
+                                else if (it->level == LogLevel::WARNING) { r = 1.0f; g = 1.0f; b = 0.0f; }
+
+                                draw_text(10, startY - count * 15, it->message.c_str(), r, g, b);
+                        }
+                }
+
 
                 glMatrixMode(GL_PROJECTION);
                 glPopMatrix();
@@ -279,7 +319,11 @@ void Renderer::SetupUBOMats(const view_define_s& vd) {
 	glm::mat4 mat_follow_view = glm::lookAt(VEC3_ORIGIN, vd.forward_, vd.up_);
 	glm::mat4 mat_scale = glm::scale(glm::mat4(1.0f), glm::vec3(RENDERER_MODEL_SCALE_DOWN));
 
+	mat_proj_ = mat_proj_persp;
+	mat_view_ = mat_view;
+
 	// setup uniform buffer
+
 	ubo_mats_s ubo_mats;
 
 	// skydome
