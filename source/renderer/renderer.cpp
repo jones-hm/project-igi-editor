@@ -7,6 +7,7 @@
  *****************************************************************************/
 
 #include "pch.h"
+#include <freeglut.h>
 
 /*
 ================================================================================
@@ -135,7 +136,7 @@ render_chunk_s* Renderer::GetTerrainRenderChunckBuffer() {
 	return terrain_.GetRenderChunckBuffer();
 }
 
-void Renderer::Draw(const draw_params_s& params) {
+void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
 	SetupUBOMats(*params.view_define_);
 
 	// start draw
@@ -153,6 +154,45 @@ void Renderer::Draw(const draw_params_s& params) {
 
 	if (params.draw_parts_ & DRAW_TERRAIN) {
 		terrain_.Draw(ubo_mats_, ubo_fog_, params.overlay_wireframe_, params.draw_terrain_options_, params.num_terrain_render_chunk_);
+	}
+
+	if (hud.show_hud_) {
+		glMatrixMode(GL_PROJECTION);
+		glPushMatrix();
+		glLoadIdentity();
+		gluOrtho2D(0, params.view_define_->viewport_width_, 0, params.view_define_->viewport_height_);
+		glMatrixMode(GL_MODELVIEW);
+		glPushMatrix();
+		glLoadIdentity();
+
+		glColor3f(1.0f, 1.0f, 0.0f); // Yellow
+		if (hud.status_msg_.find("CONNECTED") != std::string::npos) glColor3f(0.0f, 1.0f, 0.0f); // Green
+
+		auto draw_text = [&](int x, int y, const char* str) {
+			glRasterPos2i(x, params.view_define_->viewport_height_ - y);
+			for (const char* c = str; *c != '\0'; c++) {
+				glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, *c);
+			}
+		};
+
+		int line_y = 20;
+		draw_text(10, line_y, hud.status_msg_.c_str()); line_y += 15;
+
+		if (hud.status_msg_.find("CONNECTED") != std::string::npos) {
+			char buf[128];
+			sprintf(buf, "RAW: %.0f, %.0f, %.0f", hud.raw_pos_.x, hud.raw_pos_.y, hud.raw_pos_.z);
+			draw_text(10, line_y, buf); line_y += 15;
+			sprintf(buf, "MTR: %.2fm, %.2fm, %.2fm", hud.meters_pos_.x, hud.meters_pos_.y, hud.meters_pos_.z);
+			draw_text(10, line_y, buf); line_y += 15;
+			sprintf(buf, "GND OFFSET: %.2fm", hud.ground_offset_ / 4096.0f);
+			draw_text(10, line_y, buf); line_y += 15;
+		}
+		draw_text(10, line_y, "Checks: 0");
+
+		glMatrixMode(GL_PROJECTION);
+		glPopMatrix();
+		glMatrixMode(GL_MODELVIEW);
+		glPopMatrix();
 	}
 
 	GL_CHECK_ERROR;

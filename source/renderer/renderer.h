@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <string>
+
 /*
 ================================================================================
  Renderer
@@ -25,6 +27,14 @@ public:
 		int					draw_terrain_options_;
 		bool				flat_sky_layer_is_visible_;
 		int					num_terrain_render_chunk_;
+	};
+
+	struct hud_params_s {
+		bool show_hud_;
+		std::string status_msg_;
+		glm::vec3 raw_pos_;
+		glm::vec3 meters_pos_;
+		float ground_offset_;
 	};
 
 	Renderer();
@@ -55,7 +65,7 @@ public:
 
 	render_chunk_s*			GetTerrainRenderChunckBuffer();
 
-	void					Draw(const draw_params_s & params);
+	void					Draw(const draw_params_s& params, const hud_params_s& hud);
 
 private:
 

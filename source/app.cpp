@@ -467,7 +467,9 @@ void App::Frame(float delta_seconds) {
 	draw_params_.flat_sky_layer_is_visible_ = update_params.flat_sky_layer_is_visible_;
 	draw_params_.num_terrain_render_chunk_ = update_params.num_terrain_render_chunk_;
 
-	renderer_.Draw(draw_params_);
+	Renderer::hud_params_s hud = {};
+	hud.show_hud_ = false;
+	renderer_.Draw(draw_params_, hud);
 
 	glutSwapBuffers();
 }
