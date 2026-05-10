@@ -157,10 +157,7 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
         }
 
         if (hud.show_hud_) {
-                static int log_count = 0;
-                if (++log_count % 60 == 0) {
-                        printf("HUD Drawing active: %s, RAW X: %.2f\n", hud.status_msg_.c_str(), hud.raw_pos_.x);
-                }
+                // printf("HUD Drawing active: %s, RAW X: %.2f\n", hud.status_msg_.c_str(), hud.raw_pos_.x);
 
                 glDisable(GL_DEPTH_TEST);
                 glDisable(GL_CULL_FACE);
@@ -177,27 +174,36 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                 glPushMatrix();
                 glLoadIdentity();
 
+                // DRAW BACKGROUND BOX FOR VISIBILITY
+                glColor4f(0.0f, 0.0f, 0.0f, 0.8f);
+                glBegin(GL_QUADS);
+                glVertex2i(5, params.view_define_->viewport_height_ - 5);
+                glVertex2i(400, params.view_define_->viewport_height_ - 5);
+                glVertex2i(400, params.view_define_->viewport_height_ - 150);
+                glVertex2i(5, params.view_define_->viewport_height_ - 150);
+                glEnd();
+
                 glColor3f(1.0f, 1.0f, 0.0f); // Yellow
                 if (hud.status_msg_.find("CONNECTED") != std::string::npos) glColor3f(0.0f, 1.0f, 0.0f); // Green
 
                 auto draw_text = [&](int x, int y, const char* str) {
                         glRasterPos2i(x, params.view_define_->viewport_height_ - y);
                         for (const char* c = str; *c != '\0'; c++) {
-                                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
+                                glutBitmapCharacter(GLUT_BITMAP_9_BY_15, *c);
                         }
                 };
 
                 int line_y = 30;
-                draw_text(20, line_y, hud.status_msg_.c_str()); line_y += 25;
+                draw_text(20, line_y, hud.status_msg_.c_str()); line_y += 20;
 
                 if (hud.status_msg_.find("CONNECTED") != std::string::npos) {
                         char buf[256];
                         sprintf(buf, "RAW X: %.2f Y: %.2f Z: %.2f", hud.raw_pos_.x, hud.raw_pos_.y, hud.raw_pos_.z);
-                        draw_text(20, line_y, buf); line_y += 25;
+                        draw_text(20, line_y, buf); line_y += 20;
                         sprintf(buf, "MTR X: %.2fm Y: %.2fm Z: %.2fm", hud.meters_pos_.x, hud.meters_pos_.y, hud.meters_pos_.z);
-                        draw_text(20, line_y, buf); line_y += 25;
+                        draw_text(20, line_y, buf); line_y += 20;
                         sprintf(buf, "GROUND DIST: %.2fm", hud.ground_offset_ / 4096.0f);
-                        draw_text(20, line_y, buf); line_y += 25;
+                        draw_text(20, line_y, buf); line_y += 20;
                 }
                 draw_text(20, line_y, "Checks: 0");
 
