@@ -38,6 +38,7 @@ App::App():
 	terrain_mod_options_(-1),
 	edit_mode_(false),
 	edit_brush_(0), // 0: raise, 1: lower
+	show_hud_(true),
 	prior_frame_time_(0),
 	skip_input_on_motion_once_(false)
 {
@@ -107,10 +108,13 @@ bool App::Init(int argc, char** argv) {
 
 	prior_frame_time_ = Sys_Milliseconds();
 
+	bridge_.Start();
+
 	return true;
 }
 
 void App::Shutdown() {
+	bridge_.Stop();
 	level_.Unload();
 	level_.FreeTerrainCubeDataPools();
 	renderer_.Shutdown();
@@ -397,6 +401,11 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		printf("Teleported to Height Map Zone\n");
 		return;
 	}
+
+	if (key == 'l' || key == 'L') {
+		show_hud_ = !show_hud_;
+		return;
+	}
 }
 
 void App::Input_OnKeyboardUp(unsigned char key, int x, int y) {
@@ -467,8 +476,18 @@ void App::Frame(float delta_seconds) {
 	draw_params_.flat_sky_layer_is_visible_ = update_params.flat_sky_layer_is_visible_;
 	draw_params_.num_terrain_render_chunk_ = update_params.num_terrain_render_chunk_;
 
-	Renderer::hud_params_s hud = {};
-	hud.show_hud_ = false;
+	float ground_z = 0.0f;
+	IGIBridge::PositionData data = bridge_.GetLatestData();
+	level_.GetTerrainZ(data.raw_pos, ground_z);
+
+	Renderer::hud_params_s hud = {
+		.show_hud_ = show_hud_,
+		.status_msg_ = data.status_msg,
+		.raw_pos_ = data.raw_pos,
+		.meters_pos_ = data.meters_pos,
+		.ground_offset_ = data.raw_pos.z - ground_z
+	};
+
 	renderer_.Draw(draw_params_, hud);
 
 	glutSwapBuffers();

@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include "igi_bridge.h"
+
 /*
 ================================================================================
  App
@@ -83,12 +85,14 @@ private:
 
 	Renderer				renderer_;
 	Level					level_;
+	IGIBridge				bridge_;
 	Renderer::draw_params_s	draw_params_;
 	int						terrain_mod_options_;
 
 	// editor
 	bool					edit_mode_;
 	int						edit_brush_;
+	bool					show_hud_;
 
 	int64_t					prior_frame_time_;
 
