@@ -46,7 +46,7 @@ public:
 	void					LoadTerrainMatTex(const pic_s* pic) override;
 	void					LoadTerrainLMPTex(const pic_s* pic) override;
 
-	void					AddLevelObject(const glm::vec3& pos, float yaw, const char* model_id) override;
+	void					AddLevelObject(const glm::vec3& pos, float yaw, const char* model_id, int level_no) override;
 
 	vert_flat_sky_layer_s *	MapFlatSkyLayersVB();
 	void					UnmapFlatSkyLayersVB();

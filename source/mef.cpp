@@ -27,11 +27,6 @@ struct HSEM_chunk_s {
 #pragma pack(pop)
 
 bool MefLoader::LoadMEF(const char* filepath, mef_model_s& out_model) {
-	// Reset output model
-	out_model.type = 0;
-	out_model.vertices.clear();
-	out_model.submeshes.clear();
-
 	int32_t file_len = 0;
 	void* buf = nullptr;
 
@@ -65,10 +60,7 @@ bool MefLoader::LoadMEF(const char* filepath, mef_model_s& out_model) {
 		uint32_t chunk_size = *(uint32_t*)(ptr + 4);
 		ptr += 8;
 
-		if (ptr + chunk_size > end) {
-			File_FreeBuf(buf);
-			return false;
-		}
+		if (ptr + chunk_size > end) break;
 		uint8_t* chunk_data = ptr;
 		ptr += chunk_size;
 
@@ -80,61 +72,22 @@ bool MefLoader::LoadMEF(const char* filepath, mef_model_s& out_model) {
 		} else if (strcmp(tag, "D3DR") == 0) {
 			// Do nothing for now
 		} else if (strcmp(tag, "DNER") == 0) {
-			// Validate minimum chunk size for header
-			if (chunk_size < 12) {
-				File_FreeBuf(buf);
-				return false;
-			}
-
 			mef_submesh_s submesh;
 			float* fptr = (float*)chunk_data;
 			submesh.offset = glm::vec3(fptr[0], fptr[1], fptr[2]);
 
 			int16_t* sptr = (int16_t*)(chunk_data + 12);
-
-			// Validate we can read at least sptr[0]
-			if (chunk_size < 12 + 2) {
-				File_FreeBuf(buf);
-				return false;
-			}
-
 			int fn = sptr[0];
 
-			// Validate fn is non-negative and reasonable
-			if (fn < 0 || fn > 100000) {
-				File_FreeBuf(buf);
-				return false;
-			}
-
 			uint16_t* indices;
-			uint32_t header_bytes;
 			if (out_model.type == 3) { // Lightmap
-				header_bytes = 20; // 10 shorts
-				// Validate chunk size for header
-				if (chunk_size < 12 + header_bytes) {
-					File_FreeBuf(buf);
-					return false;
-				}
 				submesh.vertex_offset = sptr[4];
 				submesh.vertex_count = sptr[5];
-				indices = (uint16_t*)(chunk_data + 12 + 20);
+				indices = (uint16_t*)(chunk_data + 12 + 20); // 10 shorts = 20 bytes
 			} else { // Type 0/1
-				header_bytes = 16; // 8 shorts
-				// Validate chunk size for header
-				if (chunk_size < 12 + header_bytes) {
-					File_FreeBuf(buf);
-					return false;
-				}
 				submesh.vertex_offset = sptr[3];
 				submesh.vertex_count = sptr[4];
-				indices = (uint16_t*)(chunk_data + 12 + 16);
-			}
-
-			// Validate indices array size
-			uint32_t indices_bytes = fn * sizeof(uint16_t);
-			if (chunk_size < 12 + header_bytes + indices_bytes) {
-				File_FreeBuf(buf);
-				return false;
+				indices = (uint16_t*)(chunk_data + 12 + 16); // 8 shorts = 16 bytes
 			}
 
 			for (int i = 0; i < fn / 3; i++) {
@@ -149,13 +102,6 @@ bool MefLoader::LoadMEF(const char* filepath, mef_model_s& out_model) {
 
 		} else if (strcmp(tag, "XTRV") == 0) {
 			int vertex_size = (out_model.type == 0) ? 32 : 40;
-
-			// Validate chunk_size is a multiple of vertex_size
-			if (chunk_size % vertex_size != 0) {
-				File_FreeBuf(buf);
-				return false;
-			}
-
 			int vertex_count = chunk_size / vertex_size;
 
 			for (int i = 0; i < vertex_count; i++) {

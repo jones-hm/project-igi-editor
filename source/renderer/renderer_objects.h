@@ -20,7 +20,7 @@ public:
 	bool Init();
 	void Shutdown();
 
-	void AddObject(const glm::vec3& pos, float yaw, const char* model_id);
+	void AddObject(const glm::vec3& pos, float yaw, const char* model_id, int level_no);
 	void ClearObjects();
 
 	void Draw(GLuint ubo_mats);
@@ -38,5 +38,5 @@ private:
 
 	GLuint shader_prog_;
 
-	bool LoadModel(const std::string& model_id);
+	bool LoadModel(const std::string& model_id, int level_no);
 };

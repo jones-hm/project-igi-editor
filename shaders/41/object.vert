@@ -17,7 +17,6 @@ out vec2 v_uv;
 
 void main() {
 	gl_Position = mvp_objects * u_model_mat * vec4(in_pos, 1.0);
-	mat3 normal_mat = mat3(transpose(inverse(u_model_mat)));
-	v_normal = normalize(normal_mat * in_normal);
+	v_normal = in_normal;
 	v_uv = in_uv;
 }

@@ -113,8 +113,8 @@ void Renderer::LoadTerrainLMPTex(const pic_s* pic) {
 	terrain_.LoadLMPTex(pic);
 }
 
-void Renderer::AddLevelObject(const glm::vec3& pos, float yaw, const char* model_id) {
-	objects_.AddObject(pos, yaw, model_id);
+void Renderer::AddLevelObject(const glm::vec3& pos, float yaw, const char* model_id, int level_no) {
+	objects_.AddObject(pos, yaw, model_id, level_no);
 }
 
 vert_flat_sky_layer_s* Renderer::MapFlatSkyLayersVB() {

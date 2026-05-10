@@ -847,36 +847,11 @@ void Folders_Init() {
 		while (*ptr) {
 			if (strncmp(ptr, "MEFPath=", 8) == 0) {
 				ptr += 8;
-				char parsed_path[1024] = {};
 				int i = 0;
 				while (*ptr && *ptr != '\n' && *ptr != '\r' && i < 1023) {
-					parsed_path[i++] = *ptr++;
+					g_folders.mef_folder_[i++] = *ptr++;
 				}
-				parsed_path[i] = '\0';
-
-				// Resolve to absolute path if relative
-				bool is_absolute = false;
-#if defined(_WIN32)
-				// Check for drive letter (C:\) or UNC path (\\)
-				if ((parsed_path[0] != '\0' && parsed_path[1] == ':') ||
-				    (parsed_path[0] == '\\' && parsed_path[1] == '\\')) {
-					is_absolute = true;
-				}
-#else
-				// Check for absolute path on Unix
-				if (parsed_path[0] == '/') {
-					is_absolute = true;
-				}
-#endif
-				if (is_absolute) {
-					Str_Copy(g_folders.mef_folder_, 1024, parsed_path);
-				} else {
-					// Relative path: join with base directory
-					char absolute_path[1024];
-					Str_SPrintf(absolute_path, 1024, "%s/%s", buf, parsed_path);
-					Str_EraseDoubleDotsInPath(absolute_path);
-					Str_Copy(g_folders.mef_folder_, 1024, absolute_path);
-				}
+				g_folders.mef_folder_[i] = '\0';
 				break;
 			}
 			ptr++;

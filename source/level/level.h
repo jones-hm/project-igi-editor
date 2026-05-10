@@ -51,7 +51,7 @@ private:
 	void					LoadFogInfo(const QSC * qsc_objects, IRenderResLoader* render_res_loader);
 	void					LoadSkydomeInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loader);
 	void					LoadFlatSkyLayersInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loader);
-	void					LoadLevelObjects(const QSC* qsc_objects, IRenderResLoader* render_res_loader);
+	void					LoadLevelObjects(const QSC* qsc_objects, IRenderResLoader* render_res_loader, int level_no);
 
 	// pos range: [-2^30, 2^30]
 	dyn_cube_s *			GetDynCube(const double pos[3], int cube_lod_level, glm::ivec3& cube_ctr) override;

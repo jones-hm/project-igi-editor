@@ -344,6 +344,6 @@ public:
 	virtual void			LoadTerrainMatTex(const pic_s* pic) = 0;
 	virtual void			LoadTerrainLMPTex(const pic_s* pic) = 0;
 
-	virtual void			AddLevelObject(const glm::vec3& pos, float yaw, const char* model_id) = 0;
+	virtual void			AddLevelObject(const glm::vec3& pos, float yaw, const char* model_id, int level_no) = 0;
 
 };
