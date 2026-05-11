@@ -838,12 +838,15 @@ void Folders_Init() {
 	wchar_t appdata_wide[MAX_PATH];
 	if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appdata_wide))) {
 		Str_UTF16ToUTF8((const char16_t*)appdata_wide, appdata_buf, 1024);
-		Str_Cat(appdata_buf, 1024, "/QEditor/3DEditor");
-		// Ensure directory exists
-		CreateDirectoryA(appdata_buf, NULL);
-        std::string qDir = std::string(appdata_buf) + "/QEditor";
-        CreateDirectoryA(qDir.c_str(), NULL);
-        CreateDirectoryA(appdata_buf, NULL);
+		Str_Cat(appdata_buf, 1024, "/QEditor");
+		
+		// Ensure base AppData directory exists
+		namespace fs = std::filesystem;
+		try {
+			fs::create_directories(std::string(appdata_buf) + "/QFiles/IGI_QSC");
+			fs::create_directories(std::string(appdata_buf) + "/3DEditor/objects");
+			fs::create_directories(std::string(appdata_buf) + "/3DEditor/textures");
+		} catch (...) {}
 	}
 #endif
 
@@ -869,9 +872,9 @@ void Folders_Init() {
 
 	// If we have AppData path, use it for res, objects, and textures
 	if (appdata_buf[0] != 0) {
-		Str_SPrintf(g_folders.res_folder_, 1024, "%s/res", appdata_buf);
-		Str_SPrintf(g_folders.objects_folder_, 1024, "%s/objects", appdata_buf);
-		Str_SPrintf(g_folders.textures_folder_, 1024, "%s/textures", appdata_buf);
+		Str_SPrintf(g_folders.res_folder_, 1024, "%s/QFiles/IGI_QSC", appdata_buf);
+		Str_SPrintf(g_folders.objects_folder_, 1024, "%s/3DEditor/objects", appdata_buf);
+		Str_SPrintf(g_folders.textures_folder_, 1024, "%s/3DEditor/textures", appdata_buf);
 	} else {
 		Str_SPrintf(g_folders.res_folder_, 1024, "%s/res", buf);
 		Str_SPrintf(g_folders.objects_folder_, 1024, "%s/objects", buf);

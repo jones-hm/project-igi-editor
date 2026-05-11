@@ -30,20 +30,24 @@ Written and maintained by **Jones-HM (Heaven)**.
 ---
  
 ## 📂 Folder Structure
- 
-- **`objects/level1...14/`**: Store `.obj` or `.mef` models for each specific level.
-- **`textures/level1...14/`**: Store `.png` or `.tga` textures for models in each level.
-- **`res/`**: Original IGI level data (CTR, CMD, HMP, etc.).
-- **`shaders/`**: OpenGL GLSL shader source files.
-- **`bin/`**: Compiled executable and DLLs.
+
+The IGI Editor utilizes a standardized Windows AppData structure for asset management, ensuring your project files remain organized and accessible across updates.
+
+- **`%APPDATA%/QEditor/QFiles/IGI_QSC/`**: The primary repository for original IGI level data (CTR, CMD, HMP, etc.).
+- **`%APPDATA%/QEditor/3DEditor/objects/level[1...14]/`**: Level-specific 3D model storage for `.obj` and `.mef` files.
+- **`%APPDATA%/QEditor/3DEditor/textures/level[1...14]/`**: Dedicated texture storage for level assets in `.png` or `.tga` format.
+
+Local Repository Folders:
+- **`shaders/`**: Core OpenGL GLSL shader source files.
+- **`bin/`**: Pre-compiled binaries and required dynamic libraries (DLLs).
 
 ## 🛠️ Future Roadmap
 
-The IGI Editor is under active development. Upcoming features include:
-- **AI & Waypoint Editing**: Tools for defining NPC behaviors and paths.
-- **Weapon & Item Management**: UI for modifying weapon stats and placement.
-- **Task Tree Editor**: IGI 2 style mission objective and task tree visualization.
-- **Native QSC/QVM Integration**: Deeper script-level interaction within the 3D view.
+This editor is focused on providing professional-grade tools for Project IGI modding. Upcoming milestones include:
+- **AI & Waypoint Editing**: Define complex NPC behaviors and navigation paths.
+- **Weapon & Item Management**: Integrated UI for modifying weapon statistics and battlefield placements.
+- **Task Tree Editor**: A visual editor for mission objectives and task tree logic, inspired by IGI 2.
+- **Native QSC/QVM Integration**: Real-time script debugging and interaction within the 3D viewport.
 
 ---
 
