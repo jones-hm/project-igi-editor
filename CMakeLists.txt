@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 # target_precompile_headers
 #   Added in version 3.16
 
-project (igi_terrain 
+project (igi_editor 
   VERSION 1.0
   LANGUAGES C CXX)
 

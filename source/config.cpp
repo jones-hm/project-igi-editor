@@ -124,7 +124,7 @@ void Config::Save() {
     if (!file.is_open()) return;
 
     file << "; ================================================" << std::endl;
-    file << "; PROJECT IGI TERRAIN EDITOR CONFIGURATION" << std::endl;
+    file << "; IGI EDITOR CONFIGURATION" << std::endl;
     file << "; ================================================" << std::endl;
     file << std::endl;
 

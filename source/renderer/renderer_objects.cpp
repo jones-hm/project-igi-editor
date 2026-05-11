@@ -202,29 +202,34 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
 
         // ── Build model matrix ────────────────────────────────────────────────
-        // Use native IGI positions - u_mvp in UBO contains the 0.001 scale
-        // Cast dvec3 to vec3 for rendering
+        // Order: Translate (World) * Rotate (IGI Z-up) * Scale * Rotate (OBJ Y-up to Z-up)
         glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(obj.pos));
+        
+        // 1. Translate to world position
+        // Standard IGI coordinates (Z-up, positive X/Y as per QSC)
+        model = glm::translate(model, glm::vec3(obj.pos.x, obj.pos.y, obj.pos.z));
 
-        // Rotate — IGI uses ZYX order (Yaw, Pitch, Roll) with Param 8=Yaw, 7=Pitch, 6=Roll
-        model = glm::rotate(model, static_cast<float>(obj.rot.z), glm::vec3(0.0f, 0.0f, 1.0f)); // Yaw (Around Z) - Param 8
-        model = glm::rotate(model, static_cast<float>(obj.rot.y), glm::vec3(0.0f, 1.0f, 0.0f)); // Pitch (Around Y) - Param 7
-        model = glm::rotate(model, static_cast<float>(obj.rot.x), glm::vec3(1.0f, 0.0f, 0.0f)); // Roll (Around X) - Param 6
+        // 2. Apply IGI rotations (Yaw, Pitch, Roll)
+        // Order: Yaw(Z) -> Pitch(Y) -> Roll(X)
+        model = glm::rotate(model, static_cast<float>(obj.rot.z), glm::vec3(0.0f, 0.0f, 1.0f)); // Yaw
+        model = glm::rotate(model, static_cast<float>(obj.rot.y),  glm::vec3(0.0f, 1.0f, 0.0f)); // Pitch
+        model = glm::rotate(model, static_cast<float>(obj.rot.x),  glm::vec3(1.0f, 0.0f, 0.0f)); // Roll
 
-        // Scale — OBJ files are in centimeters. 100 cm = 1 meter = WORLD_UNITS_PER_METER (4096 IGI units).
-        // So scale factor = (4096 / 100) = 40.96
-        model = glm::scale(model, glm::vec3((WORLD_UNITS_PER_METER / 100.0f) * obj.scale));
+        // 3. Scale 
+        // Assuming OBJ units are centimeters (1 unit = 0.01m). 
+        // IGI units are 4096 per meter. So 1 OBJ unit = 40.96 IGI units.
+        float base_scale = 40.96f; 
+        model = glm::scale(model, glm::vec3(base_scale * obj.scale));
 
-        // OBJ files are exported Y-up, but IGI is Z-up. Rotate 90 degrees around X to correct the model orientation.
+        // 4. Convert OBJ Y-up to IGI Z-up (90 degree X rotation)
         model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
         // Upload model matrix
         glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(model));
 
         // Upload lighting
-        glUniform3f(loc_dirlight, obj.dirlightR, obj.dirlightG, obj.dirlightB);
-        glUniform3f(loc_ambient,  obj.ambientR,  obj.ambientG,  obj.ambientB);
+        glUniform3f(loc_dirlight, 0.7f, 0.7f, 0.7f);
+        glUniform3f(loc_ambient,  0.3f, 0.3f, 0.3f);
 
         // Draw
         renderModel(mesh);

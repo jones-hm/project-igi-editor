@@ -471,7 +471,7 @@ int main(int argc, char **argv) {
 	int pos_y = (screen_cy - wnd_h) >> 1;
 	glutInitWindowPosition(pos_x, pos_y);
 	glutInitWindowSize(wnd_w, wnd_h);
-	glutCreateWindow("IGI 3D Editor");
+	glutCreateWindow("IGI Editor");
 
 	if (!GL_Init()) {
 		return 1;

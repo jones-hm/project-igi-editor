@@ -35,24 +35,19 @@ void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
                 case 3: if (a->type_ == QSC::arg_s::type_t::DBL) obj.pos.x = a->dbl_; break;
                 case 4: if (a->type_ == QSC::arg_s::type_t::DBL) obj.pos.y = a->dbl_; break;
                 case 5: if (a->type_ == QSC::arg_s::type_t::DBL) obj.pos.z = a->dbl_; break;
-                case 6: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.x = a->dbl_; break; // Alpha/Param 6 -> Roll  (Around X)
-                case 7: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.y = a->dbl_; break; // Beta /Param 7 -> Pitch (Around Y)
-                case 8: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.z = a->dbl_; break; // Gamma/Param 8 -> Yaw   (Around Z)
-                case 9: if (a->type_ == QSC::arg_s::type_t::STR) {
-                    obj.modelId = a->str_;
-                    std::string friendly = GetModelName(obj.modelId);
-                    if (!friendly.empty()) obj.name = friendly;
-                } break;
+                case 6: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.x = a->dbl_; break;
+                case 7: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.y = a->dbl_; break;
+                case 8: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.z = a->dbl_; break;
+                case 9: if (a->type_ == QSC::arg_s::type_t::STR) obj.modelId = a->str_; break;
             }
-
             a = a->next_;
             arg_idx++;
         }
         objects_.push_back(obj);
-        Logger::Get().Log(LogLevel::INFO, "[LevelObjects]   -> Object: " + obj.name + " (" + obj.modelId + ") at (" + std::to_string(obj.pos.x) + ", " + std::to_string(obj.pos.y) + ", " + std::to_string(obj.pos.z) + ") rot (" + std::to_string(obj.rot.x) + ", " + std::to_string(obj.rot.y) + ", " + std::to_string(obj.rot.z) + ")");
+        Logger::Get().Log(LogLevel::INFO, "[LevelObjects]   -> Building: " + obj.modelId + 
+            " at (" + std::to_string(obj.pos.x) + ", " + std::to_string(obj.pos.y) + ", " + std::to_string(obj.pos.z) + ") " +
+            "rot (" + std::to_string(obj.rot.x) + ", " + std::to_string(obj.rot.y) + ", " + std::to_string(obj.rot.z) + ")");
     }
-
-    Logger::Get().Log(LogLevel::INFO, "[LevelObjects] Found " + std::to_string(num_buildings) + " buildings. Total objects in vector: " + std::to_string(objects_.size()));
 
     // Parse EditRigidObjs
     int num_props = qsc_objects->FindFuncByStr("EditRigidObj", qsc_funcs);
@@ -71,26 +66,22 @@ void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
                 case 3: if (a->type_ == QSC::arg_s::type_t::DBL) obj.pos.x = a->dbl_; break;
                 case 4: if (a->type_ == QSC::arg_s::type_t::DBL) obj.pos.y = a->dbl_; break;
                 case 5: if (a->type_ == QSC::arg_s::type_t::DBL) obj.pos.z = a->dbl_; break;
-                case 6: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.x = a->dbl_; break; // Alpha -> Roll (Around X)
-                case 7: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.y = a->dbl_; break; // Beta  -> Pitch (Around Y)
-                case 8: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.z = a->dbl_; break; // Gamma -> Yaw (Around Z)
-                case 9: if (a->type_ == QSC::arg_s::type_t::STR) {
-                    obj.modelId = a->str_;
-                    std::string friendly = GetModelName(obj.modelId);
-                    if (!friendly.empty()) obj.name = friendly;
-                } break;
+                case 6: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.x = a->dbl_; break;
+                case 7: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.y = a->dbl_; break;
+                case 8: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.z = a->dbl_; break;
+                case 9: if (a->type_ == QSC::arg_s::type_t::STR) obj.modelId = a->str_; break;
             }
-
             a = a->next_;
             arg_idx++;
         }
+        
         objects_.push_back(obj);
-        Logger::Get().Log(LogLevel::INFO, "[LevelObjects]   -> Object: " + obj.name + " (" + obj.modelId + ") at (" + std::to_string(obj.pos.x) + ", " + std::to_string(obj.pos.y) + ", " + std::to_string(obj.pos.z) + ") rot (" + std::to_string(obj.rot.x) + ", " + std::to_string(obj.rot.y) + ", " + std::to_string(obj.rot.z) + ")");
+        Logger::Get().Log(LogLevel::INFO, "[LevelObjects]   -> Prop: " + obj.modelId + 
+            " at (" + std::to_string(obj.pos.x) + ", " + std::to_string(obj.pos.y) + ", " + std::to_string(obj.pos.z) + ") " +
+            "rot (" + std::to_string(obj.rot.x) + ", " + std::to_string(obj.rot.y) + ", " + std::to_string(obj.rot.z) + ")");
     }
 
-    Logger::Get().Log(LogLevel::INFO, "[LevelObjects] Found " + std::to_string(num_props) + " props. Total objects: " + std::to_string(objects_.size()));
-
-    Logger::Get().Log(LogLevel::INFO, "[LevelObjects] Load COMPLETE. Final object count: " + std::to_string(objects_.size()));
+    Logger::Get().Log(LogLevel::INFO, "[LevelObjects] Load complete. Total objects: " + std::to_string(objects_.size()));
 }
 
 void LevelObjects::Unload() {

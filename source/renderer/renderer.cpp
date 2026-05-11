@@ -221,7 +221,7 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                 };
 
                 int line_y = 30;
-                draw_text(20, line_y, "--- IGI TERRAIN EDITOR ---", 1.0f, 1.0f, 1.0f); line_y += 15;
+                draw_text(20, line_y, "--- IGI EDITOR ---", 1.0f, 1.0f, 1.0f); line_y += 15;
                 
                 float status_r = 1.0f, status_g = 1.0f, status_b = 0.0f; // Yellow
                 if (hud.status_msg_.find("CONNECTED") != std::string::npos) { status_r = 0.0f; status_g = 1.0f; status_b = 0.0f; } // Green

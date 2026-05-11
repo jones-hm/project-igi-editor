@@ -87,8 +87,8 @@ App::~App() {
 }
 
 bool App::Init(int argc, char** argv) {
-	Logger::Get().Init("igi_terrain_editor.log");
-	Logger::Get().Log(LogLevel::INFO, "Project IGI 3D Editor Initializing...");
+	Logger::Get().Init("igi_editor.log");
+	Logger::Get().Log(LogLevel::INFO, "IGI Editor Initializing...");
 
 	char appDataPath[1024];
 	GetEnvironmentVariableA("APPDATA", appDataPath, 1024);
