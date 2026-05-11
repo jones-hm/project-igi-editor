@@ -15,21 +15,13 @@ struct ConfigData {
     std::string graphsPath;
 
     
-    // [Marker] - Movement
-    char moveForward;
-    char moveBackward;
-    char moveLeft;
-    char moveRight;
-    char moveUp;
-    char moveDown;
-    
-    // [Marker] - Rotation
-    char rotateYawCCW;
-    char rotateYawCW;
-    char rotatePitchUp;
-    char rotatePitchDown;
-    char rotateRollLeft;
-    char rotateRollRight;
+    // [Marker] - IGI 2 Style Manipulation
+    char keySnapGround;
+    char keySnapObject;
+    char keyRotateAlpha;
+    char keyRotateBeta;
+    char keyRotateGamma;
+    char keyResetOri;
     
     // [Marker] - Shortcuts
     char teleportToMarker;

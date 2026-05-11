@@ -1,4 +1,4 @@
-/******************************************************************************
+﻿/******************************************************************************
  * @file    app.cpp
  * @brief   application class
  *****************************************************************************/
@@ -35,6 +35,14 @@ constexpr int MK_STRAIGHT_DOWN	= FLAG_BIT(5);
 constexpr int MK_JUMP			= FLAG_BIT(6);
 constexpr int MK_ROLL_INC		= FLAG_BIT(7);
 constexpr int MK_ROLL_DEC		= FLAG_BIT(8);
+
+// IGI 2 Style Manipulation Flags
+constexpr int MK_MANIP_A		= FLAG_BIT(10);
+constexpr int MK_MANIP_B		= FLAG_BIT(11);
+constexpr int MK_MANIP_G		= FLAG_BIT(12);
+constexpr int MK_MANIP_S		= FLAG_BIT(13);
+constexpr int MK_MANIP_O		= FLAG_BIT(14);
+constexpr int MK_MANIP_SPACE	= FLAG_BIT(15);
 
 App::App():
 	frame_(0),
@@ -111,10 +119,14 @@ bool App::Init(int argc, char** argv) {
 	draw_params_.draw_parts_ = Arg_ReadInt(argc, argv, "-draw_parts", -1);
 	draw_params_.draw_terrain_options_ = Arg_ReadInt(argc, argv, "-draw_terrain_opts", -1);
 	terrain_mod_options_ = Arg_ReadInt(argc, argv, "-terrain_mod_opts", terrain_mod_options_);
+	stick_to_ground_ = Arg_OptionIdx(argc, argv, "-stick_to_ground") > 0;
 
 	int start_level = Arg_ReadInt(argc, argv, "-level", cfg.level);
 	if (start_level >= MIN_LEVEL_NO && start_level <= MAX_LEVEL_NO) {
 		LoadLevel(start_level);
+		if (stick_to_ground_) {
+			SnapObjectsToTerrain();
+		}
 	}
 
 
@@ -267,6 +279,16 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 		if (GLUT_DOWN == state) {
 			mouse_state_.left_button_down_ = true;
 			
+			if (edit_mode_) {
+				marker_manip_.start_x_ = x;
+				marker_manip_.start_y_ = y;
+				if (selected_object_index_ >= 0) {
+					auto& obj = level_.GetLevelObjects().GetObjects()[selected_object_index_];
+					marker_manip_.start_pos_ = obj.pos;
+					marker_manip_.start_rot_ = obj.rot;
+				}
+				EditorProcessClick(); 
+			}
 		}
 		else if (GLUT_UP == state) {
 			mouse_state_.left_button_down_ = false;
@@ -290,6 +312,10 @@ void App::Input_OnMotion(int x, int y) {
 
 			mouse_state_.prior_x_ = x;
 			mouse_state_.prior_y_ = y;
+
+			if (edit_mode_ && selected_object_index_ >= 0) {
+				UpdateMarkerManipulation();
+			}
 		}
 	}
 	else {
@@ -375,6 +401,16 @@ void App::Input_OnSpecial(int key, int x, int y) {
 		input_.keys_ |= MK_ROLL_INC;
 		return;
 	}
+
+	if (key == GLUT_KEY_F11) {
+		if (selected_object_index_ >= 0) {
+			auto& obj = level_.GetLevelObjects().GetObjects()[selected_object_index_];
+			viewer_.pos_ = glm::vec3(obj.pos);
+			UpdateViewerVectors();
+			printf("Teleported to Object [%d]\n", selected_object_index_);
+		}
+		return;
+	}
 }
 
 void App::Input_OnSpecialUp(int key, int x, int y) {
@@ -403,6 +439,15 @@ static constexpr movement_key_s MOVEMENT_KEYS[] = {
 	'q', 'Q', MK_STRAIGHT_UP,
 	'z', 'Z', MK_STRAIGHT_DOWN,
 	' ', ' ', MK_JUMP
+};
+
+static constexpr movement_key_s MANIP_KEYS[] = {
+	'a', 'A', MK_MANIP_A,
+	'b', 'B', MK_MANIP_B,
+	'g', 'G', MK_MANIP_G,
+	's', 'S', MK_MANIP_S,
+	'o', 'O', MK_MANIP_O,
+	' ', ' ', MK_MANIP_SPACE
 };
 
 void App::Input_OnKeyboard(unsigned char key, int x, int y) {
@@ -462,6 +507,14 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		}
 	}
 
+	for (int i = 0; i < count_of(MANIP_KEYS); ++i) {
+		const movement_key_s& mk = MANIP_KEYS[i];
+		if (key == mk.lower_case_ || key == mk.upper_case_) {
+			input_.keys_ |= mk.key_flag_;
+			return;
+		}
+	}
+
 	if (key == 't' || key == 'T') {
 		level_.TeleportToHMP(viewer_.pos_);
 		viewer_.pitch_ = -30.0f; // Look down at the terrain
@@ -485,57 +538,10 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		return;
 	}
 
-	HandleMarkerInput(key);
+	// HandleMarkerInput(key);
 
 }
 
-void App::HandleMarkerInput(unsigned char key) {
-	LevelObjects& lo = level_.GetLevelObjects();
-	std::vector<LevelObject>& objects = lo.GetObjects();
-	if (objects.empty()) return;
-
-	if (selected_object_index_ < 0 || selected_object_index_ >= (int)objects.size()) {
-		selected_object_index_ = 0;
-	}
-
-	LevelObject& obj = objects[selected_object_index_];
-	ConfigData& cfg = Config::Get();
-	char k = (char)toupper(key);
-
-	// Movement steps
-	const float moveStep = 1024.0f; // ~0.25m
-	const float rotStep = 0.05f;  // ~3 degrees
-
-	bool changed = false;
-
-	if (k == cfg.moveForward) { obj.pos.z -= moveStep; changed = true; }
-	else if (k == cfg.moveBackward) { obj.pos.z += moveStep; changed = true; }
-	else if (k == cfg.moveLeft) { obj.pos.x -= moveStep; changed = true; }
-	else if (k == cfg.moveRight) { obj.pos.x += moveStep; changed = true; }
-	else if (k == cfg.moveUp) { obj.pos.y += moveStep; changed = true; }
-	else if (k == cfg.moveDown) { obj.pos.y -= moveStep; changed = true; }
-
-	else if (k == cfg.rotateYawCCW) { obj.rot.z -= rotStep; changed = true; }
-	else if (k == cfg.rotateYawCW) { obj.rot.z += rotStep; changed = true; }
-	else if (k == cfg.rotatePitchUp) { obj.rot.y += rotStep; changed = true; }
-	else if (k == cfg.rotatePitchDown) { obj.rot.y -= rotStep; changed = true; }
-	else if (k == cfg.rotateRollLeft) { obj.rot.x -= rotStep; changed = true; }
-	else if (k == cfg.rotateRollRight) { obj.rot.x += rotStep; changed = true; }
-
-	else if (k == cfg.teleportToMarker) {
-		viewer_.pos_ = glm::vec3(obj.pos);
-		UpdateViewerVectors();
-	}
-	else if (k == cfg.resetMarkerToPlayer) {
-		obj.pos = glm::dvec3(viewer_.pos_);
-		changed = true;
-	}
-
-	if (changed) {
-		printf("Marker [%d] Manipulated: Pos(%.0f, %.0f, %.0f) Rot(%.2f, %.2f, %.2f)\n",
-			selected_object_index_, (double)obj.pos.x, (double)obj.pos.y, (double)obj.pos.z, (double)obj.rot.x, (double)obj.rot.y, (double)obj.rot.z);
-	}
-}
 
 void App::ResetLevel() {
 	char appData[1024];
@@ -583,7 +589,13 @@ void App::Input_OnKeyboardUp(unsigned char key, int x, int y) {
 		const movement_key_s& mk = MOVEMENT_KEYS[i];
 		if (key == mk.lower_case_ || key == mk.upper_case_) {
 			input_.keys_ &= ~mk.key_flag_;
-			return;
+			// Don't return, check manip keys too
+		}
+	}
+	for (int i = 0; i < count_of(MANIP_KEYS); ++i) {
+		const movement_key_s& mk = MANIP_KEYS[i];
+		if (key == mk.lower_case_ || key == mk.upper_case_) {
+			input_.keys_ &= ~mk.key_flag_;
 		}
 	}
 }
@@ -1069,19 +1081,15 @@ void App::EditorProcessClick() {
 	level_.EditorRaycastAndModify(ray_origin, ray_dir, edit_brush_);
 }
 
-bool App::CheckCollision(const glm::vec3& next_pos) {
-    const auto& objects = level_.GetLevelObjects().GetObjects();
-    if (objects.empty()) return false;
-
-    // Player radius for collision
-    float playerRadius = 500.0f; // ~12cm
-
+bool App::CheckCollision(const glm::vec3& nextPos) {
+    auto& objects = level_.GetLevelObjects().GetObjects();
+    
+    float playerRadius = 400.0f; 
+    
     for (const auto& obj : objects) {
-        // Only check objects that are reasonably close
-        float dist = glm::distance(next_pos, glm::vec3(obj.pos));
-        if (dist > 100000.0f) continue; // 100k units = 24m
+        float dist = glm::distance(nextPos, glm::vec3(obj.pos));
+        if (dist > 100000.0f) continue; 
 
-        // Build the SAME model matrix as the renderer to get perfect alignment
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(obj.pos.x, obj.pos.y, obj.pos.z));
         model = glm::rotate(model, (float)obj.rot.z, glm::vec3(0.0f, 0.0f, 1.0f));
@@ -1092,17 +1100,154 @@ bool App::CheckCollision(const glm::vec3& next_pos) {
         model = glm::scale(model, glm::vec3(base_scale * obj.scale));
         model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
-        // Transform player position to model local space
-        glm::vec4 localPos = glm::inverse(model) * glm::vec4(next_pos, 1.0f);
+        glm::vec4 localPos = glm::inverse(model) * glm::vec4(nextPos, 1.0f);
         glm::vec3 extents = renderer_.GetMeshExtents(obj.modelId);
 
-        // AABB check in local space
         if (std::abs(localPos.x) < (extents.x + playerRadius/base_scale) &&
             std::abs(localPos.y) < (extents.y + playerRadius/base_scale) &&
             std::abs(localPos.z) < (extents.z + playerRadius/base_scale)) 
         {
-            return true; // Collision!
+            return true;
         }
     }
     return false;
 }
+
+void App::SnapObjectsToTerrain() {
+    auto& objects = level_.GetLevelObjects().GetObjects();
+    Logger::Get().Log(LogLevel::INFO, "[App] Snapping " + std::to_string(objects.size()) + " objects to terrain...");
+    
+    for (auto& obj : objects) {
+        float terrainZ = 0.0f;
+        if (level_.GetTerrainZ(glm::vec3(obj.pos), terrainZ)) {
+            float zOffset = renderer_.GetMeshZOffset(obj.modelId);
+            // Stick origin to terrain, then add zOffset to stick bottom to surface
+            // zOffset = -min_p.z, so terrainZ + zOffset*scale should align bottom to ground
+            obj.pos.z = (double)terrainZ + (double)(zOffset * 40.96f * obj.scale); 
+        }
+    }
+}
+void App::UpdateMarkerManipulation() {
+
+	if (selected_object_index_ < 0) return;
+
+	auto& objects = level_.GetLevelObjects().GetObjects();
+
+	if (selected_object_index_ >= (int)objects.size()) return;
+
+	LevelObject& obj = objects[selected_object_index_];
+
+
+
+	int mods = glutGetModifiers();
+
+	bool shift = (mods & GLUT_ACTIVE_SHIFT);
+
+	bool ctrl = (mods & GLUT_ACTIVE_CTRL);
+
+
+
+	// Delta in screen space from start of drag
+
+	int dx = mouse_state_.prior_x_ - marker_manip_.start_x_;
+
+	int dy = mouse_state_.prior_y_ - marker_manip_.start_y_;
+
+
+
+	// Mode selection logic (matches IGI 2 editor behavior)
+
+	if (shift && ctrl) marker_manip_.mode_ = ManipulationMode::MoveXZ;
+
+	else if (shift) marker_manip_.mode_ = ManipulationMode::MoveXY;
+
+	else if (ctrl) marker_manip_.mode_ = ManipulationMode::MoveXZ;
+
+	else if (input_.keys_ & MK_MANIP_A) marker_manip_.mode_ = ManipulationMode::RotateAlpha;
+
+	else if (input_.keys_ & MK_MANIP_B) marker_manip_.mode_ = ManipulationMode::RotateBeta;
+
+	else if (input_.keys_ & MK_MANIP_G) marker_manip_.mode_ = ManipulationMode::RotateGamma;
+
+	else marker_manip_.mode_ = ManipulationMode::None;
+
+
+
+	// Sensitivity constants
+
+	const float moveSensitivity = 200.0f; // World units per pixel drag
+
+	const float rotSensitivity = 0.01f;   // Radians per pixel drag
+
+
+
+	if (marker_manip_.mode_ == ManipulationMode::MoveXY) {
+
+		// Move on XY plane relative to camera view
+
+		glm::vec3 right = viewer_.right_;
+
+		glm::vec3 forward = glm::normalize(glm::vec3(viewer_.forward_.x, viewer_.forward_.y, 0.0f));
+
+		obj.pos = marker_manip_.start_pos_ + glm::dvec3(right * (float)dx * moveSensitivity + forward * (float)-dy * moveSensitivity);
+
+	}
+
+	else if (marker_manip_.mode_ == ManipulationMode::MoveXZ) {
+
+		// Move on Screen-Right and Screen-Up (approximates XZ plane relative to camera)
+
+		glm::vec3 right = viewer_.right_;
+
+		glm::vec3 up = glm::vec3(0, 0, 1);
+
+		obj.pos = marker_manip_.start_pos_ + glm::dvec3(right * (float)dx * moveSensitivity + up * (float)-dy * moveSensitivity);
+
+	}
+
+	else if (marker_manip_.mode_ == ManipulationMode::RotateAlpha) {
+
+		obj.rot.x = marker_manip_.start_rot_.x + (float)dx * rotSensitivity;
+
+	}
+
+	else if (marker_manip_.mode_ == ManipulationMode::RotateBeta) {
+
+		obj.rot.y = marker_manip_.start_rot_.y + (float)dx * rotSensitivity;
+
+	}
+
+	else if (marker_manip_.mode_ == ManipulationMode::RotateGamma) {
+
+		obj.rot.z = marker_manip_.start_rot_.z + (float)dx * rotSensitivity;
+
+	}
+
+
+
+	// Instantaneous actions (one-off checks while dragging)
+
+	if (input_.keys_ & MK_MANIP_S) {
+
+		float terrainZ = 0.0f;
+
+		if (level_.GetTerrainZ(glm::vec3(obj.pos), terrainZ)) {
+
+			float zOffset = renderer_.GetMeshZOffset(obj.modelId);
+
+			obj.pos.z = (double)terrainZ + (double)(zOffset * 40.96f * obj.scale);
+
+		}
+
+	}
+
+	if (input_.keys_ & MK_MANIP_SPACE) {
+
+		obj.rot = glm::vec3(0.0f);
+
+	}
+
+}
+
+
+

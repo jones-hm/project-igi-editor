@@ -2,13 +2,14 @@
 #define TINYOBJLOADER_DISABLE_FAST_FLOAT
 #include "../../third_party/tiny_obj_loader.h"
 #include "model.h"
+#include "wic_loader.h"
 #include "../pch.h"
 #include <glm/gtc/type_ptr.hpp>
 #include <vector>
 #include <stdexcept>
 #include <iostream>
 
-Mesh loadObjModel(const std::string& filepath) {
+Mesh loadObjModel(const std::string& filepath, const std::string& texturePath) {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t>    shapes;
     std::vector<tinyobj::material_t> materials;
@@ -90,8 +91,22 @@ Mesh loadObjModel(const std::string& filepath) {
 
     Mesh mesh;
     mesh.textureID = 0;
+
+    // Load texture if path provided
+    if (!texturePath.empty()) {
+        pic_s pic = {0};
+        if (WIC_LoadImage(texturePath.c_str(), pic)) {
+            mesh.textureID = GL_RegisterTexture(&pic, GL_REPEAT, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR, true);
+            MEM_FREE_(pic.pixels_);
+            std::cout << "[OBJ] Loaded texture: " << texturePath << " (ID: " << mesh.textureID << ")\n";
+        } else {
+            std::cerr << "[OBJ] Failed to load texture: " << texturePath << "\n";
+        }
+    }
+
     mesh.vertexCount = static_cast<int>(vertices.size()) / 8;
     mesh.halfExtents = (max_p - min_p) * 0.5f;
+    mesh.zOffset = -min_p.y; // Correct for Y-up models where base is at min_y
 
     // Store vertex data in the mesh for client-side rendering
     mesh.vertexData = new float[vertices.size()];

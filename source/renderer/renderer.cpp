@@ -185,8 +185,11 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
 
         if (hud.show_hud_) {
                 glUseProgram(0); // Disable any active shaders for fixed-function HUD
+                glBindVertexArray(0); // UNBIND VAO to prevent state leak
+                glBindBufferBase(GL_UNIFORM_BUFFER, 0, 0); // UNBIND UBO
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, 0);
+                glDisable(GL_TEXTURE_2D);
                 GL_CHECK_ERROR;
 
                 glDisable(GL_DEPTH_TEST);

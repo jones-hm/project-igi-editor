@@ -42,21 +42,14 @@ void Config::CreateDefault() {
 
 
     
-    data_.moveForward = 'I';
-    data_.moveBackward = 'K';
-    data_.moveLeft = 'J';
-    data_.moveRight = 'L';
-    data_.moveUp = 'U';
-    data_.moveDown = 'O';
+    data_.keySnapGround = 'S';
+    data_.keySnapObject = 'O';
+    data_.keyRotateAlpha = 'A';
+    data_.keyRotateBeta = 'B';
+    data_.keyRotateGamma = 'G';
+    data_.keyResetOri = ' '; // Space
     
-    data_.rotateYawCCW = '[';
-    data_.rotateYawCW = ']';
-    data_.rotatePitchUp = ';';
-    data_.rotatePitchDown = '\'';
-    data_.rotateRollLeft = '.';
-    data_.rotateRollRight = '/';
-    
-    data_.teleportToMarker = 'M';
+    data_.teleportToMarker = 0; // F11 is handled specially
     data_.resetMarkerToPlayer = 'H';
 }
 
@@ -100,18 +93,12 @@ void Config::Load() {
 
 
                 char c = (val.empty() ? 0 : val[0]);
-                if (key == "MoveForward") data_.moveForward = c;
-                else if (key == "MoveBackward") data_.moveBackward = c;
-                else if (key == "MoveLeft") data_.moveLeft = c;
-                else if (key == "MoveRight") data_.moveRight = c;
-                else if (key == "MoveUp") data_.moveUp = c;
-                else if (key == "MoveDown") data_.moveDown = c;
-                else if (key == "RotateYawCCW") data_.rotateYawCCW = c;
-                else if (key == "RotateYawCW") data_.rotateYawCW = c;
-                else if (key == "RotatePitchUp") data_.rotatePitchUp = c;
-                else if (key == "RotatePitchDown") data_.rotatePitchDown = c;
-                else if (key == "RotateRollLeft") data_.rotateRollLeft = c;
-                else if (key == "RotateRollRight") data_.rotateRollRight = c;
+                if (key == "ManipulatePositionSnapToGround") data_.keySnapGround = c;
+                else if (key == "ManipulatePositionSnapToObject") data_.keySnapObject = c;
+                else if (key == "ManipulateOrientationAlpha") data_.keyRotateAlpha = c;
+                else if (key == "ManipulateOrientationBeta") data_.keyRotateBeta = c;
+                else if (key == "ManipulateOrientationGamma") data_.keyRotateGamma = c;
+                else if (key == "ManipulateOrientationReset") data_.keyResetOri = ' ';
                 else if (key == "TeleportToMarker") data_.teleportToMarker = c;
                 else if (key == "ResetMarkerToPlayer") data_.resetMarkerToPlayer = c;
             }
@@ -129,26 +116,13 @@ void Config::Save() {
     file << std::endl;
 
     file << "[GamePath]" << std::endl;
-    file << "; The root directory of your Project IGI installation." << std::endl;
-    file << "; Example: IGIPath=C:\\Games\\Project IGI" << std::endl;
     file << "IGIPath=" << data_.igiPath << std::endl;
-    file << std::endl;
-
-    file << "; The level number to load on startup (1-14)." << std::endl;
     file << "Level=" << data_.level << std::endl;
-    file << std::endl;
-
-    file << "; Path to the editor's data resources (usually current directory '.')" << std::endl;
     file << "EditorPath=" << data_.editorPath << std::endl;
-    file << std::endl;
-
-    file << "; Path to the QEditor AppData folder (where IGIModels.json and QCompiler are located)." << std::endl;
-    file << "; Example: QEditorPath=C:\\Users\\YourName\\AppData\\Roaming\\QEditor" << std::endl;
     file << "QEditorPath=" << data_.qEditorPath << std::endl;
     file << std::endl;
 
     file << "[Paths]" << std::endl;
-    file << "; Granular paths for QEditor components (derived from QEditorPath by default)" << std::endl;
     file << "AIFiles=" << data_.aiPath << std::endl;
     file << "QCompiler=" << data_.compilerPath << std::endl;
     file << "QFiles=" << data_.filesPath << std::endl;
@@ -156,35 +130,20 @@ void Config::Save() {
     file << std::endl;
 
     file << "[Marker]" << std::endl;
-
-    file << "; ------------------------------------------------" << std::endl;
-    file << "; Object Manipulation Key Bindings" << std::endl;
-    file << "; (Use capital letters for single keys)" << std::endl;
-    file << "; ------------------------------------------------" << std::endl;
+    file << "; IGI 2 Editor-style object manipulation bindings" << std::endl;
+    file << "Manipulate=LeftMouseButton" << std::endl;
+    file << "ManipulatePositionXY=Shift" << std::endl;
+    file << "ManipulatePositionXZ=Ctrl" << std::endl;
+    file << "ManipulatePositionXZAlt=Shift+Ctrl" << std::endl;
+    file << "ManipulatePositionSnapToGround=" << data_.keySnapGround << std::endl;
+    file << "ManipulatePositionSnapToObject=" << data_.keySnapObject << std::endl;
+    file << "ManipulateOrientationAlpha=" << data_.keyRotateAlpha << std::endl;
+    file << "ManipulateOrientationBeta=" << data_.keyRotateBeta << std::endl;
+    file << "ManipulateOrientationGamma=" << data_.keyRotateGamma << std::endl;
+    file << "ManipulateOrientationReset=Space" << std::endl;
     file << std::endl;
 
-    file << "; Marker Movement (World Space)" << std::endl;
-    file << "MoveForward=" << data_.moveForward << std::endl;
-    file << "MoveBackward=" << data_.moveBackward << std::endl;
-    file << "MoveLeft=" << data_.moveLeft << std::endl;
-    file << "MoveRight=" << data_.moveRight << std::endl;
-    file << "MoveUp=" << data_.moveUp << std::endl;
-    file << "MoveDown=" << data_.moveDown << std::endl;
-    file << std::endl;
-
-    file << "; Marker Rotation (Radians)" << std::endl;
-    file << "RotateYawCCW=" << data_.rotateYawCCW << std::endl;
-    file << "RotateYawCW=" << data_.rotateYawCW << std::endl;
-    file << "RotatePitchUp=" << data_.rotatePitchUp << std::endl;
-    file << "RotatePitchDown=" << data_.rotatePitchDown << std::endl;
-    file << "RotateRollLeft=" << data_.rotateRollLeft << std::endl;
-    file << "RotateRollRight=" << data_.rotateRollRight << std::endl;
-    file << std::endl;
-
-    file << "; Utility Shortcuts" << std::endl;
-    file << "; TeleportToMarker: Moles camera to object" << std::endl;
-    file << "TeleportToMarker=" << data_.teleportToMarker << std::endl;
-    file << "; ResetMarkerToPlayer: Brings object to current camera position" << std::endl;
+    file << "TeleportToMarker=F11" << std::endl;
     file << "ResetMarkerToPlayer=" << data_.resetMarkerToPlayer << std::endl;
 }
 

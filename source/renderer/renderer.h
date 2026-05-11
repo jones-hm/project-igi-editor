@@ -88,6 +88,7 @@ public:
 
 	void					Draw(const draw_params_s& params, const hud_params_s& hud);
 	glm::vec3				GetMeshExtents(const std::string& modelId) { return objects_.GetMeshExtents(modelId); }
+	float					GetMeshZOffset(const std::string& modelId) { return objects_.GetMeshZOffset(modelId); }
 
 private:
 

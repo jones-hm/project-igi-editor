@@ -71,7 +71,7 @@ public:
 	// idle
 	void					OnIdle();
 
-	void					HandleMarkerInput(unsigned char key);
+	// void					HandleMarkerInput(unsigned char key); // Removed
 
 
 private:
@@ -144,12 +144,33 @@ private:
 		bool				on_ground_;
 	} viewer_;
 
+	enum class ManipulationMode {
+		None,
+		MoveXY,
+		MoveXZ,
+		RotateAlpha,
+		RotateBeta,
+		RotateGamma
+	};
+
+	struct marker_manip_s {
+		ManipulationMode	mode_ = ManipulationMode::None;
+		int					start_x_ = 0;
+		int					start_y_ = 0;
+		glm::dvec3			start_pos_;
+		glm::vec3			start_rot_;
+	} marker_manip_;
+
 	void					Frame(float delta_seconds);
 
 	void					ProcessInput(float delta_seconds);
 	bool					CheckCollision(const glm::vec3& next_pos);
+	void					SnapObjectsToTerrain();
+
+	bool					stick_to_ground_ = false;
 	void					UpdateViewerVectors();
 	void					UpdateViewDefine();
 	void					EditorProcessClick();
+	void					UpdateMarkerManipulation();
 
 };

@@ -215,7 +215,19 @@ void Level::Update(update_params_s& params) {
 
 void Level::SaveChanges() {
 	terrain_.Save(cur_level_no_);
-	level_objects_.SaveToQSC(qsc_path_);
+	
+	ConfigData& cfg = Config::Get();
+	
+	// Save 1: Editor Root
+	std::string localQsc = "objects.qsc";
+	level_objects_.SaveToQSC(localQsc);
+	Logger::Get().Log(LogLevel::INFO, "[Level] Saved to Local: " + localQsc);
+
+	// Save 2: IGI Game Directory
+	char gameQsc[1024];
+	Str_SPrintf(gameQsc, 1024, "%s\\missions\\location0\\level%d\\objects.qsc", cfg.igiPath.c_str(), cur_level_no_);
+	level_objects_.SaveToQSC(gameQsc);
+	Logger::Get().Log(LogLevel::INFO, "[Level] Saved to Game Path: " + std::string(gameQsc));
 }
 
 bool Level::GetTerrainZ(const glm::vec3& pos, float& z) {

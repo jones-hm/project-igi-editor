@@ -45,14 +45,26 @@ in vec3 v_fragPos;
 
 uniform vec3 u_dirlight;   // directional light RGB
 uniform vec3 u_ambient;    // ambient light RGB
+uniform sampler2D u_texture;
+uniform int u_useTexture;
 
 out vec4 fragColor;
 
 void main() {
     vec3 lightDir  = normalize(vec3(0.5, 1.0, 0.5));
     float diff     = max(dot(normalize(v_normal), lightDir), 0.0);
-    vec3 color     = u_ambient + u_dirlight * diff;
-    fragColor      = vec4(color, 1.0);
+    vec3 light     = u_ambient + u_dirlight * diff;
+    
+    vec4 texColor = (u_useTexture != 0) ? texture(u_texture, v_uv) : vec4(1.0, 1.0, 1.0, 1.0);
+    
+    // Mix building hash color with texture if no texture
+    if (u_useTexture == 0) {
+        fragColor = vec4(light * texColor.rgb, 1.0);
+    } else {
+        fragColor = vec4(light * texColor.rgb, texColor.a);
+    }
+    
+    if (fragColor.a < 0.1) discard;
 }
 )";
 
@@ -192,6 +204,8 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     GLint loc_model    = glGetUniformLocation(shader_program_, "u_model");
     GLint loc_dirlight = glGetUniformLocation(shader_program_, "u_dirlight");
     GLint loc_ambient  = glGetUniformLocation(shader_program_, "u_ambient");
+    GLint loc_useTex   = glGetUniformLocation(shader_program_, "u_useTexture");
+    GLint loc_tex      = glGetUniformLocation(shader_program_, "u_texture");
 
     for (const auto& obj : objects) {
         // Selective rendering logic
@@ -248,20 +262,33 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         glUniform3f(loc_dirlight, 0.7f, 0.7f, 0.7f);
         glUniform3f(loc_ambient,  r * 0.4f, g * 0.4f, b * 0.4f);
 
+        // Texture binding
+        if (mesh.textureID > 0) {
+            glUniform1i(loc_useTex, 1);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, mesh.textureID);
+            glUniform1i(loc_tex, 0);
+        } else {
+            glUniform1i(loc_useTex, 0);
+        }
+
         // Draw
         renderModel(mesh);
     }
 
     // Always reset polygon mode after draw
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-    // Draw selection box for selected object (DISABLED for now)
-    // if (selected_object_index >= 0 && selected_object_index < (int)objects.size()) {
-    //     DrawSelectionBox(objects[selected_object_index], ubo_mats);
-    // }
-
+    
     // Unbind shader
     glUseProgram(0);
+}
+
+float Renderer_Objects::GetMeshZOffset(const std::string& modelId) {
+    auto it = mesh_cache_.find(modelId);
+    if (it != mesh_cache_.end()) {
+        return it->second.zOffset;
+    }
+    return GetOrLoadMesh(modelId).zOffset;
 }
 
 glm::vec3 Renderer_Objects::GetMeshExtents(const std::string& modelId) {
@@ -287,7 +314,17 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId) {
 
     // Load and cache
     try {
-        Mesh mesh = loadObjModel(filepath);
+        // Try to find matching texture in textures/level1
+        std::string texPath = "textures/level1/" + modelId + ".png";
+        if (!std::filesystem::exists(texPath)) {
+            texPath = "textures/level1/" + modelId + "_argb8888.png";
+        }
+        
+        if (!std::filesystem::exists(texPath)) {
+            texPath = ""; // Fallback to no texture (default)
+        }
+
+        Mesh mesh = loadObjModel(filepath, texPath);
         mesh_cache_[modelId] = mesh;
         Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Success: Loaded model '" + modelId + "' from " + filepath + " (" + std::to_string(mesh.vertexCount) + " vertices)");
         return mesh;

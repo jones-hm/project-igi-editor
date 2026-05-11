@@ -15,6 +15,7 @@ public:
 
     void Draw(GLuint ubo_mats, bool overlay_wireframe, const std::vector<LevelObject>& objects, int selected_object_index, int draw_parts);
     glm::vec3 GetMeshExtents(const std::string& modelId);
+    float GetMeshZOffset(const std::string& modelId);
 
 private:
     std::map<std::string, Mesh> mesh_cache_;

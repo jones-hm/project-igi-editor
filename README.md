@@ -73,6 +73,21 @@ The output binary file will write to bin folder.
 | -level &lt;level_no: 1~13&gt;    | Set start level                   |
 | -yaw   &lt;degree&gt;            | Set viewer start yaw              |
 | -pitch &lt;degree: -89~89&gt;    | Set viewer start pitch            |
+| -stick_to_ground                | Snap all objects to terrain height |
+
+### Render Mode (`-draw_parts`) Flags:
+
+You can combine these values to render multiple parts (e.g., `-draw_parts 49` for Everything).
+
+| Render Mode | Flag Value | Command Example |
+| :--- | :--- | :--- |
+| **Only 3D Buildings** | `16` | `.\bin\Release\igi-editor.exe -level 1 -draw_parts 16` |
+| **Only Rigid Objects (Props)** | `32` | `.\bin\Release\igi-editor.exe -level 1 -draw_parts 32` |
+| **Both Buildings & Objects** | `48` | `.\bin\Release\igi-editor.exe -level 1 -draw_parts 48` |
+| **Buildings + Terrain** | `17` | `.\bin\Release\igi-editor.exe -level 1 -draw_parts 17` |
+| **Props + Terrain** | `33` | `.\bin\Release\igi-editor.exe -level 1 -draw_parts 33` |
+| **Everything (Both + Terrain)** | `49` | `.\bin\Release\igi-editor.exe -level 1 -draw_parts 49` |
+| **Legacy Mode (All Objects)** | `5` | `.\bin\Release\igi-editor.exe -level 1 -draw_parts 5` |
 
 # Input
 
