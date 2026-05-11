@@ -43,6 +43,24 @@ void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
             a = a->next_;
             arg_idx++;
         }
+
+        // Extract numeric ID from taskId if it contains Task_New pattern
+        // Example: "Task_New(90, ...)" -> extract "90"
+        if (!obj.taskId.empty() && obj.taskId.find("Task_New(") == 0) {
+            size_t parenStart = obj.taskId.find('(');
+            size_t parenEnd = obj.taskId.find(',', parenStart);
+            if (parenStart != std::string::npos && parenEnd != std::string::npos) {
+                std::string idStr = obj.taskId.substr(parenStart + 1, parenEnd - parenStart - 1);
+                // Trim whitespace
+                size_t start = idStr.find_first_not_of(" \t");
+                size_t end = idStr.find_last_not_of(" \t");
+                if (start != std::string::npos && end != std::string::npos) {
+                    obj.taskId = idStr.substr(start, end - start + 1);
+                } else {
+                    obj.taskId = idStr;
+                }
+            }
+        }
         objects_.push_back(obj);
         Logger::Get().Log(LogLevel::INFO, "[LevelObjects]   -> Building: " + obj.modelId + 
             " at (" + std::to_string(obj.pos.x) + ", " + std::to_string(obj.pos.y) + ", " + std::to_string(obj.pos.z) + ") " +
@@ -74,7 +92,24 @@ void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
             a = a->next_;
             arg_idx++;
         }
-        
+
+        // Extract numeric ID from taskId if it contains Task_New pattern
+        if (!obj.taskId.empty() && obj.taskId.find("Task_New(") == 0) {
+            size_t parenStart = obj.taskId.find('(');
+            size_t parenEnd = obj.taskId.find(',', parenStart);
+            if (parenStart != std::string::npos && parenEnd != std::string::npos) {
+                std::string idStr = obj.taskId.substr(parenStart + 1, parenEnd - parenStart - 1);
+                // Trim whitespace
+                size_t start = idStr.find_first_not_of(" \t");
+                size_t end = idStr.find_last_not_of(" \t");
+                if (start != std::string::npos && end != std::string::npos) {
+                    obj.taskId = idStr.substr(start, end - start + 1);
+                } else {
+                    obj.taskId = idStr;
+                }
+            }
+        }
+
         objects_.push_back(obj);
         Logger::Get().Log(LogLevel::INFO, "[LevelObjects]   -> Prop: " + obj.modelId + 
             " at (" + std::to_string(obj.pos.x) + ", " + std::to_string(obj.pos.y) + ", " + std::to_string(obj.pos.z) + ") " +

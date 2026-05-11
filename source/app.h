@@ -36,16 +36,19 @@ public:
 	// draw wireframe on top of solid mesh
 	void					ToggleOverlayWireframe();
 	void					ToggleDrawParts(int part);
+	void					SetDrawParts(int parts);
 	void					ToggleTerrainDrawOption(int opt);
 	void					ToggleTerrainModOption(int opt);
 
 	void					ToggleEditMode();
 	bool					GetEditMode() const;
+	void					SetEditMode(bool enabled);
+	void					SetTerrainEditEnabled(bool enabled);
+	bool					GetTerrainEditEnabled() const;
 	void					TogglePauseMenu();
 	bool					GetPauseMode() const;
 	void					SetEditBrush(int brush);
 	int						GetEditBrush() const;
-
 	void					ToggleShowHUD();
 	bool					GetShowHUD() const;
 
@@ -70,6 +73,8 @@ public:
 
 	// idle
 	void					OnIdle();
+
+	int						PickObjectAtScreenPos(int screen_x, int screen_y);
 
 	// void					HandleMarkerInput(unsigned char key); // Removed
 
@@ -112,6 +117,7 @@ private:
 	bool					pause_mode_;
 	int						edit_brush_;
 	int						selected_object_index_;
+	int						hover_object_index_;	// Object under mouse cursor
 	int						transform_flag_;	// 0-7 for cube transform flags
 	bool					show_hud_;
 	bool					show_debug_;

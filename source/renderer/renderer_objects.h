@@ -25,7 +25,7 @@ private:
     GLuint shader_program_;
     GLuint ubo_binding_point_;
     GLuint selection_vao_, selection_vbo_;
-    
+
     Mesh GetOrLoadMesh(const std::string& modelId);
     Mesh CreateCubeMesh();
     std::string FindModelFile(const std::string& modelId);

@@ -58,6 +58,17 @@ target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source)
 if (WIN32)
   target_link_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/lib/x64)
   target_link_libraries(igi-editor PRIVATE freeglut glew32 OpenGL32)
+  
+  # Set runtime library based on configuration
+  set_target_properties(igi-editor PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${PROJECT_SOURCE_DIR}/bin/Debug"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}/bin/Release"
+  )
+  
+  # Ensure Release builds don't use debug runtime
+  set_target_properties(igi-editor PROPERTIES
+    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+  )
 else()
   target_link_libraries(igi-editor PRIVATE glut GL GLEW)
 endif()

@@ -38,10 +38,12 @@ constexpr int MENU_TERRAIN_HEIGHT_MOD = 52;
 constexpr int MENU_TERRAIN_DISCARD_MOD = 53;
 
 constexpr int MENU_EDITOR_TOGGLE = 71;
-constexpr int MENU_EDITOR_BRUSH_RAISE = 72;
-constexpr int MENU_EDITOR_BRUSH_LOWER = 73;
-constexpr int MENU_EDITOR_SAVE = 74;
-constexpr int MENU_IGI_LIVE_DATA = 75;
+constexpr int MENU_EDIT_OBJECTS = 72;
+constexpr int MENU_EDIT_TERRAIN = 73;
+constexpr int MENU_TERRAIN_BRUSH_RAISE = 74;
+constexpr int MENU_TERRAIN_BRUSH_LOWER = 75;
+constexpr int MENU_EDITOR_SAVE = 76;
+constexpr int MENU_IGI_LIVE_DATA = 77;
 constexpr int MENU_SCALE_0_1 = 81;
 constexpr int MENU_SCALE_0_5 = 82;
 constexpr int MENU_SCALE_1 = 83;
@@ -49,6 +51,9 @@ constexpr int MENU_SCALE_2 = 84;
 constexpr int MENU_SCALE_5 = 85;
 constexpr int MENU_SCALE_10 = 86;
 constexpr int MENU_SCALE_20 = 87;
+constexpr int MENU_SHOW_ALL = 88;
+constexpr int MENU_SHOW_OBJECTS_ONLY = 89;
+constexpr int MENU_SHOW_BUILDINGS_ONLY = 90;
 
 constexpr int BRUSH_RAISE = 0;
 constexpr int BRUSH_LOWER = 1;
@@ -63,6 +68,8 @@ static int g_menu_terrain_modifier_opts;
 static int g_menu_choose_level;
 static int g_menu_editor_tools;
 static int g_menu_object_scale;
+static int g_menu_show_options;
+static int g_menu_terrain_brush;
 static int g_main_menu;
 
 // glut (ubuntu): Menu manipulation not allowed while menus in use.
@@ -75,8 +82,9 @@ constexpr int UPDATE_MENU_OVERLAY_WIREFRAME = FLAG_BIT(0);
 constexpr int UPDATE_MENU_DRAW_PARTS = FLAG_BIT(1);
 constexpr int UPDATE_MENU_TERRAIN_DRAW_OPTS = FLAG_BIT(2);
 constexpr int UPDATE_MENU_TERRAIN_MODIFIER_OPTS = FLAG_BIT(3);
-constexpr int UPDATE_MENU_CHOOSE_LEVEL = FLAG_BIT(4);
-constexpr int UPDATE_MENU_EDITOR_TOOLS = FLAG_BIT(5);
+constexpr int UPDATE_MENU_EDITOR_TOOLS = FLAG_BIT(4);
+constexpr int UPDATE_MENU_SHOW_OPTIONS = FLAG_BIT(5);
+constexpr int UPDATE_MENU_CHOOSE_LEVEL = FLAG_BIT(6);
 
 /*
 ================================================================================
@@ -161,6 +169,10 @@ static void OnIdle() {
 			UpdateEditorToolsMenuText();
 			UpdateIGILiveDataMenuText();
 			UpdateScaleMenuText();
+		}
+
+		if (g_update_menu_flags & UPDATE_MENU_SHOW_OPTIONS) {
+			// Update show options menu text if needed
 		}
 
 		// clear menu update flags
@@ -300,13 +312,31 @@ static void UpdateEditorToolsMenuText() {
 		glutChangeToMenuEntry(1, "Toggle Edit Mode [-]", MENU_EDITOR_TOGGLE);
 	}
 
-	if (g_app.GetEditBrush() == BRUSH_RAISE) {
-		glutChangeToMenuEntry(2, "Brush: Raise Terrain [*]", MENU_EDITOR_BRUSH_RAISE);
-		glutChangeToMenuEntry(3, "Brush: Lower Terrain [ ]", MENU_EDITOR_BRUSH_LOWER);
+	if (g_app.GetTerrainEditEnabled()) {
+		glutChangeToMenuEntry(2, "Edit Objects [ ]", MENU_EDIT_OBJECTS);
+		glutChangeToMenuEntry(3, "Edit Terrain [*]", MENU_EDIT_TERRAIN);
 	}
 	else {
-		glutChangeToMenuEntry(2, "Brush: Raise Terrain [ ]", MENU_EDITOR_BRUSH_RAISE);
-		glutChangeToMenuEntry(3, "Brush: Lower Terrain [*]", MENU_EDITOR_BRUSH_LOWER);
+		glutChangeToMenuEntry(2, "Edit Objects [*]", MENU_EDIT_OBJECTS);
+		glutChangeToMenuEntry(3, "Edit Terrain [ ]", MENU_EDIT_TERRAIN);
+	}
+
+	glutSetMenu(g_menu_terrain_brush);
+	if (g_app.GetEditBrush() == BRUSH_RAISE) {
+		glutChangeToMenuEntry(1, "Brush: Raise Terrain [*]", MENU_TERRAIN_BRUSH_RAISE);
+		glutChangeToMenuEntry(2, "Brush: Lower Terrain [ ]", MENU_TERRAIN_BRUSH_LOWER);
+	}
+	else {
+		glutChangeToMenuEntry(1, "Brush: Raise Terrain [ ]", MENU_TERRAIN_BRUSH_RAISE);
+		glutChangeToMenuEntry(2, "Brush: Lower Terrain [*]", MENU_TERRAIN_BRUSH_LOWER);
+	}
+
+	glutSetMenu(g_menu_editor_tools);
+	if (g_app.GetShowHUD()) {
+		glutChangeToMenuEntry(6, "Show IGI Live Data [*]", MENU_IGI_LIVE_DATA);
+	}
+	else {
+		glutChangeToMenuEntry(6, "Show IGI Live Data [ ]", MENU_IGI_LIVE_DATA);
 	}
 }
 
@@ -387,11 +417,21 @@ static void OnMenu(int menu) {
 		g_app.ToggleEditMode();
 		g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
 		break;
-	case MENU_EDITOR_BRUSH_RAISE:
+	case MENU_EDIT_OBJECTS:
+		g_app.SetEditMode(true);
+		g_app.SetTerrainEditEnabled(false);
+		g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
+		break;
+	case MENU_EDIT_TERRAIN:
+		g_app.SetEditMode(true);
+		g_app.SetTerrainEditEnabled(true);
+		g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
+		break;
+	case MENU_TERRAIN_BRUSH_RAISE:
 		g_app.SetEditBrush(BRUSH_RAISE);
 		g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
 		break;
-	case MENU_EDITOR_BRUSH_LOWER:
+	case MENU_TERRAIN_BRUSH_LOWER:
 		g_app.SetEditBrush(BRUSH_LOWER);
 		g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
 		break;
@@ -409,6 +449,18 @@ static void OnMenu(int menu) {
 	case MENU_SCALE_5:   g_app.SetSelectedObjectScale(5.0f); g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS; break;
 	case MENU_SCALE_10:  g_app.SetSelectedObjectScale(10.0f); g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS; break;
 	case MENU_SCALE_20:  g_app.SetSelectedObjectScale(20.0f); g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS; break;
+	case MENU_SHOW_ALL:
+		g_app.SetDrawParts(Renderer::DRAW_OBJECTS | Renderer::DRAW_BUILDINGS);
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		break;
+	case MENU_SHOW_OBJECTS_ONLY:
+		g_app.SetDrawParts(Renderer::DRAW_OBJECTS);
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		break;
+	case MENU_SHOW_BUILDINGS_ONLY:
+		g_app.SetDrawParts(Renderer::DRAW_BUILDINGS);
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		break;
 	case MENU_CLOSE:
 		glutLeaveMainLoop();
 		break;
@@ -534,12 +586,16 @@ int main(int argc, char **argv) {
 		glutAddMenuEntry("", i);
 	}
 
+	g_menu_terrain_brush = glutCreateMenu(OnMenu);
+	glutAddMenuEntry("Brush: Raise Terrain", MENU_TERRAIN_BRUSH_RAISE);
+	glutAddMenuEntry("Brush: Lower Terrain", MENU_TERRAIN_BRUSH_LOWER);
+
 	g_menu_editor_tools = glutCreateMenu(OnMenu);
-	glutAddMenuEntry("", MENU_EDITOR_TOGGLE);
-	glutAddMenuEntry("", MENU_EDITOR_BRUSH_RAISE);
-	glutAddMenuEntry("", MENU_EDITOR_BRUSH_LOWER);
+	glutAddMenuEntry("Toggle Edit Mode", MENU_EDITOR_TOGGLE);
+	glutAddMenuEntry("Edit Objects", MENU_EDIT_OBJECTS);
+	glutAddMenuEntry("Edit Terrain", MENU_EDIT_TERRAIN);
+	glutAddSubMenu("Terrain Brush", g_menu_terrain_brush);
 	glutAddMenuEntry("Save Changes", MENU_EDITOR_SAVE);
-	glutAddMenuEntry("", MENU_IGI_LIVE_DATA);
 
 	g_menu_object_scale = glutCreateMenu(OnMenu);
 	glutAddMenuEntry("0.1x", MENU_SCALE_0_1);
@@ -550,6 +606,11 @@ int main(int argc, char **argv) {
 	glutAddMenuEntry("10.0x", MENU_SCALE_10);
 	glutAddMenuEntry("20.0x", MENU_SCALE_20);
 
+	g_menu_show_options = glutCreateMenu(OnMenu);
+	glutAddMenuEntry("Show All", MENU_SHOW_ALL);
+	glutAddMenuEntry("Show Objects Only", MENU_SHOW_OBJECTS_ONLY);
+	glutAddMenuEntry("Show Buildings Only", MENU_SHOW_BUILDINGS_ONLY);
+
 	g_main_menu = glutCreateMenu(OnMenu);
 	glutAddMenuEntry("", MENU_OVERLAY_WIREFRAME);
 	glutAddSubMenu("Draw Parts", g_menu_draw_parts);
@@ -557,6 +618,7 @@ int main(int argc, char **argv) {
 	glutAddSubMenu("Terrain Mod Options", g_menu_terrain_modifier_opts);
 	glutAddSubMenu("Editor Tools", g_menu_editor_tools);
 	glutAddSubMenu("Object Scale", g_menu_object_scale);
+	glutAddSubMenu("Show Options", g_menu_show_options);
 	glutAddSubMenu("Choose Level", g_menu_choose_level);
 	glutAddMenuEntry("Close", MENU_CLOSE);
 

@@ -191,6 +191,8 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
     // OpenGL state
     glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
     glEnable(GL_CULL_FACE);
     glDisable(GL_BLEND);
 
@@ -339,7 +341,8 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId) {
 
     } catch (const std::exception& e) {
         Logger::Get().Log(LogLevel::ERR, "[Renderer_Objects] Load FAILED for " + modelId + ": " + std::string(e.what()));
-        mesh_cache_[modelId] = {0, 0, 0};
+        Mesh emptyMesh;
+        mesh_cache_[modelId] = emptyMesh;
         return mesh_cache_[modelId];
     }
 

@@ -13,6 +13,7 @@ struct ConfigData {
     std::string compilerPath;
     std::string filesPath;
     std::string graphsPath;
+    std::string texturesPath;
 
     
     // [Marker] - IGI 2 Style Manipulation
@@ -26,6 +27,12 @@ struct ConfigData {
     // [Marker] - Shortcuts
     char teleportToMarker;
     char resetMarkerToPlayer;
+
+    // Movement Keys
+    char keyMoveForward;
+    char keyMoveBackward;
+    char keyMoveLeft;
+    char keyMoveRight;
 };
 
 class Config {

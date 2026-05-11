@@ -106,7 +106,7 @@ Mesh loadObjModel(const std::string& filepath, const std::string& texturePath) {
 
     mesh.vertexCount = static_cast<int>(vertices.size()) / 8;
     mesh.halfExtents = (max_p - min_p) * 0.5f;
-    mesh.zOffset = -min_p.y; // Correct for Y-up models where base is at min_y
+    mesh.zOffset = -min_p.y; // Y-up models rotated 90deg, so Y becomes Z in world space
 
     // Store vertex data in the mesh for client-side rendering
     mesh.vertexData = new float[vertices.size()];

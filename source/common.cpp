@@ -7,6 +7,7 @@
 #include <mutex>
 #include <stdarg.h>
 #include "logger.h"
+#include "config.h"
 #include <string>
 #include <filesystem>
 
@@ -873,7 +874,13 @@ void Folders_Init() {
 	// If we have AppData path, use it for res, objects, and textures
 	if (appdata_buf[0] != 0) {
 		Str_SPrintf(g_folders.res_folder_, 1024, "%s/QFiles/IGI_QSC", appdata_buf);
-		Str_SPrintf(g_folders.objects_folder_, 1024, "%s/3DEditor/objects", appdata_buf);
+		// Use configured textures path from Config
+		std::string configuredTexturesPath = Config::Get().texturesPath;
+		if (!configuredTexturesPath.empty()) {
+			Str_Copy(g_folders.textures_folder_, 1024, configuredTexturesPath.c_str());
+		} else {
+			Str_SPrintf(g_folders.objects_folder_, 1024, "%s/3DEditor/objects", appdata_buf);
+		}
 		Str_SPrintf(g_folders.textures_folder_, 1024, "%s/3DEditor/textures", appdata_buf);
 	} else {
 		Str_SPrintf(g_folders.res_folder_, 1024, "%s/res", buf);

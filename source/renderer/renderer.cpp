@@ -22,11 +22,67 @@ Renderer::Renderer():
 	ubo_mats_(0),
 	ubo_fog_(0)
 {
-	//
+	LoadBuildingNames();
 }
 
 Renderer::~Renderer() {
 	Shutdown();
+}
+
+void Renderer::LoadBuildingNames() {
+	char appDataPath[1024];
+	GetEnvironmentVariableA("APPDATA", appDataPath, 1024);
+	std::string jsonPath = std::string(appDataPath) + "\\QEditor\\IGIModels.json";
+
+	FILE* f = fopen(jsonPath.c_str(), "rb");
+	if (!f) {
+		std::cerr << "[Renderer] Failed to open IGIModels.json at: " << jsonPath << std::endl;
+		return;
+	}
+
+	fseek(f, 0, SEEK_END);
+	long fileSize = ftell(f);
+	fseek(f, 0, SEEK_SET);
+
+	char* buf = new char[fileSize + 1];
+	fread(buf, 1, fileSize, f);
+	buf[fileSize] = '\0';
+	fclose(f);
+
+	std::string content(buf);
+	delete[] buf;
+
+	// Simple JSON parsing - find ModelName and ModelId pairs
+	size_t pos = 0;
+	while ((pos = content.find("\"ModelName\"", pos)) != std::string::npos) {
+		size_t nameStart = content.find("\"", pos + 12) + 1;
+		size_t nameEnd = content.find("\"", nameStart);
+		if (nameStart == std::string::npos || nameEnd == std::string::npos) break;
+
+		std::string modelName = content.substr(nameStart, nameEnd - nameStart);
+
+		size_t idPos = content.find("\"ModelId\"", nameEnd);
+		if (idPos == std::string::npos) break;
+
+		size_t idStart = content.find("\"", idPos + 10) + 1;
+		size_t idEnd = content.find("\"", idStart);
+		if (idStart == std::string::npos || idEnd == std::string::npos) break;
+
+		std::string modelId = content.substr(idStart, idEnd - idStart);
+
+		building_names_[modelId] = modelName;
+		pos = idEnd + 1;
+	}
+
+	std::cout << "[Renderer] Loaded " << building_names_.size() << " building names from IGIModels.json" << std::endl;
+}
+
+std::string Renderer::GetBuildingName(const std::string& modelId) {
+	auto it = building_names_.find(modelId);
+	if (it != building_names_.end()) {
+		return it->second;
+	}
+	return "Building";
 }
 
 bool Renderer::Init() {
@@ -230,19 +286,26 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                 if (hud.status_msg_.find("CONNECTED") != std::string::npos) { status_r = 0.0f; status_g = 1.0f; status_b = 0.0f; } // Green
                 draw_text(20, line_y, hud.status_msg_.c_str(), status_r, status_g, status_b); line_y += 15;
 
-                // Always show Editor Position in NATIVE MODE or CONNECTED mode
+                // Show Editor (Player) Position
                 char buf[256];
-                sprintf(buf, "EDITOR X: %.2f Y: %.2f Z: %.2f", hud.raw_pos_.x, hud.raw_pos_.y, hud.raw_pos_.z);
+                sprintf(buf, "EDITOR POSITION X: %.2f Y: %.2f Z: %.2f", hud.raw_pos_.x, hud.raw_pos_.y, hud.raw_pos_.z);
                 draw_text(20, line_y, buf, 1.0f, 1.0f, 1.0f); line_y += 15;
-                
-                sprintf(buf, "POSITION X: %.3fm Y: %.3fm Z: %.3fm", hud.meters_pos_.x, hud.meters_pos_.y, hud.meters_pos_.z);
-                draw_text(20, line_y, buf, 1.0f, 1.0f, 1.0f); line_y += 15;
-                
-                sprintf(buf, "GROUND DIST: %.3fm", hud.ground_offset_ / 4096.0f);
-                draw_text(20, line_y, buf, 1.0f, 1.0f, 1.0f); line_y += 15;
-                
-                sprintf(buf, "YAW: %.3f PITCH: %.3f ROLL: %.3f", hud.cam_yaw_, hud.cam_pitch_, hud.cam_roll_);
+
+                sprintf(buf, "EDITOR YAW: %.3f PITCH: %.3f ROLL: %.3f", hud.cam_yaw_, hud.cam_pitch_, hud.cam_roll_);
                 draw_text(20, line_y, buf, 0.5f, 1.0f, 0.5f); line_y += 15;
+
+                // Show Selected Object Position if an object is selected
+                if (hud.selected_object_index_ >= 0 && hud.level_objects_) {
+                        const auto& objects = hud.level_objects_->GetObjects();
+                        if (hud.selected_object_index_ < (int)objects.size()) {
+                                const auto& obj = objects[hud.selected_object_index_];
+                                sprintf(buf, "SELECTED OBJECT X: %.2f Y: %.2f Z: %.2f", obj.pos.x, obj.pos.y, obj.pos.z);
+                                draw_text(20, line_y, buf, 1.0f, 1.0f, 0.0f); line_y += 15;
+
+                                sprintf(buf, "OBJECT YAW: %.2f PITCH: %.2f ROLL: %.2f", obj.rot.z, obj.rot.x, obj.rot.y);
+                                draw_text(20, line_y, buf, 0.5f, 1.0f, 0.5f); line_y += 15;
+                        }
+                }
                 
                 sprintf(buf, "ANGLE H: %.3f V: %.3f", hud.view_h_, hud.view_v_);
                 draw_text(20, line_y, buf, 1.0f, 0.5f, 0.0f); line_y += 15;
@@ -252,39 +315,86 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                 
                 draw_text(20, line_y, "Checks: 0", 1.0f, 1.0f, 1.0f);
 
+                // Display hover object info at mouse position (always show, not just in debug)
+                // Only show in free mode (when edit mode is disabled)
+                if (!hud.edit_mode_ && hud.hover_object_index_ >= 0 && hud.level_objects_) {
+                        const auto& objects = hud.level_objects_->GetObjects();
+                        if (hud.hover_object_index_ < (int)objects.size()) {
+                                const auto& obj = objects[hud.hover_object_index_];
+
+                                char buf[512];
+                                // Get building name from IGIModels.json
+                                std::string building_name = GetBuildingName(obj.modelId);
+
+                                // Get task ID - use taskId if it's numeric, otherwise use 0
+                                int building_id = 0;
+                                try {
+                                        if (!obj.taskId.empty()) {
+                                                building_id = std::stoi(obj.taskId);
+                                        }
+                                } catch (...) {
+                                        building_id = 0;
+                                }
+
+                                // Building Name ID in WHITE above mouse (offset upward from cursor)
+                                snprintf(buf, sizeof(buf), "%s ID:%d", building_name.c_str(), building_id);
+                                int text_x = hud.mouse_x_;
+                                int text_y = hud.mouse_y_ + 25;
+                                // Clamp to viewport
+                                if (text_x < 0) text_x = 0;
+                                if (text_x > params.view_define_->viewport_width_ - 200) text_x = params.view_define_->viewport_width_ - 200;
+                                if (text_y < 0) text_y = 0;
+                                if (text_y > params.view_define_->viewport_height_ - 50) text_y = params.view_define_->viewport_height_ - 50;
+                                draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
+
+                                // Model ID in GREEN above mouse (closer to cursor)
+                                snprintf(buf, sizeof(buf), "%s", obj.modelId.c_str());
+                                text_y = hud.mouse_y_ + 10;
+                                if (text_y < 0) text_y = 0;
+                                if (text_y > params.view_define_->viewport_height_ - 30) text_y = params.view_define_->viewport_height_ - 30;
+                                draw_text(text_x, text_y, buf, 0.0f, 1.0f, 0.0f);
+                        }
+                }
 
                 if (hud.pause_mode_) {
-                        int menu_w = 200;
-                        int menu_h = 160;
-
+                        int menu_w = 350;
+                        int menu_h = 200;
                         int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
                         int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
 
-                        // Draw background
-                        glColor4f(0.1f, 0.1f, 0.1f, 0.8f);
+                        // Draw semi-transparent background
+                        glEnable(GL_BLEND);
+                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                        glColor4f(0.0f, 0.0f, 0.0f, 0.8f);
                         glBegin(GL_QUADS);
                         glVertex2i(menu_x, menu_y);
                         glVertex2i(menu_x + menu_w, menu_y);
                         glVertex2i(menu_x + menu_w, menu_y + menu_h);
                         glVertex2i(menu_x, menu_y + menu_h);
                         glEnd();
+                        glDisable(GL_BLEND);
 
-                        // Draw border
-                        glColor3f(1.0f, 1.0f, 1.0f);
+                        // Draw outline with thicker lines
+                        glLineWidth(2.0f);
+                        glColor3f(1.0f, 1.0f, 0.0f);
                         glBegin(GL_LINE_LOOP);
                         glVertex2i(menu_x, menu_y);
                         glVertex2i(menu_x + menu_w, menu_y);
                         glVertex2i(menu_x + menu_w, menu_y + menu_h);
                         glVertex2i(menu_x, menu_y + menu_h);
                         glEnd();
+                        glLineWidth(1.0f);
 
-                        draw_text(menu_x + 60, params.view_define_->viewport_height_ - (menu_y + 120), "PAUSE MENU", 1.0f, 1.0f, 0.0f);
-                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y + 90), "[ESC] RESUME", 1.0f, 1.0f, 1.0f);
-                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y + 70), "[S]   SAVE LEVEL", 1.0f, 1.0f, 1.0f);
-                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y + 50), "[=]   RESET LEVEL", 0.5f, 1.0f, 1.0f);
-                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y + 30), "[R]   RESET SCRIPT", 1.0f, 0.7f, 0.3f);
-                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y + 10), "[D]   DEBUG", 0.0f, 1.0f, 0.0f);
-                        draw_text(menu_x + 30, params.view_define_->viewport_height_ - (menu_y - 10), "[Q]   EXIT", 1.0f, 0.5f, 0.5f);
+                        // Title
+                        draw_text(menu_x + menu_w/2 - 50, menu_y + menu_h - 30, "PAUSE MENU", 1.0f, 1.0f, 0.0f);
+
+                        // Menu items
+                        draw_text(menu_x + 30, menu_y + menu_h - 60, "[ESC] RESUME", 1.0f, 1.0f, 1.0f);
+                        draw_text(menu_x + 30, menu_y + menu_h - 85, "[S]   SAVE LEVEL", 1.0f, 1.0f, 1.0f);
+                        draw_text(menu_x + 30, menu_y + menu_h - 110, "[=]   RESET LEVEL", 0.5f, 1.0f, 1.0f);
+                        draw_text(menu_x + 30, menu_y + menu_h - 135, "[R]   RESET SCRIPT", 1.0f, 0.7f, 0.3f);
+                        draw_text(menu_x + 30, menu_y + menu_h - 160, "[D]   DEBUG", 0.0f, 1.0f, 0.0f);
+                        draw_text(menu_x + 30, menu_y + menu_h - 185, "[Q]   EXIT", 1.0f, 0.5f, 0.5f);
 
 
                 }
@@ -300,23 +410,6 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                                 else if (it->level == LogLevel::WARNING) { r = 1.0f; g = 1.0f; b = 0.0f; }
 
                                 draw_text(10, startY - count * 15, it->message.c_str(), r, g, b);
-                        }
-
-                        // Display selected object info
-                        if (hud.selected_object_index_ >= 0 && hud.level_objects_) {
-                                const auto& objects = hud.level_objects_->GetObjects();
-                                if (hud.selected_object_index_ < (int)objects.size()) {
-                                        const auto& obj = objects[hud.selected_object_index_];
-                                        char buf[512];
-                                        snprintf(buf, sizeof(buf), "SELECTED: [%d] %s (%s)", hud.selected_object_index_, obj.name.c_str(), obj.modelId.c_str());
-                                        draw_text(10, 50, buf, 1.0f, 1.0f, 0.0f);
-                                        snprintf(buf, sizeof(buf), "Pos: (%.0f, %.0f, %.0f)", (double)obj.pos.x, (double)obj.pos.y, (double)obj.pos.z);
-                                        draw_text(10, 35, buf, 1.0f, 1.0f, 1.0f);
-                                        snprintf(buf, sizeof(buf), "Rot (Alpha/Beta/Gamma): (%.2f, %.2f, %.2f)", (double)obj.rot.x, (double)obj.rot.y, (double)obj.rot.z);
-                                        draw_text(10, 20, buf, 1.0f, 1.0f, 1.0f);
-                                        snprintf(buf, sizeof(buf), "Scale: %.2f", obj.scale);
-                                        draw_text(10, 5, buf, 1.0f, 1.0f, 1.0f);
-                                }
                         }
                 }
 

@@ -39,6 +39,7 @@ void Config::CreateDefault() {
     data_.compilerPath = data_.qEditorPath + "\\QCompiler";
     data_.filesPath = data_.qEditorPath + "\\QFiles";
     data_.graphsPath = data_.qEditorPath + "\\QGraphs";
+    data_.texturesPath = data_.qEditorPath + "\\3DEditor\\textures";
 
 
     
@@ -51,6 +52,12 @@ void Config::CreateDefault() {
     
     data_.teleportToMarker = 0; // F11 is handled specially
     data_.resetMarkerToPlayer = 'H';
+
+    // Movement keys (arrow keys) - using GLUT special key codes
+    data_.keyMoveForward = 101; // GLUT_KEY_UP
+    data_.keyMoveBackward = 103; // GLUT_KEY_DOWN
+    data_.keyMoveLeft = 100; // GLUT_KEY_LEFT
+    data_.keyMoveRight = 102; // GLUT_KEY_RIGHT
 }
 
 static std::string Trim(const std::string& s) {
@@ -89,12 +96,29 @@ void Config::Load() {
                 else if (key == "QCompiler") data_.compilerPath = val;
                 else if (key == "QFiles") data_.filesPath = val;
                 else if (key == "QGraphs") data_.graphsPath = val;
+                else if (key == "Textures") data_.texturesPath = val;
             } else if (section == "Marker") {
 
 
                 char c = (val.empty() ? 0 : val[0]);
                 if (key == "ManipulatePositionSnapToGround") data_.keySnapGround = c;
                 else if (key == "ManipulatePositionSnapToObject") data_.keySnapObject = c;
+                else if (key == "MoveForward") {
+                    if (val == "Up") data_.keyMoveForward = 101; // GLUT_KEY_UP
+                    else data_.keyMoveForward = c;
+                }
+                else if (key == "MoveBackward") {
+                    if (val == "Down") data_.keyMoveBackward = 103; // GLUT_KEY_DOWN
+                    else data_.keyMoveBackward = c;
+                }
+                else if (key == "MoveLeft") {
+                    if (val == "Left") data_.keyMoveLeft = 100; // GLUT_KEY_LEFT
+                    else data_.keyMoveLeft = c;
+                }
+                else if (key == "MoveRight") {
+                    if (val == "Right") data_.keyMoveRight = 102; // GLUT_KEY_RIGHT
+                    else data_.keyMoveRight = c;
+                }
                 else if (key == "ManipulateOrientationAlpha") data_.keyRotateAlpha = c;
                 else if (key == "ManipulateOrientationBeta") data_.keyRotateBeta = c;
                 else if (key == "ManipulateOrientationGamma") data_.keyRotateGamma = c;
@@ -124,7 +148,14 @@ void Config::Save() {
 
     file << "[Paths]" << std::endl;
     file << "AIFiles=" << data_.aiPath << std::endl;
+    file << std::endl;
+    file << "; Movement Keys (Arrow keys for camera movement)" << std::endl;
+    file << "MoveForward=Up" << std::endl;
+    file << "MoveBackward=Down" << std::endl;
+    file << "MoveLeft=Left" << std::endl;
+    file << "MoveRight=Right" << std::endl;
     file << "QCompiler=" << data_.compilerPath << std::endl;
+    file << "Textures=" << data_.texturesPath << std::endl;
     file << "QFiles=" << data_.filesPath << std::endl;
     file << "QGraphs=" << data_.graphsPath << std::endl;
     file << std::endl;
