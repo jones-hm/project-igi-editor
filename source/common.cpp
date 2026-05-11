@@ -7,11 +7,14 @@
 #include <mutex>
 #include <stdarg.h>
 #include "logger.h"
+#include <string>
+#include <filesystem>
 
 
 #if defined(_WIN32)
 # define WIN32_LEAN_AND_MEAN
 # include <windows.h>
+# include <shlobj.h>
 #endif
 
 #if defined(__GNUC__)
@@ -824,11 +827,24 @@ folders_s g_folders;
 
 void Folders_Init() {
 	char buf[1024] = {};
+	char appdata_buf[1024] = {};
 
 #if defined(_WIN32)
 	wchar_t buf_wide[1024];
 	GetModuleFileName(GetModuleHandle(NULL), buf_wide, 1024);
 	Str_UTF16ToUTF8((const char16_t*)buf_wide, buf, 1024);
+
+	// Get AppData path
+	wchar_t appdata_wide[MAX_PATH];
+	if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appdata_wide))) {
+		Str_UTF16ToUTF8((const char16_t*)appdata_wide, appdata_buf, 1024);
+		Str_Cat(appdata_buf, 1024, "/QEditor/3DEditor");
+		// Ensure directory exists
+		CreateDirectoryA(appdata_buf, NULL);
+        std::string qDir = std::string(appdata_buf) + "/QEditor";
+        CreateDirectoryA(qDir.c_str(), NULL);
+        CreateDirectoryA(appdata_buf, NULL);
+	}
 #endif
 
 #if defined(__linux__)
@@ -851,7 +867,17 @@ void Folders_Init() {
 
 	Str_EraseDoubleDotsInPath(buf);
 
-	Str_SPrintf(g_folders.res_folder_, 1024, "%s/res", buf);
+	// If we have AppData path, use it for res, objects, and textures
+	if (appdata_buf[0] != 0) {
+		Str_SPrintf(g_folders.res_folder_, 1024, "%s/res", appdata_buf);
+		Str_SPrintf(g_folders.objects_folder_, 1024, "%s/objects", appdata_buf);
+		Str_SPrintf(g_folders.textures_folder_, 1024, "%s/textures", appdata_buf);
+	} else {
+		Str_SPrintf(g_folders.res_folder_, 1024, "%s/res", buf);
+		Str_SPrintf(g_folders.objects_folder_, 1024, "%s/objects", buf);
+		Str_SPrintf(g_folders.textures_folder_, 1024, "%s/textures", buf);
+	}
+
 	Str_SPrintf(g_folders.shader_folder_, 1024, "%s/shaders", buf);
 
 	// debug

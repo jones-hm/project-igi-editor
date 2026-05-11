@@ -53,17 +53,22 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 	ConfigData& cfg = Config::Get();
 	char filename[1024];
 
-	// Priority 1: Editor Root
-	Str_SPrintf(filename, 1024, "objects.qsc");
+	// Priority 1: Editor Root (AppData/res)
+	Str_SPrintf(filename, 1024, "%s/objects.qsc", g_folders.res_folder_);
 	
 	if (!File_Exists(filename)) {
-		// Priority 2: IGI Game Directory
-		Str_SPrintf(filename, 1024, "%s\\missions\\location0\\level%d\\objects.qsc", cfg.igiPath.c_str(), params.level_no_);
-		
+		// Priority 2: Mission-specific folder in AppData/res
+		Str_SPrintf(filename, 1024, "%s/missions/location0/level%d/objects.qsc", g_folders.res_folder_, params.level_no_);
+
 		if (!File_Exists(filename)) {
-			// Priority 3: Decompile into Editor Root
-			DecompileObjects(params.level_no_);
-			Str_SPrintf(filename, 1024, "objects.qsc");
+			// Priority 3: IGI Game Directory
+			Str_SPrintf(filename, 1024, "%s\\missions\\location0\\level%d\\objects.qsc", cfg.igiPath.c_str(), params.level_no_);
+			
+			if (!File_Exists(filename)) {
+				// Priority 4: Decompile into Editor Root
+				DecompileObjects(params.level_no_);
+				Str_SPrintf(filename, 1024, "objects.qsc");
+			}
 		}
 	}
 

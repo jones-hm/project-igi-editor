@@ -315,16 +315,17 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId) {
     // Load and cache
     try {
         std::string levelDir = "level" + std::to_string(current_level_);
+        std::string texturesBase = g_folders.textures_folder_;
         
         // Try to find matching texture in textures/levelX
-        std::string texPath = "textures/" + levelDir + "/" + modelId + ".png";
+        std::string texPath = texturesBase + "/" + levelDir + "/" + modelId + ".png";
         if (!std::filesystem::exists(texPath)) {
-            texPath = "textures/" + levelDir + "/" + modelId + "_argb8888.png";
+            texPath = texturesBase + "/" + levelDir + "/" + modelId + "_argb8888.png";
         }
         
         // Fallback to textures/ (non-level specific)
         if (!std::filesystem::exists(texPath)) {
-             texPath = "textures/" + modelId + ".png";
+             texPath = texturesBase + "/" + modelId + ".png";
         }
         
         if (!std::filesystem::exists(texPath)) {
@@ -373,18 +374,19 @@ Mesh Renderer_Objects::CreateCubeMesh() {
 
 std::string Renderer_Objects::FindModelFile(const std::string& modelId) {
     std::string levelDir = "level" + std::to_string(current_level_);
+    std::string objectsBase = g_folders.objects_folder_;
     
     // 1. Try exact match in level-specific folder
     const std::vector<std::string> searchPaths = { 
-        "objects/" + levelDir + "/" + modelId + ".obj", 
-        "objects/" + levelDir + "/" + modelId + ".mef",
-        "objects/" + modelId + ".obj",
-        "objects/" + modelId + ".mef"
+        objectsBase + "/" + levelDir + "/" + modelId + ".obj", 
+        objectsBase + "/" + levelDir + "/" + modelId + ".mef",
+        objectsBase + "/" + modelId + ".obj",
+        objectsBase + "/" + modelId + ".mef"
     };
     for (const auto& path : searchPaths) if (std::filesystem::exists(path)) return path;
     
     // 2. Try partial match (wildcard search in 'objects/levelX' folder)
-    std::string objectsPath = "objects/" + levelDir;
+    std::string objectsPath = objectsBase + "/" + levelDir;
     if (std::filesystem::exists(objectsPath)) {
         // Try BaseID (stripped of _1) if applicable
         std::string baseId = modelId;
