@@ -165,6 +165,7 @@ void App::Shutdown() {
 }
 
 void App::LoadLevel(int level_no) {
+	renderer_.SetLevel(level_no);
 	renderer_.BeginLoadLevel();
 
 	Level::load_params_s level_load_params_s = {

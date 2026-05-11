@@ -13,11 +13,14 @@ public:
     bool Init();
     void Shutdown();
 
+    void SetLevel(int level) { current_level_ = level; }
+
     void Draw(GLuint ubo_mats, bool overlay_wireframe, const std::vector<LevelObject>& objects, int selected_object_index, int draw_parts);
     glm::vec3 GetMeshExtents(const std::string& modelId);
     float GetMeshZOffset(const std::string& modelId);
 
 private:
+    int current_level_ = 1;
     std::map<std::string, Mesh> mesh_cache_;
     GLuint shader_program_;
     GLuint ubo_binding_point_;
@@ -29,4 +32,3 @@ private:
     void DrawSelectionBox(const LevelObject& obj, GLuint ubo_mats);
     void InitSelectionBox();
 };
-

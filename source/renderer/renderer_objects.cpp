@@ -314,10 +314,17 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId) {
 
     // Load and cache
     try {
-        // Try to find matching texture in textures/level1
-        std::string texPath = "textures/level1/" + modelId + ".png";
+        std::string levelDir = "level" + std::to_string(current_level_);
+        
+        // Try to find matching texture in textures/levelX
+        std::string texPath = "textures/" + levelDir + "/" + modelId + ".png";
         if (!std::filesystem::exists(texPath)) {
-            texPath = "textures/level1/" + modelId + "_argb8888.png";
+            texPath = "textures/" + levelDir + "/" + modelId + "_argb8888.png";
+        }
+        
+        // Fallback to textures/ (non-level specific)
+        if (!std::filesystem::exists(texPath)) {
+             texPath = "textures/" + modelId + ".png";
         }
         
         if (!std::filesystem::exists(texPath)) {
@@ -365,11 +372,20 @@ Mesh Renderer_Objects::CreateCubeMesh() {
 }
 
 std::string Renderer_Objects::FindModelFile(const std::string& modelId) {
-    const std::vector<std::string> searchPaths = { "objects/" + modelId + ".obj", "objects/" + modelId + ".mef" };
+    std::string levelDir = "level" + std::to_string(current_level_);
+    
+    // 1. Try exact match in level-specific folder
+    const std::vector<std::string> searchPaths = { 
+        "objects/" + levelDir + "/" + modelId + ".obj", 
+        "objects/" + levelDir + "/" + modelId + ".mef",
+        "objects/" + modelId + ".obj",
+        "objects/" + modelId + ".mef"
+    };
     for (const auto& path : searchPaths) if (std::filesystem::exists(path)) return path;
     
-    // 2. Try partial match (wildcard search in 'objects' folder)
-    if (std::filesystem::exists("objects")) {
+    // 2. Try partial match (wildcard search in 'objects/levelX' folder)
+    std::string objectsPath = "objects/" + levelDir;
+    if (std::filesystem::exists(objectsPath)) {
         // Try BaseID (stripped of _1) if applicable
         std::string baseId = modelId;
         if (baseId.size() > 2 && baseId.substr(baseId.size() - 2) == "_1") {
@@ -377,7 +393,7 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId) {
         }
 
         std::string bestMatch = "";
-        for (const auto& entry : std::filesystem::directory_iterator("objects")) {
+        for (const auto& entry : std::filesystem::directory_iterator(objectsPath)) {
             if (!entry.is_regular_file()) continue;
             std::string fname = entry.path().filename().string();
             std::string ext = entry.path().extension().string();

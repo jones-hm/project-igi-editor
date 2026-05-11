@@ -65,6 +65,7 @@ public:
 	void					Shutdown();
 
 	void					BeginLoadLevel();
+	void					SetLevel(int level) { objects_.SetLevel(level); }
 
 	// interface of IRendererLoader
 	void					SetupClearColor(const glm::vec4& color) override;

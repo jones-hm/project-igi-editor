@@ -26,6 +26,16 @@ Written and maintained by **Jones-HM (Heaven)**.
  
 ![IGI Models Screenshot](assets/igi-models.png)
 *3D Object Loading and Manipulation in the IGI Editor.*
+ 
+---
+ 
+## 📂 Folder Structure
+ 
+- **`objects/level1...14/`**: Store `.obj` or `.mef` models for each specific level.
+- **`textures/level1...14/`**: Store `.png` or `.tga` textures for models in each level.
+- **`res/`**: Original IGI level data (CTR, CMD, HMP, etc.).
+- **`shaders/`**: OpenGL GLSL shader source files.
+- **`bin/`**: Compiled executable and DLLs.
 
 ## 🛠️ Future Roadmap
 
@@ -105,7 +115,6 @@ If you want to use this data, respect fellow researchers and give proper credits
 - **[Dark](https://www.youtube.com/@CRONOQUILLOFFICIAL)** 🌟 - **Contributed on Various Projects and files (Resources, QVM, QSC etc) and UI/UX Designs**.
 - **[Ferit Coder](https://www.youtube.com/channel/UCpn_gZMkFVBUAe9SJK9hYQA)** 🌟 - **Helped with IGI 2 ToolKit Maps/Models conversion to IGI 1**.
 - **[Neo](https://next.nexusmods.com/profile/xaeroneo?gameId=5664)** 🌟 - **Helped with improvement of ToolKit overall and Texture ToolKit**.
-- **[Chat-GPT Pro](https://chat.openai.com/)** 🌟 - **Understanding complex game mechanics** with _Reverse Engineering_ and **Advanced Data Analysis** of Game files _QVM, QSC, .DAT and more_.
 
 ---
 
