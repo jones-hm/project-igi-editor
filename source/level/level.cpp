@@ -5,6 +5,8 @@
 
 #include "pch.h"
 #include <filesystem>
+#include <vector>
+#include <algorithm>
 #include "logger.h"
 
 
@@ -97,23 +99,68 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 		return false;
 	}
 
-	// Priority 1: Executable directory (where igi-editor.exe is)
-	Str_SPrintf(filename, 1024, "%s\\objects.qsc", exeDir.c_str());
+	// Get timestamps of all available objects files and pick the latest
+	char appData[1024];
+	GetEnvironmentVariableA("APPDATA", appData, 1024);
 
-	if (!File_Exists(filename)) {
-		// Priority 2: Mission-specific folder in AppData/QFiles/IGI_QSC
-		Str_SPrintf(filename, 1024, "%s/missions/location0/level%d/objects.qsc", g_folders.res_folder_, params.level_no_);
+	char editorQsc[1024];
+	Str_SPrintf(editorQsc, 1024, "%s\\objects.qsc", exeDir.c_str());
 
-		if (!File_Exists(filename)) {
-			// Priority 3: IGI Game Directory
-			Str_SPrintf(filename, 1024, "%s\\missions\\location0\\level%d\\objects.qsc", cfg.igiPath.c_str(), params.level_no_);
+	char qeditorQsc[1024];
+	Str_SPrintf(qeditorQsc, 1024, "%s\\QEditor\\QFiles\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", appData, params.level_no_);
 
-			if (!File_Exists(filename)) {
-				// Priority 4: Decompile into executable directory
-				DecompileObjects(params.level_no_);
-				Str_SPrintf(filename, 1024, "%s\\objects.qsc", exeDir.c_str());
-			}
+	char igiQsc[1024];
+	Str_SPrintf(igiQsc, 1024, "%s\\missions\\location0\\level%d\\objects.qsc", cfg.igiPath.c_str(), params.level_no_);
+
+	char igiQvm[1024];
+	Str_SPrintf(igiQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", cfg.igiPath.c_str(), params.level_no_);
+
+	struct file_entry {
+		std::string path;
+		std::filesystem::file_time_type time;
+		bool isQvm;
+	};
+	std::vector<file_entry> candidates;
+
+	auto addCandidate = [&](const char* path, bool isQvm) {
+		if (File_Exists(path)) {
+			candidates.push_back({ path, std::filesystem::last_write_time(path), isQvm });
 		}
+	};
+
+	addCandidate(editorQsc, false);
+	addCandidate(qeditorQsc, false);
+	addCandidate(igiQsc, false);
+	addCandidate(igiQvm, true);
+
+	if (candidates.empty()) {
+		Logger::Get().Log(LogLevel::ERR, "[Level] FATAL: No objects.qsc or objects.qvm found anywhere");
+		return false;
+	}
+
+	// Sort by time descending (newest first)
+	std::sort(candidates.begin(), candidates.end(), [](const file_entry& a, const file_entry& b) {
+		return a.time > b.time;
+		});
+
+	const file_entry& latest = candidates[0];
+	Logger::Get().Log(LogLevel::INFO, "[Level] Latest objects file: " + latest.path + " (isQvm=" + (latest.isQvm ? "true" : "false") + ")");
+
+	if (latest.isQvm) {
+		// Game QVM is newest, decompile it to get latest QSC
+		Logger::Get().Log(LogLevel::INFO, "[Level] Game QVM is newer than QSC, decompiling...");
+		DecompileObjects(params.level_no_);
+		Str_SPrintf(filename, 1024, "%s\\objects.qsc", exeDir.c_str());
+	}
+	else {
+		// A QSC is newest, copy it to editor directory and compile it
+		if (strcmp(latest.path.c_str(), editorQsc) != 0) {
+			std::filesystem::copy_file(latest.path, editorQsc, std::filesystem::copy_options::overwrite_existing);
+			Logger::Get().Log(LogLevel::INFO, "[Level] Copied latest QSC to editor: " + std::string(editorQsc));
+		}
+		Str_SPrintf(filename, 1024, "%s", editorQsc);
+		// Compile it so game QVM stays in sync
+		CompileCurrentQSC(params.level_no_);
 	}
 
 	qsc_path_ = filename;
@@ -121,17 +168,6 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 	if (!File_Exists(filename)) {
 		Logger::Get().Log(LogLevel::ERR, "[Level] FATAL: ERROR Missing 'objects.qsc' file at: " + qsc_path_);
 		return false;
-	}
-
-	// Check if current objects.qsc differs from QEditor IGI_QSC version
-	char appData[1024];
-	GetEnvironmentVariableA("APPDATA", appData, 1024);
-	char qeditorQsc[1024];
-	Str_SPrintf(qeditorQsc, 1024, "%s\\QEditor\\QFiles\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", appData, params.level_no_);
-
-	if (File_Exists(qeditorQsc) && FilesDiffer(filename, qeditorQsc)) {
-		Logger::Get().Log(LogLevel::INFO, "[Level] objects.qsc has changes, compiling before loading...");
-		CompileCurrentQSC(params.level_no_);
 	}
 
 	QSC* qsc_objects = new QSC();
