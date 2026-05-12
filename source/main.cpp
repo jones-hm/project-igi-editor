@@ -507,7 +507,7 @@ int main(int argc, char **argv) {
 	freopen("CONIN$", "r", stdin);
 	freopen("CONOUT$", "w", stdout);
 	freopen("CONOUT$", "w", stderr);
-	SetConsoleTitleA("IGI Editor v 0.0.0.1 BETA - Jones - HM - Debug Console");
+	SetConsoleTitleA("IGI Editor v 0.0.2 BETA - Jones - HM - Debug Console");
 
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);	// detect memory leak
 # if defined(HOOK_ALLOC)
@@ -549,7 +549,7 @@ int main(int argc, char **argv) {
 	int pos_y = (screen_cy - wnd_h) >> 1;
 	glutInitWindowPosition(pos_x, pos_y);
 	glutInitWindowSize(wnd_w, wnd_h);
-	glutCreateWindow("IGI Editor v 0.0.0.1 BETA - Jones - HM");
+	glutCreateWindow("IGI Editor v 0.0.2 BETA - Jones - HM");
 
 #if defined(_WIN32)
 	// Load icon from file and set it
@@ -586,7 +586,7 @@ int main(int argc, char **argv) {
 	if (hIcon) {
 		HWND hwnd = GetActiveWindow();
 		if (!hwnd) {
-			hwnd = FindWindowA(NULL, "IGI Editor v 0.0.0.1 BETA - Jones - HM");
+			hwnd = FindWindowA(NULL, "IGI Editor v 0.0.2 BETA - Jones - HM");
 		}
 		if (!hwnd) {
 			int glutWindow = glutGetWindow();
