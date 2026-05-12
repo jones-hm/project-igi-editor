@@ -217,6 +217,10 @@ void LevelObjects::LoadModelNames() {
 
             if (!name.empty() && !id.empty()) {
                 modelNames_[id] = name;
+                // Debug log for specific IDs
+                if (id == "419_01_1" || id == "400_20_1") {
+                    Logger::Get().Log(LogLevel::INFO, "[LevelObjects] Loaded mapping: " + id + " -> " + name);
+                }
             }
 
             pos = objEnd + 1;
@@ -364,6 +368,12 @@ void LevelObjects::SaveToQSC(const std::string& qscPath) {
         std::string taskType  = obj.isBuilding ? typeBuilding : typeRigid;
         std::string extraArgs = obj.isBuilding ? "" : ",1,1,1,0,0,0";
 
+        // Use the correct friendly name from JSON mapping instead of the loaded name
+        std::string correctName = GetModelName(obj.modelId);
+        if (correctName.empty()) {
+            correctName = obj.name; // Fallback to loaded name if not found in JSON
+        }
+
         // Subtract the snap offset so the saved Z matches the original game coordinate
         double saveZ = obj.pos.z - obj.snap_z_offset;
 
@@ -371,13 +381,13 @@ void LevelObjects::SaveToQSC(const std::string& qscPath) {
         if (!hasClosingParen) {
             // Multi-line parent: preserve trailing comma, no closing paren on this line
             newLine = indent
-                + "Task_New(" + obj.taskId + "," + taskType + ",\"" + obj.name + "\","
+                + "Task_New(" + obj.taskId + "," + taskType + ",\"" + correctName + "\","
                 + fmt(obj.pos.x) + "," + fmt(obj.pos.y) + "," + fmt(saveZ) + ","
                 + fmt(obj.rot.x) + "," + fmt(obj.rot.y) + "," + fmt(obj.rot.z) + ","
                 + modelIdToken + ",";
         } else {
             newLine = indent
-                + "Task_New(" + obj.taskId + "," + taskType + ",\"" + obj.name + "\","
+                + "Task_New(" + obj.taskId + "," + taskType + ",\"" + correctName + "\","
                 + fmt(obj.pos.x) + "," + fmt(obj.pos.y) + "," + fmt(saveZ) + ","
                 + fmt(obj.rot.x) + "," + fmt(obj.rot.y) + "," + fmt(obj.rot.z) + ","
                 + modelIdToken + extraArgs + terminator;
