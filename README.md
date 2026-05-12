@@ -2,9 +2,17 @@
 
 **IGI Editor** is a professional 3D world and object manipulation toolkit for Project IGI. Inspired by the original IGI and IGI 2 editors, it provides a modern interface for level research, object placement, and terrain modification.
 
+**Current Status: ALPHA 0.0.1** - Early development stage with core object manipulation and QSC save functionality.
+
 This project is built upon the foundational work of the [Project-IGI-Terrain](https://github.com/hjcminus/Project-IGI-Terrain) repository. Special thanks to [hjcminus](https://github.com/hjcminus) for their research and for bringing this codebase to light. It is built using C++17 and OpenGL, and it is cross-platform, but it is mainly tested on Windows.
 
 Written and maintained by **Jones-HM (Heaven)**.
+
+---
+
+## � [Changelogs](CHANGELOGS.md)
+
+See the [CHANGELOGS.md](CHANGELOGS.md) for version history and detailed change logs.
 
 ---
 
@@ -16,7 +24,17 @@ Written and maintained by **Jones-HM (Heaven)**.
 - **Advanced Rendering**: OpenGL-based pipeline with full texture support, wireframe overlays, and skydome rendering.
 - **Level Navigation**: Full support for loading and exploring all 13 original IGI levels.
 - **Precision Snapping**: Instant ground-snapping logic to ensure objects sit perfectly on the terrain surface.
- 
+
+### Current Testing Status
+- **Building Editor**: Working - tested with Building objects
+- **Terrain Editor**: Working - height map editing functional
+- **Model Format**: Currently tested with OBJ format only
+- **Level Tested**: Level 1 (additional levels pending testing)
+
+### Future Work
+- **FBX Model Support**: Planned for future releases with full texture integration
+- **Extended Level Testing**: Full testing across all 13 levels
+
 ---
  
 ## 📸 Screenshots
@@ -26,20 +44,35 @@ Written and maintained by **Jones-HM (Heaven)**.
  
 ![IGI Level 1 Screenshot](assets/igi-level1.png)
 *3D Object Loading and Manipulation in the IGI Editor.*
+
+![IGI Editor Beta Screenshot](assets/igi-editor-beta.png)
+*Working BETA version - ALPHA 0.0.1*
  
 ---
  
 ## 📂 Folder Structure
 
-The IGI Editor utilizes a standardized Windows AppData structure for asset management, ensuring your project files remain organized and accessible across updates.
+### QEditor AppData Structure (`%APPDATA%/QEditor/`)
 
-- **`%APPDATA%/QEditor/QFiles/IGI_QSC/`**: The primary repository for original IGI level data (CTR, CMD, HMP, etc.).
-- **`%APPDATA%/QEditor/3DEditor/objects/level[1...14]/`**: Level-specific 3D model storage for `.obj` and `.mef` files.
-- **`%APPDATA%/QEditor/3DEditor/textures/level[1...14]/`**: Dedicated texture storage for level assets in `.png` or `.tga` format.
+The editor requires QEditor to be installed in AppData for QSC/QVM compilation and decompilation:
 
-Local Repository Folders:
-- **`shaders/`**: Core OpenGL GLSL shader source files.
-- **`bin/`**: Pre-compiled binaries and required dynamic libraries (DLLs).
+- **`QFiles/IGI_QSC/`**: Original IGI level data (CTR, CMD, HMP, QSC scripts) organized by:
+  - `missions/location0/level[1-14]/` - Level-specific scripts, AI, sounds, terrain
+  - `ammo/`, `weapons/`, `common/` - Shared game data
+- **`QFiles/IGI_QVM/`**: Compiled QVM files for all levels
+- **`QCompiler/`**: Compilation tools (Compile, Decompile, DConv, GConv, TexConv, etc.)
+- **`3DEditor/objects/level[1-14]/`**: Level-specific 3D model storage (`.obj`, `.mef`)
+- **`3DEditor/textures/level[1-14]/`**: Texture storage for level assets (`.png`, `.tga`)
+- **`3DEditor/buildings/level[1-14]/`**: Building model storage
+- **`AIFiles/`**: AI data (AI-Json, AI-Path, AI-Script) per level
+- **`QGraphs/`**: Area and graph data for levels
+- **`QMissions/`**: Mission configuration files
+- **`QWeapons/`**: Weapon group and modification data
+
+### Local Repository Folders
+- **`shaders/`**: Core OpenGL GLSL shader source files
+- **`bin/`**: Pre-compiled binaries and required dynamic libraries (DLLs)
+- **`assets/`**: Editor assets (screenshots, icons)
 
 ## 🛠️ Future Roadmap
 
@@ -57,6 +90,8 @@ This editor is focused on providing professional-grade tools for Project IGI mod
 - **OS**: Windows (x64)
 - **Compiler**: MSVC (Visual Studio 2022 recommended)
 - **Build System**: CMake
+- **QEditor**: Required for QSC/QVM compilation and decompilation.
+- **IGI Game**: Full installation of Project IGI required for level data and assets
 
 ### Build Instructions
 1. Clone the repository.

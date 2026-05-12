@@ -10,8 +10,11 @@ struct LevelObject {
     std::string modelId;
     std::string taskId;  // Task ID from QSC for save support
     glm::dvec3 pos;
+    glm::dvec3 original_pos;  // Original position from QSC for fallback matching
     glm::dvec3 rot;
+    glm::dvec3 original_rot;  // Original rotation from QSC for change detection
     bool isBuilding;
+    double snap_z_offset = 0.0;  // Z offset added by SnapObjectsToTerrain, subtracted when saving to QSC
 
     // Lighting
     float dirlightR = 1.0f, dirlightG = 1.0f, dirlightB = 1.0f;

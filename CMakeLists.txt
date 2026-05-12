@@ -40,12 +40,19 @@ file(GLOB SOURCES_RENDERER "source/renderer/*.*")
 file(GLOB SHADERS_41 "shaders/41/*.*")
 file(GLOB SHADERS_45 "shaders/45/*.*")
 
+# Explicitly add new source files (GLOB might not pick them up immediately)
+list(APPEND SOURCES "source/compiler.cpp" "source/decompiler.cpp")
+
 source_group("level" FILES ${SOURCES_LEVEL})
 source_group("renderer" FILES ${SOURCES_RENDERER})
 source_group("shaders/41" FILES ${SHADERS_41})
 source_group("shaders/45" FILES ${SHADERS_45})
 
 add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SHADERS_41} ${SHADERS_45})
+
+if (WIN32)
+  set_target_properties(igi-editor PROPERTIES ICON ${PROJECT_SOURCE_DIR}/assets/igi-editor-icon.ico)
+endif()
 
 target_precompile_headers(igi-editor PRIVATE source/pch.h)
 
@@ -58,7 +65,12 @@ target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source)
 if (WIN32)
   target_link_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/lib/x64)
   target_link_libraries(igi-editor PRIVATE freeglut glew32 OpenGL32)
-  
+
+  # Increase PCH memory limit to fix compiler heap errors
+  if (MSVC)
+    target_compile_options(igi-editor PRIVATE "/Zm200")
+  endif()
+
   # Set runtime library based on configuration
   set_target_properties(igi-editor PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${PROJECT_SOURCE_DIR}/bin/Debug"

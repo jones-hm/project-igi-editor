@@ -5,9 +5,17 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+
+static std::string TaskIdFromArg(const QSC::arg_s* a) {
+    if (!a) return "";
+    if (a->type_ == QSC::arg_s::type_t::STR) return a->str_;
+    if (a->type_ == QSC::arg_s::type_t::DBL) return std::to_string((int)a->dbl_);
+    return "";
+}
 
 
 void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
@@ -30,14 +38,29 @@ void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
         int arg_idx = 0;
         while (a) {
             switch (arg_idx) {
-                case 0: if (a->type_ == QSC::arg_s::type_t::STR) obj.taskId = a->str_; break;
+                case 0: obj.taskId = TaskIdFromArg(a); break;
                 case 2: if (a->type_ == QSC::arg_s::type_t::STR) obj.name = a->str_; break;
-                case 3: if (a->type_ == QSC::arg_s::type_t::DBL) obj.pos.x = a->dbl_; break;
-                case 4: if (a->type_ == QSC::arg_s::type_t::DBL) obj.pos.y = a->dbl_; break;
-                case 5: if (a->type_ == QSC::arg_s::type_t::DBL) obj.pos.z = a->dbl_; break;
-                case 6: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.x = a->dbl_; break;
-                case 7: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.y = a->dbl_; break;
-                case 8: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.z = a->dbl_; break;
+                case 3:
+                    if (a->type_ == QSC::arg_s::type_t::DBL) {
+                        obj.pos.x = a->dbl_;
+                        obj.original_pos.x = a->dbl_;
+                    }
+                    break;
+                case 4:
+                    if (a->type_ == QSC::arg_s::type_t::DBL) {
+                        obj.pos.y = a->dbl_;
+                        obj.original_pos.y = a->dbl_;
+                    }
+                    break;
+                case 5:
+                    if (a->type_ == QSC::arg_s::type_t::DBL) {
+                        obj.pos.z = a->dbl_;
+                        obj.original_pos.z = a->dbl_;
+                    }
+                    break;
+                case 6: if (a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.x = a->dbl_; obj.original_rot.x = a->dbl_; } break;
+                case 7: if (a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.y = a->dbl_; obj.original_rot.y = a->dbl_; } break;
+                case 8: if (a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.z = a->dbl_; obj.original_rot.z = a->dbl_; } break;
                 case 9: if (a->type_ == QSC::arg_s::type_t::STR) obj.modelId = a->str_; break;
             }
             a = a->next_;
@@ -79,14 +102,29 @@ void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
         int arg_idx = 0;
         while (a) {
             switch (arg_idx) {
-                case 0: if (a->type_ == QSC::arg_s::type_t::STR) obj.taskId = a->str_; break;
+                case 0: obj.taskId = TaskIdFromArg(a); break;
                 case 2: if (a->type_ == QSC::arg_s::type_t::STR) obj.name = a->str_; break;
-                case 3: if (a->type_ == QSC::arg_s::type_t::DBL) obj.pos.x = a->dbl_; break;
-                case 4: if (a->type_ == QSC::arg_s::type_t::DBL) obj.pos.y = a->dbl_; break;
-                case 5: if (a->type_ == QSC::arg_s::type_t::DBL) obj.pos.z = a->dbl_; break;
-                case 6: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.x = a->dbl_; break;
-                case 7: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.y = a->dbl_; break;
-                case 8: if (a->type_ == QSC::arg_s::type_t::DBL) obj.rot.z = a->dbl_; break;
+                case 3:
+                    if (a->type_ == QSC::arg_s::type_t::DBL) {
+                        obj.pos.x = a->dbl_;
+                        obj.original_pos.x = a->dbl_;
+                    }
+                    break;
+                case 4:
+                    if (a->type_ == QSC::arg_s::type_t::DBL) {
+                        obj.pos.y = a->dbl_;
+                        obj.original_pos.y = a->dbl_;
+                    }
+                    break;
+                case 5:
+                    if (a->type_ == QSC::arg_s::type_t::DBL) {
+                        obj.pos.z = a->dbl_;
+                        obj.original_pos.z = a->dbl_;
+                    }
+                    break;
+                case 6: if (a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.x = a->dbl_; obj.original_rot.x = a->dbl_; } break;
+                case 7: if (a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.y = a->dbl_; obj.original_rot.y = a->dbl_; } break;
+                case 8: if (a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.z = a->dbl_; obj.original_rot.z = a->dbl_; } break;
                 case 9: if (a->type_ == QSC::arg_s::type_t::STR) obj.modelId = a->str_; break;
             }
             a = a->next_;
@@ -185,82 +223,153 @@ void LevelObjects::SaveToQSC(const std::string& qscPath) {
 
     Logger::Get().Log(LogLevel::INFO, "[LevelObjects::SaveToQSC] Processing " + std::to_string(objects_.size()) + " objects for save");
 
-    // For each object, find its Task_New entry and update the position/rotation
+    // Format double: enough precision for both large coords and small rotations.
+    // Use %.10g to avoid scientific notation truncation and preserve rotation accuracy.
+    auto fmt = [](double v) -> std::string {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%.10g", v);
+        std::string s(buf);
+        // Ensure at least one decimal point so compiler treats it as float literal
+        if (s.find('.') == std::string::npos && s.find('e') == std::string::npos)
+            s += ".0";
+        return s;
+    };
+
     for (const auto& obj : objects_) {
-        if (obj.taskId.empty()) {
-            Logger::Get().Log(LogLevel::WARNING, "[LevelObjects::SaveToQSC] Object has no taskId, skipping: " + obj.name);
+        if (obj.modelId.empty()) continue;
+
+        // Skip if nothing changed vs what was loaded from QSC
+        bool changed = (obj.pos.x != obj.original_pos.x ||
+                        obj.pos.y != obj.original_pos.y ||
+                        obj.pos.z != obj.original_pos.z ||
+                        obj.rot.x != obj.original_rot.x ||
+                        obj.rot.y != obj.original_rot.y ||
+                        obj.rot.z != obj.original_rot.z);
+        if (!changed) {
+            Logger::Get().Log(LogLevel::INFO, "[LevelObjects::SaveToQSC] SKIP (unchanged): " + obj.name + " / " + obj.modelId);
             continue;
         }
 
-        // Search for Task_New(taskId, ...) pattern
-        std::string searchPattern = "Task_New(" + obj.taskId + ",";
-        size_t pos = content.find(searchPattern);
+        std::string modelIdToken = "\"" + obj.modelId + "\"";
+        std::string typeBuilding = "\"Building\"";
+        std::string typeRigid    = "\"EditRigidObj\"";
 
-        if (pos == std::string::npos) {
-            Logger::Get().Log(LogLevel::WARNING, "[LevelObjects::SaveToQSC] Task_New entry not found for taskId: " + obj.taskId);
-            continue;
-        }
+        // Find the matching line:
+        // - Building:      line contains Task_New(taskId, + "Building" + modelId
+        // - EditRigidObj:  line contains "EditRigidObj" + modelId (ID is always -1, search by model)
+        size_t lineStart = std::string::npos;
+        size_t searchFrom = 0;
 
-        // Found the entry, now we need to find and replace the 6 numeric arguments
-        // The pattern is: Task_New(taskId, x, y, z, rotX, rotY, rotZ, ...)
-        // We need to replace args 1-6 (0-indexed: args 1,2,3 are position, args 4,5,6 are rotation)
-
-        // Find the opening parenthesis after Task_New
-        size_t parenStart = pos + searchPattern.length() - 1; // Position of '('
-        size_t parenEnd = content.find(')', parenStart);
-        if (parenEnd == std::string::npos) {
-            Logger::Get().Log(LogLevel::ERR, "[LevelObjects::SaveToQSC] Malformed Task_New entry for taskId: " + obj.taskId);
-            continue;
-        }
-
-        // Extract the arguments string
-        std::string argsStr = content.substr(parenStart + 1, parenEnd - parenStart - 1);
-
-        // Parse and replace arguments
-        // We'll use a simple approach: split by comma and replace the numeric values
-        std::vector<std::string> args;
-        std::string currentArg;
-        int parenDepth = 0;
-        for (char c : argsStr) {
-            if (c == '(') parenDepth++;
-            else if (c == ')') parenDepth--;
-            else if (c == ',' && parenDepth == 0) {
-                args.push_back(currentArg);
-                currentArg.clear();
-            } else {
-                currentArg += c;
+        if (obj.isBuilding) {
+            // Search by taskId for Buildings
+            std::string taskIdToken = "Task_New(" + obj.taskId + ",";
+            while (true) {
+                size_t found = content.find(taskIdToken, searchFrom);
+                if (found == std::string::npos) break;
+                size_t ls = content.rfind('\n', found);
+                ls = (ls == std::string::npos) ? 0 : ls + 1;
+                size_t le = content.find('\n', found);
+                if (le == std::string::npos) le = content.size();
+                std::string line = content.substr(ls, le - ls);
+                if (line.find(modelIdToken) != std::string::npos &&
+                    line.find(typeBuilding) != std::string::npos) {
+                    lineStart = ls;
+                    break;
+                }
+                searchFrom = found + 1;
+            }
+        } else {
+            // Search by modelId + original position for EditRigidObj
+            // (taskId is always -1, and multiple objects can share the same modelId)
+            // Use the integer part of origX to match regardless of decimal formatting in QSC
+            char origXBuf[64];
+            snprintf(origXBuf, sizeof(origXBuf), "%.0f", obj.original_pos.x);
+            std::string origX = std::string(origXBuf);
+            while (true) {
+                size_t found = content.find(modelIdToken, searchFrom);
+                if (found == std::string::npos) break;
+                size_t ls = content.rfind('\n', found);
+                ls = (ls == std::string::npos) ? 0 : ls + 1;
+                size_t le = content.find('\n', found);
+                if (le == std::string::npos) le = content.size();
+                std::string line = content.substr(ls, le - ls);
+                if (line.find(typeRigid) != std::string::npos &&
+                    line.find(origX) != std::string::npos) {
+                    lineStart = ls;
+                    break;
+                }
+                searchFrom = found + 1;
             }
         }
-        if (!currentArg.empty()) {
-            args.push_back(currentArg);
-        }
 
-        // We need at least 7 arguments (taskId + 6 numeric values)
-        if (args.size() < 7) {
-            Logger::Get().Log(LogLevel::WARNING, "[LevelObjects::SaveToQSC] Not enough arguments in Task_New for taskId: " + obj.taskId);
+        if (lineStart == std::string::npos) {
+            Logger::Get().Log(LogLevel::WARNING, "[LevelObjects::SaveToQSC] Line not found for: "
+                + obj.name + " taskId=" + obj.taskId + " modelId=" + obj.modelId);
             continue;
         }
 
-        // Replace the 6 numeric arguments (indices 1-6)
-        // Format them with appropriate precision
-        args[1] = std::to_string(obj.pos.x);
-        args[2] = std::to_string(obj.pos.y);
-        args[3] = std::to_string(obj.pos.z);
-        args[4] = std::to_string(obj.rot.x);
-        args[5] = std::to_string(obj.rot.y);
-        args[6] = std::to_string(obj.rot.z);
+        size_t lineEnd = content.find('\n', lineStart);
+        if (lineEnd == std::string::npos) lineEnd = content.size();
+        std::string oldLine = content.substr(lineStart, lineEnd - lineStart);
 
-        // Reconstruct the arguments string
-        std::string newArgsStr;
-        for (size_t i = 0; i < args.size(); ++i) {
-            if (i > 0) newArgsStr += ",";
-            newArgsStr += args[i];
+        // Preserve indentation
+        std::string indent;
+        for (char c : oldLine) {
+            if (c == ' ' || c == '\t') indent += c;
+            else break;
         }
 
-        // Replace the old arguments with the new ones in the content
-        content.replace(parenStart + 1, parenEnd - parenStart - 1, newArgsStr);
+        // Detect how the original line ends:
+        // Case A: has closing ')' on this line  -> standalone or inline, use ");", ")," or just ","
+        // Case B: no closing ')' at all         -> multi-line parent (children on next lines),
+        //         end with "modelId"," and NO closing paren
+        bool hasClosingParen = (oldLine.rfind(')') != std::string::npos);
 
-        Logger::Get().Log(LogLevel::INFO, "[LevelObjects::SaveToQSC] Updated object: " + obj.name + " (taskId: " + obj.taskId + ")");
+        std::string terminator = ");";
+        if (hasClosingParen) {
+            for (int ci = (int)oldLine.size() - 1; ci >= 0; --ci) {
+                char c = oldLine[ci];
+                if (c == ' ' || c == '\t' || c == '\r') continue;
+                if (c == ',') { terminator = "),"; break; }
+                if (c == ';') { terminator = ");"; break; }
+                break;
+            }
+        }
+
+        // Build new line
+        // Building (single-line):  Task_New(id,"Building","name",x,y,z,rx,ry,rz,"modelId")term
+        // Building (multi-line):   Task_New(id,"Building","name",x,y,z,rx,ry,rz,"modelId",   <- no closing paren
+        // EditRigidObj:            Task_New(-1,"EditRigidObj","name",x,y,z,rx,ry,rz,"modelId",1,1,1,0,0,0)term
+        std::string taskType  = obj.isBuilding ? typeBuilding : typeRigid;
+        std::string extraArgs = obj.isBuilding ? "" : ",1,1,1,0,0,0";
+
+        // Subtract the snap offset so the saved Z matches the original game coordinate
+        double saveZ = obj.pos.z - obj.snap_z_offset;
+
+        std::string newLine;
+        if (!hasClosingParen) {
+            // Multi-line parent: preserve trailing comma, no closing paren on this line
+            newLine = indent
+                + "Task_New(" + obj.taskId + "," + taskType + ",\"" + obj.name + "\","
+                + fmt(obj.pos.x) + "," + fmt(obj.pos.y) + "," + fmt(saveZ) + ","
+                + fmt(obj.rot.x) + "," + fmt(obj.rot.y) + "," + fmt(obj.rot.z) + ","
+                + modelIdToken + ",";
+        } else {
+            newLine = indent
+                + "Task_New(" + obj.taskId + "," + taskType + ",\"" + obj.name + "\","
+                + fmt(obj.pos.x) + "," + fmt(obj.pos.y) + "," + fmt(saveZ) + ","
+                + fmt(obj.rot.x) + "," + fmt(obj.rot.y) + "," + fmt(obj.rot.z) + ","
+                + modelIdToken + extraArgs + terminator;
+        }
+
+        Logger::Get().Log(LogLevel::INFO, "[LevelObjects::SaveToQSC] ["
+            + std::string(obj.isBuilding ? "Building" : "EditRigidObj") + "] " + obj.name
+            + " pos(" + fmt(obj.pos.x) + "," + fmt(obj.pos.y) + "," + fmt(obj.pos.z) + ")"
+            + " rot(" + fmt(obj.rot.x) + "," + fmt(obj.rot.y) + "," + fmt(obj.rot.z) + ")");
+        Logger::Get().Log(LogLevel::INFO, "[LevelObjects::SaveToQSC]   OLD: " + oldLine);
+        Logger::Get().Log(LogLevel::INFO, "[LevelObjects::SaveToQSC]   NEW: " + newLine);
+
+        content.replace(lineStart, lineEnd - lineStart, newLine);
     }
 
     // Write the modified content back to the file

@@ -126,8 +126,6 @@ bool App::Init(int argc, char** argv) {
 	int start_level = Arg_ReadInt(argc, argv, "-level", cfg.level);
 	if (start_level >= MIN_LEVEL_NO && start_level <= MAX_LEVEL_NO) {
 		LoadLevel(start_level);
-		// Always snap objects to terrain on level load to fix Z axis issues
-		SnapObjectsToTerrain();
 	}
 
 
@@ -165,6 +163,7 @@ void App::Shutdown() {
 }
 
 void App::LoadLevel(int level_no) {
+	Logger::Get().Log(LogLevel::INFO, "[App] Loading level " + std::to_string(level_no));
 	renderer_.SetLevel(level_no);
 	renderer_.BeginLoadLevel();
 
@@ -182,8 +181,17 @@ void App::LoadLevel(int level_no) {
 		viewer_.roll_ = 0.0f;
 
 		UpdateViewerVectors();
+		Logger::Get().Log(LogLevel::INFO, "[App] Level " + std::to_string(level_no) + " loaded. Viewer start=(" + std::to_string(viewer_.pos_.x) + "," + std::to_string(viewer_.pos_.y) + "," + std::to_string(viewer_.pos_.z) + ")");
+	}
+	else {
+		Logger::Get().Log(LogLevel::ERR, "[App] Failed to load level " + std::to_string(level_no));
 	}
 
+	// Load QSC file for this level
+	LoadQSCForLevel(level_no);
+
+	// Always snap objects to terrain after any level load
+	SnapObjectsToTerrain();
 }
 
 void App::SetGameLevel(int level_no) {
@@ -191,7 +199,10 @@ void App::SetGameLevel(int level_no) {
 }
 
 void App::SaveCurrentLevel() {
+	Logger::Get().Log(LogLevel::INFO, "[App] SaveCurrentLevel() called");
 	level_.SaveChanges();
+	Logger::Get().Log(LogLevel::INFO, "[App] Calling SaveAndCompile()");
+	SaveAndCompile();
 }
 
 int App::GetCurLevelNo() const {
@@ -281,11 +292,17 @@ void App::OnDisplay() {
 
 // input
 void App::Input_OnMouse(int button, int state, int x, int y) {
+	// Update mouse position first so EditorProcessClick uses correct coords
+	mouse_state_.prior_x_ = x;
+	mouse_state_.prior_y_ = y;
+
 	if (button == GLUT_LEFT_BUTTON) {
 		if (GLUT_DOWN == state) {
 			mouse_state_.left_button_down_ = true;
 			
 			if (edit_mode_) {
+				EditorProcessClick(); 
+				// Update manipulation data AFTER selection, so we get the newly selected object
 				marker_manip_.start_x_ = x;
 				marker_manip_.start_y_ = y;
 				if (selected_object_index_ >= 0) {
@@ -293,7 +310,6 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					marker_manip_.start_pos_ = obj.pos;
 					marker_manip_.start_rot_ = obj.rot;
 				}
-				EditorProcessClick(); 
 			}
 		}
 		else if (GLUT_UP == state) {
@@ -305,9 +321,6 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			}
 		}
 	}
-
-	mouse_state_.prior_x_ = x;
-	mouse_state_.prior_y_ = y;
 }
 
 void App::Input_OnMotion(int x, int y) {
@@ -323,7 +336,7 @@ void App::Input_OnMotion(int x, int y) {
 			input_.mouse_delta_x_ = x - mouse_state_.prior_x_;
 			input_.mouse_delta_y_ = y - mouse_state_.prior_y_;
 
-			if (edit_mode_ && selected_object_index_ >= 0) {
+			if (edit_mode_ && selected_object_index_ >= 0 && !terrain_edit_enabled_) {
 				UpdateMarkerManipulation();
 			}
 		}
@@ -508,8 +521,8 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			exit(0);
 		}
 		if (key == 's' || key == 'S') {
-			level_.SaveChanges();
-			printf("Level changes saved.\n");
+			SaveCurrentLevel();
+			printf("Level saved and compiled.\n");
 			TogglePauseMenu(); // Close menu after save
 		}
 		if (key == '=') {
@@ -583,7 +596,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 				auto& obj = objects[selected_object_index_];
 				float terrainZ = 0.0f;
 				if (level_.GetTerrainZ(glm::vec3(obj.pos.x, obj.pos.y, 0.0f), terrainZ)) {
-					float zOffset = renderer_.GetMeshZOffset(obj.modelId);
+					float zOffset = renderer_.GetMeshZOffset(obj.modelId, obj.isBuilding);
 					// Snap object bottom to terrain surface
 					obj.pos.z = (double)terrainZ + (double)(zOffset * 40.96f * obj.scale);
 					Logger::Get().Log(LogLevel::INFO, "[App] Snapped object to ground");
@@ -675,6 +688,8 @@ void App::ResetScript() {
 
 	// Reload the level to apply changes
 	LoadLevel(levelNo);
+	// Snap objects to terrain after script reset
+	SnapObjectsToTerrain();
 }
 
 
@@ -712,6 +727,7 @@ void App::Frame(float delta_seconds) {
 	if (pause_mode_) {
 		// Skip all updates when paused, just render
 		UpdateViewDefine();
+		hover_object_index_ = PickObjectAtScreenPos(mouse_state_.prior_x_, mouse_state_.prior_y_);
 		float ground_z = 0.0f;
 		level_.GetTerrainZ(viewer_.pos_, ground_z);
 		Renderer::hud_params_s hud = {
@@ -731,6 +747,7 @@ void App::Frame(float delta_seconds) {
 			.pause_mode_ = true,
 			.show_debug_ = show_debug_,
 			.edit_mode_ = edit_mode_,
+			.terrain_edit_enabled_ = terrain_edit_enabled_,
 			.selected_object_index_ = selected_object_index_,
 			.hover_object_index_ = hover_object_index_,
 			.mouse_x_ = mouse_state_.prior_x_,
@@ -755,6 +772,7 @@ void App::Frame(float delta_seconds) {
 	}
 
 	UpdateViewDefine();
+	hover_object_index_ = PickObjectAtScreenPos(mouse_state_.prior_x_, mouse_state_.prior_y_);
 
 	vert_flat_sky_layer_s * fsl_vb = renderer_.MapFlatSkyLayersVB();
 	vert_pos_a_uv_s* terrain_vb = renderer_.MapTerrainVB();
@@ -814,6 +832,7 @@ void App::Frame(float delta_seconds) {
 		.pause_mode_ = pause_mode_,
 		.show_debug_ = show_debug_,
 		.edit_mode_ = edit_mode_,
+		.terrain_edit_enabled_ = terrain_edit_enabled_,
 		.selected_object_index_ = selected_object_index_,
 		.hover_object_index_ = hover_object_index_,
 		.mouse_x_ = mouse_state_.prior_x_,
@@ -942,31 +961,25 @@ void App::ProcessInput(float delta_seconds) {
 	}
 	else {
 
-		// check movement - direct position update for free mode
+		// check movement - direct position update for free mode (NO collision)
 		if (input_.keys_ & MK_FORWARD) {
 			viewer_.pos_ += viewer_.forward_ * viewer_.move_speed_ * delta_seconds;
 		}
-
 		if (input_.keys_ & MK_BACKWARD) {
 			viewer_.pos_ -= viewer_.forward_ * viewer_.move_speed_ * delta_seconds;
 		}
-
 		if (input_.keys_ & MK_LEFT) {
 			viewer_.pos_ -= viewer_.right_ * viewer_.move_speed_ * delta_seconds;
 		}
-
 		if (input_.keys_ & MK_RIGHT) {
 			viewer_.pos_ += viewer_.right_ * viewer_.move_speed_ * delta_seconds;
 		}
-
 		if (input_.keys_ & MK_STRAIGHT_UP && !viewer_.clip_to_z_) {
 			viewer_.pos_ += VEC3_Z_DIR * viewer_.move_speed_ * delta_seconds;
 		}
-
 		if (input_.keys_ & MK_STRAIGHT_DOWN && !viewer_.clip_to_z_) {
 			viewer_.pos_ -= VEC3_Z_DIR * viewer_.move_speed_ * delta_seconds;
 		}
-
 	}
 
 	// check rotation
@@ -1071,6 +1084,7 @@ void App::ToggleEditMode() {
 	} else {
 		glutSetCursor(GLUT_CURSOR_NONE);
 	}
+	Logger::Get().Log(LogLevel::INFO, std::string("[App] Edit mode ") + (edit_mode_ ? "enabled" : "disabled"));
 }
 
 bool App::GetEditMode() const {
@@ -1087,6 +1101,7 @@ void App::SetEditMode(bool enabled) {
 	} else {
 		glutSetCursor(GLUT_CURSOR_NONE);
 	}
+	Logger::Get().Log(LogLevel::INFO, std::string("[App] Edit mode set to ") + (edit_mode_ ? "enabled" : "disabled"));
 }
 
 void App::SetTerrainEditEnabled(bool enabled) {
@@ -1136,81 +1151,56 @@ float App::GetSelectedObjectScale() const {
 void App::EditorProcessClick() {
 	if (!window_state_.viewport_width_ || !window_state_.viewport_height_) return;
 
-	// Build matrices exactly as Renderer does
-	glm::dmat4 proj_matrix = glm::perspective(
-		(double)view_define_.fovy_,
-		(double)window_state_.viewport_width_ / (double)window_state_.viewport_height_,
-		(double)view_define_.render_z_near_,
-		(double)view_define_.render_z_far_
-	);
-
-	glm::dvec3 scaled_down_pos = glm::dvec3(view_define_.pos_) * 0.001; // RENDERER_MODEL_SCALE_DOWN
-	glm::dmat4 mat_view = glm::lookAt(scaled_down_pos, scaled_down_pos + glm::dvec3(view_define_.forward_), glm::dvec3(view_define_.up_));
-	glm::dmat4 mat_scale = glm::scale(glm::dmat4(1.0), glm::dvec3(0.001));
-	glm::dmat4 view_matrix = mat_view * mat_scale;
-
-	glm::dvec4 viewport(0.0, 0.0, (double)window_state_.viewport_width_, (double)window_state_.viewport_height_);
-	
-	double winX = (double)mouse_state_.prior_x_;
-	double winY = (double)window_state_.viewport_height_ - (double)mouse_state_.prior_y_;
-	
-	glm::dvec3 start_pos = glm::unProject(glm::dvec3(winX, winY, 0.0), view_matrix, proj_matrix, viewport);
-	glm::dvec3 end_pos = glm::unProject(glm::dvec3(winX, winY, 1.0), view_matrix, proj_matrix, viewport);
-	
-	glm::vec3 ray_origin = (glm::vec3)start_pos;
-	glm::vec3 ray_dir = glm::normalize((glm::vec3)(end_pos - start_pos));
-
-	// First, try to select an object (object selection takes priority)
 	LevelObjects& lo = level_.GetLevelObjects();
 	std::vector<LevelObject>& objects = lo.GetObjects();
-	
-	float closest_dist = FLT_MAX;
-	int closest_object = -1;
-	
-	// Simple sphere intersection test for object selection
-	constexpr float SELECTION_RADIUS = 5000.0f; // Hit radius in world units
-	
-	for (size_t i = 0; i < objects.size(); ++i) {
-		glm::vec3 obj_pos = objects[i].pos;
-		
-		// Ray-sphere intersection
-		glm::vec3 to_obj = obj_pos - ray_origin;
-		float projection = glm::dot(to_obj, ray_dir);
-		
-		if (projection > 0) {
-			glm::vec3 closest_point = ray_origin + ray_dir * projection;
-			float dist_to_center = glm::length(closest_point - obj_pos);
-			
-			if (dist_to_center < SELECTION_RADIUS) {
-				float dist_to_camera = glm::length(obj_pos - ray_origin);
-				if (dist_to_camera < closest_dist) {
-					closest_dist = dist_to_camera;
-					closest_object = (int)i;
-				}
-			}
-		}
+
+	if (terrain_edit_enabled_) {
+		// Terrain edit mode: build ray from camera through mouse and edit terrain
+		glm::dmat4 proj_matrix = glm::perspective(
+			(double)view_define_.fovy_,
+			(double)window_state_.viewport_width_ / (double)window_state_.viewport_height_,
+			(double)view_define_.render_z_near_,
+			(double)view_define_.render_z_far_
+		);
+		// Use actual camera position in world units, no extra scale
+		glm::dmat4 mat_view = glm::lookAt(
+			glm::dvec3(view_define_.pos_),
+			glm::dvec3(view_define_.pos_) + glm::dvec3(view_define_.forward_),
+			glm::dvec3(view_define_.up_));
+		glm::dvec4 viewport(0.0, 0.0, (double)window_state_.viewport_width_, (double)window_state_.viewport_height_);
+
+		double winX = (double)mouse_state_.prior_x_;
+		double winY = (double)window_state_.viewport_height_ - (double)mouse_state_.prior_y_;
+
+		glm::dvec3 start_pos = glm::unProject(glm::dvec3(winX, winY, 0.0), mat_view, proj_matrix, viewport);
+		glm::dvec3 end_pos = glm::unProject(glm::dvec3(winX, winY, 1.0), mat_view, proj_matrix, viewport);
+		glm::vec3 ray_origin = (glm::vec3)start_pos;
+		glm::vec3 ray_dir = glm::normalize((glm::vec3)(end_pos - start_pos));
+
+		printf("EditorClick: Mouse(%.0f, %.0f), RayDir(%.2f, %.2f, %.2f)\n", winX, winY, ray_dir.x, ray_dir.y, ray_dir.z);
+		level_.EditorRaycastAndModify(ray_origin, ray_dir, edit_brush_);
+		return;
 	}
-	
-	if (closest_object != -1) {
-		selected_object_index_ = closest_object;
-		const LevelObject& obj = objects[closest_object];
-		printf("SELECTED Object [%d]: %s (%s)\n", closest_object, obj.name.c_str(), obj.modelId.c_str());
+
+	// Object edit mode: select the object under the mouse cursor
+	int pickedObject = PickObjectAtScreenPos(mouse_state_.prior_x_, mouse_state_.prior_y_);
+	if (pickedObject >= 0 && pickedObject < (int)objects.size()) {
+		selected_object_index_ = pickedObject;
+		const LevelObject& obj = objects[pickedObject];
+		Logger::Get().Log(LogLevel::INFO, "[App] Selected object index=" + std::to_string(pickedObject) + " model=" + obj.modelId + " type=" + (obj.isBuilding ? "building" : "object"));
+		printf("SELECTED Object [%d]: %s (%s)\n", pickedObject, obj.name.c_str(), obj.modelId.c_str());
 		printf("  Pos: (%.0f, %.0f, %.0f)\n", (double)obj.pos.x, (double)obj.pos.y, (double)obj.pos.z);
 		printf("  Rot (Alpha/Beta/Gamma): (%.2f, %.2f, %.2f)\n", (double)obj.rot.x, (double)obj.rot.y, (double)obj.rot.z);
 		printf("  Scale: %.2f\n", obj.scale);
-		
-		// Record start state for manipulation if this is the initial click
 		marker_manip_.start_x_ = mouse_state_.prior_x_;
 		marker_manip_.start_y_ = mouse_state_.prior_y_;
 		marker_manip_.start_pos_ = obj.pos;
 		marker_manip_.start_rot_ = obj.rot;
-		
-		return; // Don't do terrain editing if we selected an object
 	}
-
-	if (terrain_edit_enabled_) {
-		printf("EditorClick: Mouse(%.0f, %.0f), RayDir(%.2f, %.2f, %.2f)\n", winX, winY, ray_dir.x, ray_dir.y, ray_dir.z);
-		level_.EditorRaycastAndModify(ray_origin, ray_dir, edit_brush_);
+	else {
+		selected_object_index_ = -1;
+		marker_manip_.mode_ = ManipulationMode::None;
+		Logger::Get().Log(LogLevel::INFO, "[App] Object selection cleared");
 	}
 }
 
@@ -1218,10 +1208,12 @@ bool App::CheckCollision(const glm::vec3& nextPos) {
     auto& objects = level_.GetLevelObjects().GetObjects();
     
     float playerRadius = 400.0f; 
+    constexpr float BASE_SCALE = 40.96f;
+    constexpr float FALLBACK_RADIUS_MODEL = 200.0f; // fallback collision radius in model units (tight)
     
     for (const auto& obj : objects) {
         float dist = glm::distance(nextPos, glm::vec3(obj.pos));
-        if (dist > 100000.0f) continue;
+        if (dist > 150000.0f) continue;
 
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(obj.pos.x, obj.pos.y, obj.pos.z));
@@ -1229,17 +1221,29 @@ bool App::CheckCollision(const glm::vec3& nextPos) {
         model = glm::rotate(model, (float)obj.rot.x, glm::vec3(1.0f, 0.0f, 0.0f));
         model = glm::rotate(model, (float)obj.rot.y, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        float base_scale = 40.96f;
-        model = glm::scale(model, glm::vec3(base_scale * obj.scale));
+        model = glm::scale(model, glm::vec3(BASE_SCALE * obj.scale));
         model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
         glm::vec4 localPos = glm::inverse(model) * glm::vec4(nextPos, 1.0f);
-        glm::vec3 extents = renderer_.GetMeshExtents(obj.modelId);
+        glm::vec3 extents = renderer_.GetMeshExtents(obj.modelId, obj.isBuilding);
 
-        if (std::abs(localPos.x) < (extents.x + playerRadius/base_scale) &&
-            std::abs(localPos.y) < (extents.y + playerRadius/base_scale) &&
-            std::abs(localPos.z) < (extents.z + playerRadius/base_scale)) 
+        // Fallback: if mesh failed to load, use a minimum collision radius
+        float ex = extents.x;
+        float ey = extents.y;
+        float ez = extents.z;
+        if (ex < 1.0f && ey < 1.0f && ez < 1.0f) {
+            ex = ey = ez = FALLBACK_RADIUS_MODEL;
+        }
+
+        if (std::abs(localPos.x) < (ex + playerRadius/BASE_SCALE) &&
+            std::abs(localPos.y) < (ey + playerRadius/BASE_SCALE) &&
+            std::abs(localPos.z) < (ez + playerRadius/BASE_SCALE)) 
         {
+            static int collisionLogCount = 0;
+            if (collisionLogCount < 50) {
+                Logger::Get().Log(LogLevel::INFO, "[App] Collision with model=" + obj.modelId + " type=" + (obj.isBuilding ? "building" : "object"));
+                collisionLogCount++;
+            }
             return true;
         }
     }
@@ -1250,16 +1254,24 @@ void App::SnapObjectsToTerrain() {
     auto& objects = level_.GetLevelObjects().GetObjects();
     Logger::Get().Log(LogLevel::INFO, "[App] Snapping " + std::to_string(objects.size()) + " objects to terrain...");
 
+    int snapped = 0;
+    int failed = 0;
     for (auto& obj : objects) {
         float terrainZ = 0.0f;
         if (level_.GetTerrainZ(glm::vec3(obj.pos.x, obj.pos.y, 0.0f), terrainZ)) {
-            float zOffset = renderer_.GetMeshZOffset(obj.modelId);
+            float zOffset = renderer_.GetMeshZOffset(obj.modelId, obj.isBuilding);
             // Snap object bottom to terrain surface
             // Models are Y-up and rotated 90deg, so the bottom is at -min_y
             // After rotation, this becomes the Z offset in world space
-            obj.pos.z = (double)terrainZ + (double)(zOffset * 40.96f * obj.scale);
+            obj.snap_z_offset = (double)(zOffset * 40.96f * obj.scale);
+            obj.pos.z = (double)terrainZ + obj.snap_z_offset;
+            obj.original_pos.z = obj.pos.z;  // sync so terrain snap doesn't count as a user change
+            snapped++;
+        } else {
+            failed++;
         }
     }
+    Logger::Get().Log(LogLevel::INFO, "[App] Snap complete. snapped=" + std::to_string(snapped) + " failed=" + std::to_string(failed));
 }
 void App::UpdateMarkerManipulation() {
 
@@ -1367,7 +1379,7 @@ void App::UpdateMarkerManipulation() {
 
 		if (level_.GetTerrainZ(glm::vec3(obj.pos), terrainZ)) {
 
-			float zOffset = renderer_.GetMeshZOffset(obj.modelId);
+			float zOffset = renderer_.GetMeshZOffset(obj.modelId, obj.isBuilding);
 
 			obj.pos.z = (double)terrainZ + (double)(zOffset * 40.96f * obj.scale);
 
@@ -1387,52 +1399,215 @@ int App::PickObjectAtScreenPos(int screen_x, int screen_y) {
 	const auto& objects = level_.GetLevelObjects().GetObjects();
 	if (objects.empty()) return -1;
 
-	// Get viewport dimensions
 	int width = window_state_.viewport_width_;
 	int height = window_state_.viewport_height_;
 	if (width == 0 || height == 0) return -1;
 
-	// Convert screen coordinates to normalized device coordinates
-	float ndc_x = (2.0f * screen_x) / width - 1.0f;
-	float ndc_y = 1.0f - (2.0f * screen_y) / height; // Flip Y
-
-	// Use same view/projection as renderer (exact match)
-	constexpr float RENDERER_MODEL_SCALE_DOWN = 0.000244140625f; // 1/4096
-	constexpr float WORLD_UNITS_PER_METER = 4096.0f;
-	glm::vec3 scaled_down_pos = viewer_.pos_ * RENDERER_MODEL_SCALE_DOWN;
-	glm::mat4 view = glm::lookAt(scaled_down_pos, scaled_down_pos + viewer_.forward_ * WORLD_UNITS_PER_METER, viewer_.up_);
-	glm::mat4 proj = glm::perspective(view_define_.fovy_, (float)width / (float)height,
+	glm::mat4 proj = glm::perspective(view_define_.fovy_,
+		(float)width / (float)height,
 		view_define_.render_z_near_, view_define_.render_z_far_);
+	glm::vec3 scaled_down_pos = view_define_.pos_ * RENDERER_MODEL_SCALE_DOWN;
+	glm::mat4 view = glm::lookAt(
+		scaled_down_pos,
+		scaled_down_pos + view_define_.forward_ * WORLD_UNITS_PER_METER,
+		view_define_.up_);
+	glm::mat4 mvp_base = proj * view * glm::scale(glm::mat4(1.0f), glm::vec3(RENDERER_MODEL_SCALE_DOWN));
+	constexpr float BASE_SCALE = 40.96f;
 
-	// Find closest object to ray
 	int closest_index = -1;
-	float closest_distance = FLT_MAX;
+	float closest_depth = FLT_MAX;
 
 	for (size_t i = 0; i < objects.size(); ++i) {
 		const auto& obj = objects[i];
 
-		// Only pick foreground objects (buildings), skip background objects
-		if (!obj.isBuilding) continue;
+		if (obj.isBuilding && !(draw_params_.draw_parts_ & Renderer::DRAW_BUILDINGS)) continue;
+		if (!obj.isBuilding && !(draw_params_.draw_parts_ & Renderer::DRAW_OBJECTS) && !(draw_params_.draw_parts_ & Renderer::DRAW_PROPS)) continue;
 
-		// Project object center to screen (with scale down)
-		glm::vec4 obj_screen = proj * view * glm::vec4(glm::vec3(obj.pos) * RENDERER_MODEL_SCALE_DOWN, 1.0f);
-		if (obj_screen.w <= 0.0f) continue; // Behind camera
+		glm::vec3 he = renderer_.GetMeshExtents(obj.modelId, obj.isBuilding);
+		float max_he = glm::max(he.x, glm::max(he.y, he.z));
+		if (max_he < 1.0f) {
+			he = glm::vec3(200.0f); // fallback for missing meshes
+		}
 
-		glm::vec2 obj_ndc(obj_screen.x / obj_screen.w, obj_screen.y / obj_screen.w);
+		glm::mat4 model = glm::mat4(1.0f);
+		model = glm::translate(model, glm::vec3(obj.pos));
+		model = glm::rotate(model, (float)obj.rot.z, glm::vec3(0, 0, 1));
+		model = glm::rotate(model, (float)obj.rot.x, glm::vec3(1, 0, 0));
+		model = glm::rotate(model, (float)obj.rot.y, glm::vec3(0, 1, 0));
+		model = glm::scale(model, glm::vec3(BASE_SCALE * obj.scale));
+		model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1, 0, 0));
+		glm::mat4 mvp = mvp_base * model;
 
-		// Check distance in screen space
-		float screen_dist = glm::length(glm::vec2(ndc_x, ndc_y) - obj_ndc);
+		float min_px = FLT_MAX, max_px = -FLT_MAX;
+		float min_py = FLT_MAX, max_py = -FLT_MAX;
+		float min_depth = FLT_MAX;
+		bool any_front = false;
 
-		// Threshold for picking - use larger threshold for easier detection
-		float threshold = 0.2f; // 20% of viewport
-		if (screen_dist < threshold && screen_dist < closest_distance) {
-			closest_distance = screen_dist;
+		for (int cx = -1; cx <= 1; cx += 2) {
+			for (int cy = -1; cy <= 1; cy += 2) {
+				for (int cz = -1; cz <= 1; cz += 2) {
+					glm::vec4 clip = mvp * glm::vec4(he.x * cx, he.y * cy, he.z * cz, 1.0f);
+					if (clip.w <= 0.0f) continue;
+					any_front = true;
+					float ndc_x = clip.x / clip.w;
+					float ndc_y = clip.y / clip.w;
+					float px = (ndc_x * 0.5f + 0.5f) * (float)width;
+					float py = (1.0f - (ndc_y * 0.5f + 0.5f)) * (float)height;
+					min_px = std::min(min_px, px);
+					max_px = std::max(max_px, px);
+					min_py = std::min(min_py, py);
+					max_py = std::max(max_py, py);
+					min_depth = std::min(min_depth, clip.w);
+				}
+			}
+		}
+
+		if (!any_front) continue;
+
+		float margin = 2.0f;
+		if ((float)screen_x >= min_px - margin && (float)screen_x <= max_px + margin &&
+			(float)screen_y >= min_py - margin && (float)screen_y <= max_py + margin) {
+			if (closest_index == -1 || min_depth < closest_depth) {
+				closest_depth = min_depth;
 			closest_index = (int)i;
+			}
 		}
 	}
 
 	return closest_index;
 }
 
+// ─── QSC/QVM Workflow ─────────────────────────────────────────────────────────────
 
+std::string App::GetCurrentWorkingDirectory() {
+	char buffer[MAX_PATH];
+	GetModuleFileNameA(NULL, buffer, MAX_PATH);
+	std::string exePath(buffer);
+	size_t lastSlash = exePath.find_last_of("\\/");
+	if (lastSlash != std::string::npos) {
+		return exePath.substr(0, lastSlash);
+	}
+	return exePath;
+}
+
+std::string App::GetLevelQSCPath(int level_no) {
+	char appDataPath[MAX_PATH];
+	GetEnvironmentVariableA("APPDATA", appDataPath, MAX_PATH);
+	std::string qfiles_path = std::string(appDataPath) + "\\QEditor\\QFiles\\IGI_QSC\\missions\\location0\\level" + std::to_string(level_no);
+	return qfiles_path + "\\objects.qsc";
+}
+
+std::string App::GetLevelQVMPath(int level_no) {
+	// Read from config
+	char igiPath[MAX_PATH];
+	GetPrivateProfileStringA("GamePath", "IGIPath", "D:\\IGI1", igiPath, MAX_PATH, ".\\config.ini");
+	std::string game_path = std::string(igiPath);
+	return game_path + "\\missions\\location0\\level" + std::to_string(level_no) + "\\objects.qvm";
+}
+
+void App::LoadQSCForLevel(int level_no) {
+	namespace fs = std::filesystem;
+
+	std::string qsc_source = GetLevelQSCPath(level_no);
+	std::string cwd = GetCurrentWorkingDirectory();
+	std::string qsc_dest = cwd + "\\objects.qsc";
+
+	// Set up compiler output callback
+	compiler_.SetOutputCallback([](const std::string& msg) {
+		Logger::Get().Log(LogLevel::INFO, msg);
+		printf("%s\n", msg.c_str());
+	});
+
+	// Check if source exists
+	if (!fs::exists(qsc_source)) {
+		Logger::Get().Log(LogLevel::WARNING, "[App] QSC file not found at: " + qsc_source);
+		Logger::Get().Log(LogLevel::INFO, "[App] Attempting to decompile from game QVM...");
+		DecompileFromGame(level_no);
+		return;
+	}
+
+	// Copy to current directory
+	try {
+		if (fs::exists(qsc_dest)) fs::remove(qsc_dest);
+		fs::copy_file(qsc_source, qsc_dest, fs::copy_options::overwrite_existing);
+		Logger::Get().Log(LogLevel::INFO, "[App] Loaded QSC from: " + qsc_source + " to: " + qsc_dest);
+	} catch (const std::exception& e) {
+		Logger::Get().Log(LogLevel::ERR, "[App] Failed to copy QSC: " + std::string(e.what()));
+	}
+}
+
+void App::DecompileFromGame(int level_no) {
+	namespace fs = std::filesystem;
+
+	std::string qvm_source = GetLevelQVMPath(level_no);
+	std::string cwd = GetCurrentWorkingDirectory();
+	std::string qsc_dest = cwd + "\\objects.qsc";
+
+	if (!fs::exists(qvm_source)) {
+		Logger::Get().Log(LogLevel::ERR, "[App] Game QVM not found at: " + qvm_source);
+		return;
+	}
+
+	// Set up decompiler output callback
+	decompiler_.SetOutputCallback([](const std::string& msg) {
+		Logger::Get().Log(LogLevel::INFO, msg);
+		printf("%s\n", msg.c_str());
+	});
+
+	bool success = decompiler_.Decompile(qvm_source, qsc_dest);
+	if (success) {
+		Logger::Get().Log(LogLevel::INFO, "[App] Successfully decompiled to: " + qsc_dest);
+	} else {
+		Logger::Get().Log(LogLevel::ERR, "[App] Failed to decompile from game QVM");
+	}
+}
+
+void App::SaveAndCompile() {
+	namespace fs = std::filesystem;
+
+	Logger::Get().Log(LogLevel::INFO, "[App] SaveAndCompile() starting");
+
+	std::string cwd = GetCurrentWorkingDirectory();
+	Logger::Get().Log(LogLevel::INFO, "[App] .exe directory: " + cwd);
+
+	std::string qsc_source = cwd + "\\objects.qsc";
+	std::string qvm_dest = GetLevelQVMPath(level_.GetLevelNo());
+
+	Logger::Get().Log(LogLevel::INFO, "[App] Full QSC path: " + qsc_source);
+	Logger::Get().Log(LogLevel::INFO, "[App] QVM destination: " + qvm_dest);
+
+	if (!fs::exists(qsc_source)) {
+		Logger::Get().Log(LogLevel::ERR, "[App] QSC file not found at: " + qsc_source);
+		return;
+	}
+
+	// Set up compiler output callback
+	compiler_.SetOutputCallback([](const std::string& msg) {
+		Logger::Get().Log(LogLevel::INFO, msg);
+		printf("%s\n", msg.c_str());
+	});
+
+	Logger::Get().Log(LogLevel::INFO, "[App] Calling compiler.Compile()");
+	bool success = compiler_.Compile(qsc_source, qvm_dest);
+	if (success) {
+		Logger::Get().Log(LogLevel::INFO, "[App] Successfully compiled and deployed QVM to: " + qvm_dest);
+	} else {
+		Logger::Get().Log(LogLevel::ERR, "[App] Failed to compile QSC");
+	}
+}
+
+void App::SetInitialDrawParts(int parts) {
+	if (parts != 0) {
+		draw_params_.draw_parts_ = parts;
+		Logger::Get().Log(LogLevel::INFO, "[App] Set initial draw_parts to: " + std::to_string(parts));
+	}
+}
+
+void App::SetInitialStickToGround(bool stick) {
+	stick_to_ground_ = stick;
+	if (stick) {
+		SnapObjectsToTerrain();
+		Logger::Get().Log(LogLevel::INFO, "[App] Enabled stick_to_ground mode");
+	}
+}
 
