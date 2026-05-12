@@ -53,22 +53,17 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 	ConfigData& cfg = Config::Get();
 	char filename[1024];
 
-	// Priority 1: Editor Root (AppData/res)
-	Str_SPrintf(filename, 1024, "%s/objects.qsc", g_folders.res_folder_);
-	
+	// Priority 1: Mission-specific folder in AppData/QFiles/IGI_QSC
+	Str_SPrintf(filename, 1024, "%s/missions/location0/level%d/objects.qsc", g_folders.res_folder_, params.level_no_);
+
 	if (!File_Exists(filename)) {
-		// Priority 2: Mission-specific folder in AppData/res
-		Str_SPrintf(filename, 1024, "%s/missions/location0/level%d/objects.qsc", g_folders.res_folder_, params.level_no_);
+		// Priority 2: IGI Game Directory
+		Str_SPrintf(filename, 1024, "%s\\missions\\location0\\level%d\\objects.qsc", cfg.igiPath.c_str(), params.level_no_);
 
 		if (!File_Exists(filename)) {
-			// Priority 3: IGI Game Directory
-			Str_SPrintf(filename, 1024, "%s\\missions\\location0\\level%d\\objects.qsc", cfg.igiPath.c_str(), params.level_no_);
-			
-			if (!File_Exists(filename)) {
-				// Priority 4: Decompile into Editor Root
-				DecompileObjects(params.level_no_);
-				Str_SPrintf(filename, 1024, "objects.qsc");
-			}
+			// Priority 3: Decompile into Editor Root
+			DecompileObjects(params.level_no_);
+			Str_SPrintf(filename, 1024, "%s/objects.qsc", g_folders.res_folder_);
 		}
 	}
 
@@ -221,18 +216,19 @@ void Level::Update(update_params_s& params) {
 void Level::SaveChanges() {
 	terrain_.Save(cur_level_no_);
 	
-	ConfigData& cfg = Config::Get();
+	// Get the .exe directory (same as App uses)
+	char exePath[MAX_PATH];
+	GetModuleFileNameA(NULL, exePath, MAX_PATH);
+	std::string exeDir(exePath);
+	size_t lastSlash = exeDir.find_last_of("\\/");
+	if (lastSlash != std::string::npos) {
+		exeDir = exeDir.substr(0, lastSlash);
+	}
 	
-	// Save 1: Editor Root
-	std::string localQsc = "objects.qsc";
+	std::string localQsc = exeDir + "\\objects.qsc";
+	Logger::Get().Log(LogLevel::INFO, "[Level] Saving QSC to .exe path: " + localQsc);
 	level_objects_.SaveToQSC(localQsc);
-	Logger::Get().Log(LogLevel::INFO, "[Level] Saved to Local: " + localQsc);
-
-	// Save 2: IGI Game Directory
-	char gameQsc[1024];
-	Str_SPrintf(gameQsc, 1024, "%s\\missions\\location0\\level%d\\objects.qsc", cfg.igiPath.c_str(), cur_level_no_);
-	level_objects_.SaveToQSC(gameQsc);
-	Logger::Get().Log(LogLevel::INFO, "[Level] Saved to Game Path: " + std::string(gameQsc));
+	Logger::Get().Log(LogLevel::INFO, "[Level] Saved QSC to: " + localQsc);
 }
 
 bool Level::GetTerrainZ(const glm::vec3& pos, float& z) {

@@ -32,11 +32,11 @@ Renderer::~Renderer() {
 void Renderer::LoadBuildingNames() {
 	char appDataPath[1024];
 	GetEnvironmentVariableA("APPDATA", appDataPath, 1024);
-	std::string jsonPath = std::string(appDataPath) + "\\QEditor\\IGIModels.json";
+	std::string jsonPath = std::string(appDataPath) + "\\QEditor\\IGIModelsLevel.json";
 
 	FILE* f = fopen(jsonPath.c_str(), "rb");
 	if (!f) {
-		std::cerr << "[Renderer] Failed to open IGIModels.json at: " << jsonPath << std::endl;
+		std::cerr << "[Renderer] Failed to open IGIModelsLevel.json at: " << jsonPath << std::endl;
 		return;
 	}
 
@@ -52,37 +52,105 @@ void Renderer::LoadBuildingNames() {
 	std::string content(buf);
 	delete[] buf;
 
-	// Simple JSON parsing - find ModelName and ModelId pairs
+	// Parse IGIModelsLevel.json structure
+	// Format: { "Level 1": { "Objects": [...], "Buildings": [...] }, ... }
 	size_t pos = 0;
-	while ((pos = content.find("\"ModelName\"", pos)) != std::string::npos) {
-		size_t nameStart = content.find("\"", pos + 12) + 1;
-		size_t nameEnd = content.find("\"", nameStart);
-		if (nameStart == std::string::npos || nameEnd == std::string::npos) break;
+	while ((pos = content.find("\"Level ", pos)) != std::string::npos) {
+		size_t levelEnd = content.find("\"", pos + 7);
+		if (levelEnd == std::string::npos) break;
+		std::string levelStr = content.substr(pos + 7, levelEnd - pos - 7);
+		int levelNum = std::stoi(levelStr);
 
-		std::string modelName = content.substr(nameStart, nameEnd - nameStart);
+		// Find Objects array for this level
+		size_t objectsPos = content.find("\"Objects\"", levelEnd);
+		if (objectsPos != std::string::npos) {
+			size_t arrayStart = content.find("[", objectsPos);
+			size_t arrayEnd = content.find("]", arrayStart);
+			if (arrayStart != std::string::npos && arrayEnd != std::string::npos) {
+				std::string objectsArray = content.substr(arrayStart, arrayEnd - arrayStart + 1);
+				ParseLevelObjects(objectsArray, levelNum, false);
+			}
+		}
 
-		size_t idPos = content.find("\"ModelId\"", nameEnd);
-		if (idPos == std::string::npos) break;
+		// Find Buildings array for this level
+		size_t buildingsPos = content.find("\"Buildings\"", levelEnd);
+		if (buildingsPos != std::string::npos) {
+			size_t arrayStart = content.find("[", buildingsPos);
+			size_t arrayEnd = content.find("]", arrayStart);
+			if (arrayStart != std::string::npos && arrayEnd != std::string::npos) {
+				std::string buildingsArray = content.substr(arrayStart, arrayEnd - arrayStart + 1);
+				ParseLevelObjects(buildingsArray, levelNum, true);
+			}
+		}
 
-		size_t idStart = content.find("\"", idPos + 10) + 1;
-		size_t idEnd = content.find("\"", idStart);
-		if (idStart == std::string::npos || idEnd == std::string::npos) break;
-
-		std::string modelId = content.substr(idStart, idEnd - idStart);
-
-		building_names_[modelId] = modelName;
-		pos = idEnd + 1;
+		pos = levelEnd + 1;
 	}
 
-	std::cout << "[Renderer] Loaded " << building_names_.size() << " building names from IGIModels.json" << std::endl;
+	Logger::Get().Log(LogLevel::INFO, "[Renderer] Loaded " + std::to_string(building_names_.size()) + " building names and " + std::to_string(task_ids_.size()) + " task IDs from IGIModelsLevel.json");
+}
+
+void Renderer::ParseLevelObjects(const std::string& arrayContent, int levelNum, bool isBuilding) {
+	size_t pos = 0;
+	while ((pos = arrayContent.find("\"ModelID\"", pos)) != std::string::npos) {
+		size_t idStart = arrayContent.find("\"", pos + 10) + 1;
+		size_t idEnd = arrayContent.find("\"", idStart);
+		if (idStart == std::string::npos || idEnd == std::string::npos) break;
+
+		std::string modelId = arrayContent.substr(idStart, idEnd - idStart);
+
+		// Find boundary of current JSON object (next ModelID or end)
+		size_t nextModelIdPos = arrayContent.find("\"ModelID\"", idEnd);
+		size_t objectEnd = (nextModelIdPos != std::string::npos) ? nextModelIdPos : arrayContent.length();
+
+		// Find Name within this object only
+		size_t namePos = arrayContent.find("\"Name\"", idEnd);
+		if (namePos != std::string::npos && namePos < objectEnd) {
+			size_t nameStart = arrayContent.find("\"", namePos + 7) + 1;
+			size_t nameEnd = arrayContent.find("\"", nameStart);
+			if (nameStart != std::string::npos && nameEnd != std::string::npos) {
+				std::string name = arrayContent.substr(nameStart, nameEnd - nameStart);
+				std::string key = std::to_string(levelNum) + "_" + modelId;
+				building_names_[key] = name;
+			}
+		}
+
+		// Find TaskID within this object only
+		size_t taskIdPos = arrayContent.find("\"TaskID\"", idEnd);
+		if (taskIdPos != std::string::npos && taskIdPos < objectEnd) {
+			size_t taskIdStart = arrayContent.find("\"", taskIdPos + 9) + 1;
+			size_t taskIdEnd = arrayContent.find("\"", taskIdStart);
+			if (taskIdStart != std::string::npos && taskIdEnd != std::string::npos) {
+				std::string taskId = arrayContent.substr(taskIdStart, taskIdEnd - taskIdStart);
+				std::string key = std::to_string(levelNum) + "_" + modelId;
+				task_ids_[key] = taskId;
+			}
+		}
+
+		pos = idEnd + 1;
+	}
 }
 
 std::string Renderer::GetBuildingName(const std::string& modelId) {
-	auto it = building_names_.find(modelId);
+	std::string key = std::to_string(current_level_) + "_" + modelId;
+	auto it = building_names_.find(key);
 	if (it != building_names_.end()) {
 		return it->second;
 	}
-	return "Building";
+	// Fallback to non-level-specific lookup for compatibility
+	it = building_names_.find(modelId);
+	if (it != building_names_.end()) {
+		return it->second;
+	}
+	return "";
+}
+
+std::string Renderer::GetTaskId(const std::string& modelId) {
+	std::string key = std::to_string(current_level_) + "_" + modelId;
+	auto it = task_ids_.find(key);
+	if (it != task_ids_.end()) {
+		return it->second;
+	}
+	return "0";
 }
 
 bool Renderer::Init() {
@@ -315,45 +383,108 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                 
                 draw_text(20, line_y, "Checks: 0", 1.0f, 1.0f, 1.0f);
 
-                // Display hover object info at mouse position (always show, not just in debug)
-                // Only show in free mode (when edit mode is disabled)
-                if (!hud.edit_mode_ && hud.hover_object_index_ >= 0 && hud.level_objects_) {
+                // Display object info at mouse position
+                int info_object_index = hud.edit_mode_ ? hud.selected_object_index_ : hud.hover_object_index_;
+                if (info_object_index >= 0 && hud.level_objects_) {
                         const auto& objects = hud.level_objects_->GetObjects();
-                        if (hud.hover_object_index_ < (int)objects.size()) {
-                                const auto& obj = objects[hud.hover_object_index_];
+                        if (info_object_index < (int)objects.size()) {
+                                const auto& obj = objects[info_object_index];
 
                                 char buf[512];
-                                // Get building name from IGIModels.json
-                                std::string building_name = GetBuildingName(obj.modelId);
-
-                                // Get task ID - use taskId if it's numeric, otherwise use 0
-                                int building_id = 0;
-                                try {
-                                        if (!obj.taskId.empty()) {
-                                                building_id = std::stoi(obj.taskId);
-                                        }
-                                } catch (...) {
-                                        building_id = 0;
+                                std::string display_name = obj.name;
+                                if (display_name.empty()) {
+                                        display_name = GetBuildingName(obj.modelId);
+                                }
+                                if (display_name.empty()) {
+                                        display_name = obj.modelId;
                                 }
 
-                                // Building Name ID in WHITE above mouse (offset upward from cursor)
-                                snprintf(buf, sizeof(buf), "%s ID:%d", building_name.c_str(), building_id);
+                                std::string task_id = obj.taskId.empty() ? "-1" : obj.taskId;
+
                                 int text_x = hud.mouse_x_;
                                 int text_y = hud.mouse_y_ + 25;
-                                // Clamp to viewport
                                 if (text_x < 0) text_x = 0;
                                 if (text_x > params.view_define_->viewport_width_ - 200) text_x = params.view_define_->viewport_width_ - 200;
                                 if (text_y < 0) text_y = 0;
                                 if (text_y > params.view_define_->viewport_height_ - 50) text_y = params.view_define_->viewport_height_ - 50;
+
+                                // Line 1: ModelName ID: Task_New first param
+                                snprintf(buf, sizeof(buf), "%s ID: %s", display_name.c_str(), task_id.c_str());
                                 draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
 
-                                // Model ID in GREEN above mouse (closer to cursor)
+                                // Line 2: Full ModelID
+                                text_y += 15;
                                 snprintf(buf, sizeof(buf), "%s", obj.modelId.c_str());
-                                text_y = hud.mouse_y_ + 10;
-                                if (text_y < 0) text_y = 0;
-                                if (text_y > params.view_define_->viewport_height_ - 30) text_y = params.view_define_->viewport_height_ - 30;
-                                draw_text(text_x, text_y, buf, 0.0f, 1.0f, 0.0f);
+                                draw_text(text_x, text_y, buf, obj.isBuilding ? 1.0f : 0.0f, 1.0f, 0.0f);
                         }
+                }
+
+                if (hud.edit_mode_) {
+                        // Flip Y because glOrtho has y=0 at bottom, but mouse_y is top-down (GLUT)
+                        float cx = (float)(hud.mouse_x_);
+                        float cy = (float)(params.view_define_->viewport_height_ - hud.mouse_y_);
+
+                        if (hud.terrain_edit_enabled_) {
+                                // Terrain edit mode: orange circle brush cursor
+                                float radius = 10.0f;
+                                float th = 2.0f;
+                                glColor3f(1.0f, 0.5f, 0.0f); // Orange
+                                glLineWidth(th);
+                                glBegin(GL_LINE_LOOP);
+                                int segments = 16;
+                                for (int i = 0; i < segments; ++i) {
+                                        float angle = (float)i * 6.283185f / (float)segments;
+                                        glVertex2f(cx + cosf(angle) * radius, cy + sinf(angle) * radius);
+                                }
+                                glEnd();
+                                // Small cross inside circle
+                                float csz = 4.0f;
+                                glBegin(GL_LINES);
+                                glVertex2f(cx - csz, cy); glVertex2f(cx + csz, cy);
+                                glVertex2f(cx, cy - csz); glVertex2f(cx, cy + csz);
+                                glEnd();
+                                glLineWidth(1.0f);
+                        } else {
+                                // Object edit mode: green + icon at mouse cursor
+                                float sz = 7.0f;
+                                float th = 2.5f;
+                                glColor3f(0.0f, 1.0f, 0.0f);
+                                glLineWidth(th);
+                                glBegin(GL_LINES);
+                                glVertex2f(cx - sz, cy); glVertex2f(cx + sz, cy);
+                                glVertex2f(cx, cy - sz); glVertex2f(cx, cy + sz);
+                                glEnd();
+                                glLineWidth(1.0f);
+                        }
+                } else {
+                        // Draw a small blue camera icon at the screen center
+                        float cx = (float)(params.view_define_->viewport_width_ / 2 + 12);
+                        float cy = (float)(params.view_define_->viewport_height_ / 2 + 12);
+                        float w = 12.0f, h = 8.0f;
+                        glColor3f(0.4f, 0.7f, 1.0f);
+                        glLineWidth(2.0f);
+                        // Camera body
+                        glBegin(GL_LINE_LOOP);
+                        glVertex2f(cx - w/2, cy - h/2);
+                        glVertex2f(cx + w/2, cy - h/2);
+                        glVertex2f(cx + w/2, cy + h/2);
+                        glVertex2f(cx - w/2, cy + h/2);
+                        glEnd();
+                        // Lens (inner rect)
+                        glBegin(GL_LINE_LOOP);
+                        glVertex2f(cx - w/5, cy - h/5);
+                        glVertex2f(cx + w/5, cy - h/5);
+                        glVertex2f(cx + w/5, cy + h/5);
+                        glVertex2f(cx - w/5, cy + h/5);
+                        glEnd();
+                        // Viewfinder bump on top
+                        glBegin(GL_LINE_LOOP);
+                        glVertex2f(cx - w/5, cy - h/2);
+                        glVertex2f(cx + w/5, cy - h/2);
+                        glVertex2f(cx + w/5 + 2, cy - h/2 - 4);
+                        glVertex2f(cx - w/5 - 2, cy - h/2 - 4);
+                        glEnd();
+                        glLineWidth(1.0f);
                 }
 
                 if (hud.pause_mode_) {

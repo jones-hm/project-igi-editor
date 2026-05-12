@@ -221,7 +221,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
         if (!shouldDraw) continue;
 
-        Mesh mesh = GetOrLoadMesh(obj.modelId);
+        Mesh mesh = GetOrLoadMesh(obj.modelId, obj.isBuilding);
         if (mesh.vertexCount == 0) continue;
 
 
@@ -285,32 +285,37 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     glUseProgram(0);
 }
 
-float Renderer_Objects::GetMeshZOffset(const std::string& modelId) {
-    auto it = mesh_cache_.find(modelId);
+float Renderer_Objects::GetMeshZOffset(const std::string& modelId, bool isBuilding) {
+    std::string cacheKey = (isBuilding ? "building:" : "object:") + modelId;
+    auto it = mesh_cache_.find(cacheKey);
     if (it != mesh_cache_.end()) {
         return it->second.zOffset;
     }
-    return GetOrLoadMesh(modelId).zOffset;
+    return GetOrLoadMesh(modelId, isBuilding).zOffset;
 }
 
-glm::vec3 Renderer_Objects::GetMeshExtents(const std::string& modelId) {
-    Mesh mesh = GetOrLoadMesh(modelId);
+glm::vec3 Renderer_Objects::GetMeshExtents(const std::string& modelId, bool isBuilding) {
+    Mesh mesh = GetOrLoadMesh(modelId, isBuilding);
     return mesh.halfExtents;
 }
 
 // ─── GetOrLoadMesh ────────────────────────────────────────────────────────────
-Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId) {
+Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding) {
+    std::string cacheKey = (isBuilding ? "building:" : "object:") + modelId;
+
     // Return cached mesh if already loaded
-    auto it = mesh_cache_.find(modelId);
+    auto it = mesh_cache_.find(cacheKey);
     if (it != mesh_cache_.end())
         return it->second;
 
     // Find the file on disk
-    std::string filepath = FindModelFile(modelId);
+    std::string filepath = FindModelFile(modelId, isBuilding);
     if (filepath.empty()) {
-        Logger::Get().Log(LogLevel::WARNING, "[Renderer_Objects] Model search FAILED for ID: " + modelId + ". Using fallback cube.");
-        mesh_cache_[modelId] = CreateCubeMesh();
-        return mesh_cache_[modelId];
+        Logger::Get().Log(LogLevel::WARNING, "[Renderer_Objects] Model search FAILED for ID: " + modelId + ". Skipping render.");
+        Mesh emptyMesh;
+        emptyMesh.vertexCount = 0;
+        mesh_cache_[cacheKey] = emptyMesh;
+        return mesh_cache_[cacheKey];
     }
 
 
@@ -335,17 +340,169 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId) {
         }
 
         Mesh mesh = loadObjModel(filepath, texPath);
-        mesh_cache_[modelId] = mesh;
+        mesh_cache_[cacheKey] = mesh;
         Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Success: Loaded model '" + modelId + "' from " + filepath + " (" + std::to_string(mesh.vertexCount) + " vertices)");
         return mesh;
 
     } catch (const std::exception& e) {
         Logger::Get().Log(LogLevel::ERR, "[Renderer_Objects] Load FAILED for " + modelId + ": " + std::string(e.what()));
         Mesh emptyMesh;
-        mesh_cache_[modelId] = emptyMesh;
-        return mesh_cache_[modelId];
+        mesh_cache_[cacheKey] = emptyMesh;
+        return mesh_cache_[cacheKey];
     }
 
+}
+
+Mesh Renderer_Objects::CreateTextMesh(const std::string& text) {
+    Mesh m;
+    std::vector<float> vertices;
+    
+    // Simple stroke font - each character defined as line segments
+    // Scale factor for text - reduced to be less intrusive
+    const float scale = 20.0f;
+    const float charSpacing = 25.0f;
+    const float startX = -((text.size() * charSpacing) / 2.0f);
+    
+    float cursorX = startX;
+    
+    for (char c : text) {
+        AddCharacterVertices(vertices, c, cursorX, 0.0f, scale);
+        cursorX += charSpacing;
+    }
+    
+    if (vertices.empty()) {
+        // Fallback to a simple cross if text generation fails
+        vertices = {
+            -50.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+             50.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+             0.0f, -50.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+             0.0f,  50.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f
+        };
+    }
+    
+    glGenVertexArrays(1, &m.VAO);
+    glGenBuffers(1, &m.VBO);
+    glBindVertexArray(m.VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m.VBO);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+    
+    // Position (xyz)
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    // Normal (xyz) - use as color multiplier
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)12);
+    glEnableVertexAttribArray(1);
+    // TexCoord (uv) - unused
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)24);
+    glEnableVertexAttribArray(2);
+    
+    glBindVertexArray(0);
+    m.vertexCount = vertices.size() / 8;
+    m.textureID = 0;
+    m.vertexData = nullptr;
+    return m;
+}
+
+void Renderer_Objects::AddCharacterVertices(std::vector<float>& vertices, char c, float x, float y, float scale) {
+    // Simple stroke definitions for common characters - using triangle strips for each line
+    // Each line segment becomes a thin quad (2 triangles)
+    auto addLineQuad = [&](float x1, float y1, float x2, float y2) {
+        float thickness = 0.1f;
+        float nx = 1.0f, ny = 0.0f, nz = 0.0f; // Red color
+        
+        // Calculate perpendicular offset for thickness
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        float len = sqrt(dx*dx + dy*dy);
+        if (len < 0.0001f) return;
+        float ox = -dy / len * thickness;
+        float oy = dx / len * thickness;
+        
+        // Quad vertices (2 triangles)
+        // Triangle 1
+        vertices.push_back(x + x1 * scale + ox); vertices.push_back(y + y1 * scale + oy); vertices.push_back(0.0f);
+        vertices.push_back(nx); vertices.push_back(ny); vertices.push_back(nz);
+        vertices.push_back(0.0f); vertices.push_back(0.0f);
+        
+        vertices.push_back(x + x2 * scale + ox); vertices.push_back(y + y2 * scale + oy); vertices.push_back(0.0f);
+        vertices.push_back(nx); vertices.push_back(ny); vertices.push_back(nz);
+        vertices.push_back(0.0f); vertices.push_back(0.0f);
+        
+        vertices.push_back(x + x1 * scale - ox); vertices.push_back(y + y1 * scale - oy); vertices.push_back(0.0f);
+        vertices.push_back(nx); vertices.push_back(ny); vertices.push_back(nz);
+        vertices.push_back(0.0f); vertices.push_back(0.0f);
+        
+        // Triangle 2
+        vertices.push_back(x + x1 * scale - ox); vertices.push_back(y + y1 * scale - oy); vertices.push_back(0.0f);
+        vertices.push_back(nx); vertices.push_back(ny); vertices.push_back(nz);
+        vertices.push_back(0.0f); vertices.push_back(0.0f);
+        
+        vertices.push_back(x + x2 * scale + ox); vertices.push_back(y + y2 * scale + oy); vertices.push_back(0.0f);
+        vertices.push_back(nx); vertices.push_back(ny); vertices.push_back(nz);
+        vertices.push_back(0.0f); vertices.push_back(0.0f);
+        
+        vertices.push_back(x + x2 * scale - ox); vertices.push_back(y + y2 * scale - oy); vertices.push_back(0.0f);
+        vertices.push_back(nx); vertices.push_back(ny); vertices.push_back(nz);
+        vertices.push_back(0.0f); vertices.push_back(0.0f);
+    };
+    
+    c = toupper(c);
+    
+    switch (c) {
+        case 'M':
+            addLineQuad(0, 1, 0, -1);
+            addLineQuad(0, -1, 0.5, 0);
+            addLineQuad(0.5, 0, 1, -1);
+            addLineQuad(1, -1, 1, 1);
+            break;
+        case 'I':
+            addLineQuad(0, 1, 0, -1);
+            addLineQuad(-0.3, 1, 0.3, 1);
+            addLineQuad(-0.3, -1, 0.3, -1);
+            break;
+        case 'S':
+            addLineQuad(0.3, 1, 0, 1);
+            addLineQuad(0, 1, 0, 0);
+            addLineQuad(0, 0, 1, 0);
+            addLineQuad(1, 0, 1, -1);
+            addLineQuad(1, -1, 0.7, -1);
+            break;
+        case 'N':
+            addLineQuad(0, -1, 0, 1);
+            addLineQuad(0, 1, 1, -1);
+            addLineQuad(1, -1, 1, 1);
+            break;
+        case 'G':
+            addLineQuad(0.7, 1, 0, 1);
+            addLineQuad(0, 1, 0, -1);
+            addLineQuad(0, -1, 0.7, -1);
+            addLineQuad(0.7, -1, 1, -1);
+            addLineQuad(1, -1, 1, 0);
+            addLineQuad(1, 0, 0.7, 0);
+            break;
+        case ':':
+            addLineQuad(0, 0.3, 0, 0.3);
+            addLineQuad(0, -0.3, 0, -0.3);
+            break;
+        case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
+            // Simple box for numbers with slash
+            addLineQuad(0, 1, 0, -1);
+            addLineQuad(0, -1, 1, -1);
+            addLineQuad(1, -1, 1, 1);
+            addLineQuad(1, 1, 0, 1);
+            addLineQuad(0.2, -0.8, 0.8, -0.2);
+            break;
+        case '_':
+            addLineQuad(0, -1, 1, -1);
+            break;
+        default:
+            // Default to a box for unknown characters
+            addLineQuad(0, 1, 0, -1);
+            addLineQuad(0, -1, 1, -1);
+            addLineQuad(1, -1, 1, 1);
+            addLineQuad(1, 1, 0, 1);
+            break;
+    }
 }
 
 Mesh Renderer_Objects::CreateCubeMesh() {
@@ -375,22 +532,33 @@ Mesh Renderer_Objects::CreateCubeMesh() {
     glBindVertexArray(0); return m;
 }
 
-std::string Renderer_Objects::FindModelFile(const std::string& modelId) {
+std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isBuilding) {
     std::string levelDir = "level" + std::to_string(current_level_);
-    std::string objectsBase = g_folders.objects_folder_;
+    std::string objectsBase = isBuilding ? g_folders.buildings_folder_ : g_folders.objects_folder_;
+    
+    // Convert forward slashes to backslashes for Windows
+    for (char& c : objectsBase) {
+        if (c == '/') c = '\\';
+    }
+    
+    // Use std::filesystem::path for proper path handling
+    std::filesystem::path basePath(objectsBase);
+    std::filesystem::path levelPath = basePath / levelDir;
     
     // 1. Try exact match in level-specific folder
-    const std::vector<std::string> searchPaths = { 
-        objectsBase + "/" + levelDir + "/" + modelId + ".obj", 
-        objectsBase + "/" + levelDir + "/" + modelId + ".mef",
-        objectsBase + "/" + modelId + ".obj",
-        objectsBase + "/" + modelId + ".mef"
+    std::vector<std::filesystem::path> searchPaths = { 
+        levelPath / (modelId + ".obj"), 
+        levelPath / (modelId + ".mef")
     };
-    for (const auto& path : searchPaths) if (std::filesystem::exists(path)) return path;
+    for (const auto& path : searchPaths) {
+        std::string pathStr = path.string();
+        if (std::filesystem::exists(pathStr)) {
+            return pathStr;
+        }
+    }
     
-    // 2. Try partial match (wildcard search in 'objects/levelX' folder)
-    std::string objectsPath = objectsBase + "/" + levelDir;
-    if (std::filesystem::exists(objectsPath)) {
+    // 2. Try partial match (wildcard search in level-specific folder)
+    if (std::filesystem::exists(levelPath)) {
         // Try BaseID (stripped of _1) if applicable
         std::string baseId = modelId;
         if (baseId.size() > 2 && baseId.substr(baseId.size() - 2) == "_1") {
@@ -398,7 +566,7 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId) {
         }
 
         std::string bestMatch = "";
-        for (const auto& entry : std::filesystem::directory_iterator(objectsPath)) {
+        for (const auto& entry : std::filesystem::directory_iterator(levelPath)) {
             if (!entry.is_regular_file()) continue;
             std::string fname = entry.path().filename().string();
             std::string ext = entry.path().extension().string();
@@ -415,6 +583,9 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId) {
                 if (fname.find(typeId + "_01") != std::string::npos) {
                     bestMatch = entry.path().string();
                 }
+                if (bestMatch.empty() && fname.rfind(typeId + "_", 0) == 0) {
+                    bestMatch = entry.path().string();
+                }
             }
             
             // Last resort: any file containing the type prefix
@@ -423,7 +594,6 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId) {
             }
         }
         if (!bestMatch.empty()) {
-            Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Fuzzy match found for '" + modelId + "': " + bestMatch);
             return bestMatch;
         }
     }

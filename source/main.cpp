@@ -513,6 +513,20 @@ int main(int argc, char **argv) {
 	int wnd_w = Arg_ReadInt(argc, argv, "-w", 800);
 	int wnd_h = Arg_ReadInt(argc, argv, "-h", 600);
 
+	// read level from command line
+	int level_no = Arg_ReadInt(argc, argv, "-level", 1);
+
+	// read draw_parts from command line (bitmask: 1=terrain, 2=sky, 4=objects, 8=flat_sky, 16=buildings, 32=props)
+	// Example: 17 = 1 (terrain) + 16 (buildings)
+	// We automatically add skydome (2) and flat sky (8) when draw_parts is specified
+	int draw_parts = Arg_ReadInt(argc, argv, "-draw_parts", 0);
+	if (draw_parts != 0) {
+		draw_parts |= Renderer::DRAW_SKYDOME | Renderer::DRAW_FLAT_SKY_LAYER;
+	}
+
+	// read stick_to_ground flag
+	bool stick_to_ground = (Arg_OptionIdx(argc, argv, "-stick_to_ground") > -1);
+
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
 	
@@ -550,6 +564,18 @@ int main(int argc, char **argv) {
 
 	if (!g_app.Init(argc, argv)) {
 		return 2;
+	}
+
+	// Apply command line settings
+	if (draw_parts != 0) {
+		g_app.SetInitialDrawParts(draw_parts);
+	}
+	if (stick_to_ground) {
+		g_app.SetInitialStickToGround(true);
+	}
+	if (level_no > 0) {
+		g_app.LoadLevel(level_no);
+		g_app.SetGameLevel(level_no);
 	}
 
 	// setup glut callbacks

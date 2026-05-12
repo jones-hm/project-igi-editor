@@ -871,21 +871,24 @@ void Folders_Init() {
 
 	Str_EraseDoubleDotsInPath(buf);
 
-	// If we have AppData path, use it for res, objects, and textures
+	// Always use AppData path for QFiles
 	if (appdata_buf[0] != 0) {
 		Str_SPrintf(g_folders.res_folder_, 1024, "%s/QFiles/IGI_QSC", appdata_buf);
+		Str_SPrintf(g_folders.objects_folder_, 1024, "%s/3DEditor/objects", appdata_buf);
+		Str_SPrintf(g_folders.buildings_folder_, 1024, "%s/3DEditor/buildings", appdata_buf);
 		// Use configured textures path from Config
 		std::string configuredTexturesPath = Config::Get().texturesPath;
 		if (!configuredTexturesPath.empty()) {
 			Str_Copy(g_folders.textures_folder_, 1024, configuredTexturesPath.c_str());
 		} else {
-			Str_SPrintf(g_folders.objects_folder_, 1024, "%s/3DEditor/objects", appdata_buf);
+			Str_SPrintf(g_folders.textures_folder_, 1024, "%s/3DEditor/textures", appdata_buf);
 		}
-		Str_SPrintf(g_folders.textures_folder_, 1024, "%s/3DEditor/textures", appdata_buf);
 	} else {
-		Str_SPrintf(g_folders.res_folder_, 1024, "%s/res", buf);
-		Str_SPrintf(g_folders.objects_folder_, 1024, "%s/objects", buf);
-		Str_SPrintf(g_folders.textures_folder_, 1024, "%s/textures", buf);
+		Logger::Get().Log(LogLevel::ERR, "[Common] AppData path not found, cannot set folder paths");
+		Str_SPrintf(g_folders.res_folder_, 1024, ".");
+		Str_SPrintf(g_folders.objects_folder_, 1024, ".");
+		Str_SPrintf(g_folders.buildings_folder_, 1024, ".");
+		Str_SPrintf(g_folders.textures_folder_, 1024, ".");
 	}
 
 	Str_SPrintf(g_folders.shader_folder_, 1024, "%s/shaders", buf);

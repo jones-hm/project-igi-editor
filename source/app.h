@@ -8,6 +8,8 @@
 #include "igi_bridge.h"
 #include "renderer/model.h"
 #include "config.h"
+#include "compiler.h"
+#include "decompiler.h"
 
 
 /*
@@ -58,6 +60,10 @@ public:
 	int						GetTerrainModOptions() const;
 	void					SetSelectedObjectScale(float scale);
 	float					GetSelectedObjectScale() const;
+
+	// Command line initial settings
+	void					SetInitialDrawParts(int parts);
+	void					SetInitialStickToGround(bool stick);
 
 	// events
 	void					OnWindowResize(int width, int height);
@@ -110,6 +116,8 @@ private:
 	IGIBridge				bridge_;
 	Renderer::draw_params_s	draw_params_;
 	int						terrain_mod_options_;
+	Compiler				compiler_;
+	Decompiler				decompiler_;
 
 	// editor
 	bool					edit_mode_;
@@ -179,5 +187,13 @@ private:
 	void					UpdateViewDefine();
 	void					EditorProcessClick();
 	void					UpdateMarkerManipulation();
+
+	// QSC/QVM workflow
+	void					LoadQSCForLevel(int level_no);
+	void					SaveAndCompile();
+	void					DecompileFromGame(int level_no);
+	std::string				GetLevelQSCPath(int level_no);
+	std::string				GetLevelQVMPath(int level_no);
+	std::string				GetCurrentWorkingDirectory();
 
 };
