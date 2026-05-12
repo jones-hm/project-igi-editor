@@ -37,7 +37,7 @@
 *.zip
 *.rc
 bin/*/shaders
-
+scratch/*
 # CMake
 CMakeCache.txt
 CMakeFiles/

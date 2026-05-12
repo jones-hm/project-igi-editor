@@ -65,11 +65,13 @@ target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source)
+target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/libs/assimp/include)
 
 
 if (WIN32)
   target_link_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/lib/x64)
   target_link_libraries(igi-editor PRIVATE freeglut glew32 OpenGL32)
+  target_link_libraries(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/libs/assimp/lib/assimp-vc143-mt.lib)
 
   # Increase PCH memory limit to fix compiler heap errors
   if (MSVC)
