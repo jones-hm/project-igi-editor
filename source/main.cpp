@@ -5,6 +5,8 @@
 
 #include "pch.h"
 #include <freeglut.h>
+#include "utils.h"
+#include "config.h"
 
 /*
 ================================================================================
@@ -500,11 +502,21 @@ static int CustomAllocHook(int alloc_type, void* user_data, size_t size, int
 */
 int main(int argc, char **argv) {
 #if defined(_WIN32) && defined(_DEBUG)
+	// Allocate console for debug mode
+	AllocConsole();
+	freopen("CONIN$", "r", stdin);
+	freopen("CONOUT$", "w", stdout);
+	freopen("CONOUT$", "w", stderr);
+	SetConsoleTitleA("IGI Editor v 0.0.0.1 BETA - Jones - HM - Debug Console");
+
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);	// detect memory leak
 # if defined(HOOK_ALLOC)
 	_CrtSetAllocHook(CustomAllocHook);
 # endif
 #endif
+
+	// Initialize config first (before Folders_Init which uses Config)
+	Config::Init();
 
 	// setup path of res and shaders folders
 	Folders_Init();
@@ -537,7 +549,7 @@ int main(int argc, char **argv) {
 	int pos_y = (screen_cy - wnd_h) >> 1;
 	glutInitWindowPosition(pos_x, pos_y);
 	glutInitWindowSize(wnd_w, wnd_h);
-	glutCreateWindow("IGI Editor");
+	glutCreateWindow("IGI Editor v 0.0.0.1 BETA - Jones - HM");
 
 #if defined(_WIN32)
 	// Load icon from file and set it
@@ -574,7 +586,7 @@ int main(int argc, char **argv) {
 	if (hIcon) {
 		HWND hwnd = GetActiveWindow();
 		if (!hwnd) {
-			hwnd = FindWindowA(NULL, "IGI Editor");
+			hwnd = FindWindowA(NULL, "IGI Editor v 0.0.0.1 BETA - Jones - HM");
 		}
 		if (!hwnd) {
 			int glutWindow = glutGetWindow();
@@ -719,7 +731,7 @@ int main(int argc, char **argv) {
 	}
 	catch (const std::exception & e) {
 #if defined(_WIN32)
-		MessageBoxA(NULL, e.what(), "Fatal", MB_ICONSTOP);
+		Utils::LogAndShowError(e.what(), "Fatal Error");
 #else
 		fprintf(stderr, "Fatal: %s\n", e.what());
 #endif

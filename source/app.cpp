@@ -6,6 +6,7 @@
 #include "pch.h"
 #include <freeglut.h>
 #include "logger.h"
+#include "utils.h"
 #include <filesystem>
 
 
@@ -23,6 +24,27 @@ constexpr float		MIN_MOVE_SPEED = 8.0f * WORLD_UNITS_PER_METER;
 constexpr float		MAX_MOVE_SPEED = 8192.0f * WORLD_UNITS_PER_METER;
 constexpr float		MIN_JUMP_SPEED = 4.0f * WORLD_UNITS_PER_METER;
 constexpr float		MAX_JUMP_SPEED = 512.0f * WORLD_UNITS_PER_METER;
+
+static std::string GetExeDirectory() {
+	char exePath[MAX_PATH];
+	GetModuleFileNameA(NULL, exePath, MAX_PATH);
+	std::string exeDir(exePath);
+	size_t lastSlash = exeDir.find_last_of("\\/");
+	if (lastSlash != std::string::npos) {
+		exeDir = exeDir.substr(0, lastSlash);
+	}
+	return exeDir;
+}
+
+// Helper function to check if a keybinding is pressed using Windows API
+static bool IsKeyBindingPressed(const KeyBinding& kb) {
+	std::vector<int> keys;
+	if (kb.ctrl) keys.push_back(VK_CONTROL);
+	if (kb.shift) keys.push_back(VK_SHIFT);
+	if (kb.alt) keys.push_back(VK_MENU);
+	if (kb.vkCode) keys.push_back(kb.vkCode);
+	return Utils::HotKeysDown(keys);
+}
 
 
 // movement key down flags
@@ -54,6 +76,7 @@ App::App():
 	hover_object_index_(-1),
 	show_hud_(true),
 	show_debug_(false),
+	show_help_(false),
 
 
 	prior_frame_time_(0),
@@ -97,14 +120,85 @@ App::~App() {
 }
 
 bool App::Init(int argc, char** argv) {
-	Logger::Get().Init("igi_editor.log");
+	// Initialize logger with absolute path to exe directory
+	std::string exeDir = GetExeDirectory();
+	Logger::Get().Init(exeDir + "\\igi_editor.log");
 	Logger::Get().Log(LogLevel::INFO, "IGI Editor Initializing...");
+
+	// Check if running with admin privileges
+	if (!Utils::IsElevatedProcess()) {
+		std::string errorMsg = "WARNING: Application is not running with administrator privileges.\n\n"
+			"Some features may not work correctly.\n"
+			"Please right-click and select 'Run as administrator'.";
+		Utils::ShowWarning(errorMsg, "IGI Editor - Warning");
+		Logger::Get().Log(LogLevel::WARNING, "[App] Not running with admin privileges");
+	}
+
+	// Validate and setup QEditor folder structure first
+	if (!ValidateAndSetupQEditor()) {
+		return false;
+	}
 
 	char appDataPath[1024];
 	GetEnvironmentVariableA("APPDATA", appDataPath, 1024);
 	std::string qCompilerPath = std::string(appDataPath) + "\\QEditor\\QCompiler";
+	std::string exeQCompilerPath = exeDir + "\\QEditor\\QCompiler";
+
+	// Check if QCompiler exists in AppData
 	if (!std::filesystem::exists(qCompilerPath)) {
-		Log(log_type_t::LOG_FATAL, __FILE__, __LINE__, "FATAL ERROR: QCompiler directory not found at: %s\nPlease make sure QEditor is correctly installed in AppData.", qCompilerPath.c_str());
+		// Try to copy from exe directory if it exists there
+		if (std::filesystem::exists(exeQCompilerPath)) {
+			printf("[App] QCompiler not found in AppData, copying from exe directory...\n");
+			Logger::Get().Log(LogLevel::INFO, "[App] QCompiler not found in AppData, copying from exe directory...");
+			try {
+				std::string appDataQEditor = std::string(appDataPath) + "\\QEditor";
+				std::filesystem::create_directories(appDataQEditor);
+				
+				// Copy specific folders/files
+				std::string exe3DEditor = exeDir + "\\QEditor\\3DEditor";
+				std::string exeJSON = exeDir + "\\QEditor\\IGIModelsLevel.json";
+				std::string exeQCompilerTools = exeDir + "\\QEditor\\QCompiler\\Tools";
+				
+				// Copy 3DEditor
+				if (std::filesystem::exists(exe3DEditor)) {
+					std::string appData3DEditor = appDataQEditor + "\\3DEditor";
+					std::filesystem::create_directories(appData3DEditor);
+					std::filesystem::copy(exe3DEditor, appData3DEditor,
+						std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
+					printf("[App] Copied 3DEditor\n");
+				}
+				
+				// Copy IGIModelsLevel.json
+				if (std::filesystem::exists(exeJSON)) {
+					std::filesystem::copy_file(exeJSON, appDataQEditor + "\\IGIModelsLevel.json",
+						std::filesystem::copy_options::overwrite_existing);
+					printf("[App] Copied IGIModelsLevel.json\n");
+				}
+				
+				// Copy QCompiler\Tools
+				if (std::filesystem::exists(exeQCompilerTools)) {
+					std::string appDataQCompilerTools = appDataQEditor + "\\QCompiler\\Tools";
+					std::filesystem::create_directories(appDataQCompilerTools);
+					std::filesystem::copy(exeQCompilerTools, appDataQCompilerTools,
+						std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
+					printf("[App] Copied QCompiler\\Tools\n");
+				}
+				
+				printf("[App] Successfully copied required QEditor resources to AppData\n");
+				Logger::Get().Log(LogLevel::INFO, "[App] Successfully copied required QEditor resources to AppData");
+			}
+			catch (const std::exception& e) {
+				std::string errorMsg = "FATAL ERROR: Failed to copy QEditor resources from exe to AppData: " + std::string(e.what());
+				Utils::LogAndShowError(errorMsg, "IGI Editor - Fatal Error");
+				Log(log_type_t::LOG_FATAL, __FILE__, __LINE__, errorMsg.c_str());
+				return false;
+			}
+		}
+		else {
+			std::string errorMsg = "FATAL ERROR: QCompiler directory not found at:\n" + qCompilerPath + "\n\nAnd not found in exe directory:\n" + exeQCompilerPath + "\n\nPlease make sure QEditor is correctly installed.";
+			Utils::LogAndShowError(errorMsg, "IGI Editor - Fatal Error");
+			Log(log_type_t::LOG_FATAL, __FILE__, __LINE__, errorMsg.c_str());
+		}
 	}
 
 
@@ -112,7 +206,6 @@ bool App::Init(int argc, char** argv) {
 		return false;
 	}
 
-	Config::Init();
 	ConfigData& cfg = Config::Get();
 
 
@@ -125,7 +218,19 @@ bool App::Init(int argc, char** argv) {
 
 	int start_level = Arg_ReadInt(argc, argv, "-level", cfg.level);
 	if (start_level >= MIN_LEVEL_NO && start_level <= MAX_LEVEL_NO) {
-		LoadLevel(start_level);
+		try {
+			LoadLevel(start_level);
+		}
+		catch (const std::exception& e) {
+			std::string errorMsg = "Failed to load level " + std::to_string(start_level) + ":\n" + std::string(e.what());
+			Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
+			Logger::Get().Log(LogLevel::ERR, errorMsg);
+		}
+		catch (...) {
+			std::string errorMsg = "Failed to load level " + std::to_string(start_level) + ":\nUnknown error occurred.";
+			Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
+			Logger::Get().Log(LogLevel::ERR, errorMsg);
+		}
 	}
 
 
@@ -163,35 +268,49 @@ void App::Shutdown() {
 }
 
 void App::LoadLevel(int level_no) {
-	Logger::Get().Log(LogLevel::INFO, "[App] Loading level " + std::to_string(level_no));
-	renderer_.SetLevel(level_no);
-	renderer_.BeginLoadLevel();
+	try {
+		Logger::Get().Log(LogLevel::INFO, "[App] Loading level " + std::to_string(level_no));
+		renderer_.SetLevel(level_no);
+		renderer_.BeginLoadLevel();
 
-	Level::load_params_s level_load_params_s = {
-		.level_no_ = level_no,
-		.render_res_loader_ = &renderer_
-	};
+		Level::load_params_s level_load_params_s = {
+			.level_no_ = level_no,
+			.render_res_loader_ = &renderer_
+		};
 
-	glm::vec3 start_pos;
-	float start_yaw;
-	if (level_.Load(level_load_params_s, start_pos, start_yaw)) {
-		viewer_.pos_ = start_pos;
-		viewer_.yaw_ = 13.0f; // Manually updated to requested start angle
-		viewer_.pitch_ = 10.0f; // Manually updated to requested start angle
-		viewer_.roll_ = 0.0f;
+		glm::vec3 start_pos;
+		float start_yaw;
+		if (level_.Load(level_load_params_s, start_pos, start_yaw)) {
+			viewer_.pos_ = start_pos;
+			viewer_.yaw_ = 13.0f; // Manually updated to requested start angle
+			viewer_.pitch_ = 10.0f; // Manually updated to requested start angle
+			viewer_.roll_ = 0.0f;
 
-		UpdateViewerVectors();
-		Logger::Get().Log(LogLevel::INFO, "[App] Level " + std::to_string(level_no) + " loaded. Viewer start=(" + std::to_string(viewer_.pos_.x) + "," + std::to_string(viewer_.pos_.y) + "," + std::to_string(viewer_.pos_.z) + ")");
+			UpdateViewerVectors();
+			Logger::Get().Log(LogLevel::INFO, "[App] Level " + std::to_string(level_no) + " loaded. Viewer start=(" + std::to_string(viewer_.pos_.x) + "," + std::to_string(viewer_.pos_.y) + "," + std::to_string(viewer_.pos_.z) + ")");
+		}
+		else {
+			std::string errorMsg = "Failed to load level " + std::to_string(level_no) + "\n\nPlease check if the terrain files exist in the correct location.";
+			Utils::ShowError(errorMsg, "IGI Editor - Error");
+			Logger::Get().Log(LogLevel::ERR, "[App] Failed to load level " + std::to_string(level_no));
+		}
+
+		// Load QSC file for this level
+		LoadQSCForLevel(level_no);
+
+		// Always snap objects to terrain after any level load
+		SnapObjectsToTerrain();
 	}
-	else {
-		Logger::Get().Log(LogLevel::ERR, "[App] Failed to load level " + std::to_string(level_no));
+	catch (const std::exception& e) {
+		std::string errorMsg = "Error loading level " + std::to_string(level_no) + ":\n" + std::string(e.what());
+		Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
+		Logger::Get().Log(LogLevel::ERR, errorMsg);
 	}
-
-	// Load QSC file for this level
-	LoadQSCForLevel(level_no);
-
-	// Always snap objects to terrain after any level load
-	SnapObjectsToTerrain();
+	catch (...) {
+		std::string errorMsg = "Unknown error loading level " + std::to_string(level_no);
+		Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
+		Logger::Get().Log(LogLevel::ERR, errorMsg);
+	}
 }
 
 void App::SetGameLevel(int level_no) {
@@ -199,10 +318,22 @@ void App::SetGameLevel(int level_no) {
 }
 
 void App::SaveCurrentLevel() {
-	Logger::Get().Log(LogLevel::INFO, "[App] SaveCurrentLevel() called");
-	level_.SaveChanges();
-	Logger::Get().Log(LogLevel::INFO, "[App] Calling SaveAndCompile()");
-	SaveAndCompile();
+	try {
+		Logger::Get().Log(LogLevel::INFO, "[App] SaveCurrentLevel() called");
+		level_.SaveChanges();
+		Logger::Get().Log(LogLevel::INFO, "[App] Calling SaveAndCompile()");
+		SaveAndCompile();
+	}
+	catch (const std::exception& e) {
+		std::string errorMsg = "Error saving level:\n" + std::string(e.what());
+		Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
+		Logger::Get().Log(LogLevel::ERR, errorMsg);
+	}
+	catch (...) {
+		std::string errorMsg = "Unknown error saving level";
+		Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
+		Logger::Get().Log(LogLevel::ERR, errorMsg);
+	}
 }
 
 int App::GetCurLevelNo() const {
@@ -364,6 +495,38 @@ void App::Input_OnMotion(int x, int y) {
 void App::Input_OnSpecial(int key, int x, int y) {
 	auto& config = Config::Get();
 
+	// Check configurable keybindings for special keys (F-keys, etc.)
+	// Save
+	if (IsKeyBindingPressed(config.keySave)) {
+		SaveCurrentLevel();
+		return;
+	}
+
+	// Reset Level
+	if (IsKeyBindingPressed(config.keyResetLevel)) {
+		ResetLevel();
+		return;
+	}
+
+	// Debug
+	if (IsKeyBindingPressed(config.keyDebug)) {
+		show_debug_ = !show_debug_;
+		return;
+	}
+
+	// Quit
+	if (IsKeyBindingPressed(config.keyQuit)) {
+		exit(0);
+		return;
+	}
+
+	// Reset Script (pause menu only)
+	if (pause_mode_ && IsKeyBindingPressed(config.keyResetScript)) {
+		ResetScript();
+		TogglePauseMenu();
+		return;
+	}
+
 	if (key == config.keyMoveForward) {
 		input_.keys_ |= MK_FORWARD;
 		return;
@@ -511,30 +674,81 @@ static constexpr movement_key_s MANIP_KEYS[] = {
 };
 
 void App::Input_OnKeyboard(unsigned char key, int x, int y) {
+	auto& config = Config::Get();
+
+	// Check for modifier keys - if pressed, skip movement key checks
+	int modifiers = glutGetModifiers();
+	bool has_modifiers = (modifiers & (GLUT_ACTIVE_CTRL | GLUT_ACTIVE_SHIFT | GLUT_ACTIVE_ALT));
+
+	// Check movement keys (regular keyboard characters) - case insensitive
+	// Only check if the config key is a regular character (ASCII < 128 and not a special key code)
+	// Special key codes (arrow keys) are >= 100 and should not match regular character keys
+	if (!has_modifiers) {
+		// Only check movement keys if they are regular characters, not special keys
+		// Special keys have codes >= 100 (GLUT_KEY_UP=101, DOWN=103, LEFT=100, RIGHT=102)
+		if (config.keyMoveForward < 100 && config.keyMoveForward > 0 && toupper(key) == toupper(config.keyMoveForward)) {
+			input_.keys_ |= MK_FORWARD;
+			return;
+		}
+		if (config.keyMoveBackward < 100 && config.keyMoveBackward > 0 && toupper(key) == toupper(config.keyMoveBackward)) {
+			input_.keys_ |= MK_BACKWARD;
+			return;
+		}
+		if (config.keyMoveLeft < 100 && config.keyMoveLeft > 0 && toupper(key) == toupper(config.keyMoveLeft)) {
+			input_.keys_ |= MK_LEFT;
+			return;
+		}
+		if (config.keyMoveRight < 100 && config.keyMoveRight > 0 && toupper(key) == toupper(config.keyMoveRight)) {
+			input_.keys_ |= MK_RIGHT;
+			return;
+		}
+	}
+
 	if (key == 27) { // ESC
 		TogglePauseMenu();
 		return;
 	}
 
+	// Global shortcuts (work in both pause and normal mode)
+
+	// Save
+	if (IsKeyBindingPressed(config.keySave)) {
+		SaveCurrentLevel();
+	}
+
+	// Reset Level
+	if (IsKeyBindingPressed(config.keyResetLevel)) {
+		ResetLevel();
+	}
+
+	// Debug
+	if (IsKeyBindingPressed(config.keyDebug)) {
+		show_debug_ = !show_debug_;
+	}
+
+	// Quit
+	if (IsKeyBindingPressed(config.keyQuit)) {
+		exit(0);
+	}
+
+	// Help
+	if (IsKeyBindingPressed(config.keyHelp)) {
+		show_help_ = !show_help_;
+		if (show_help_) {
+			if (!pause_mode_) {
+				TogglePauseMenu();
+			}
+		} else {
+			if (pause_mode_) {
+				TogglePauseMenu();
+			}
+		}
+	}
+
 	if (pause_mode_) {
-		if (key == 'q' || key == 'Q') {
-			exit(0);
-		}
-		if (key == 's' || key == 'S') {
-			SaveCurrentLevel();
-			printf("Level saved and compiled.\n");
-			TogglePauseMenu(); // Close menu after save
-		}
-		if (key == '=') {
-			ResetLevel();
-			TogglePauseMenu();
-		}
-		if (key == 'r' || key == 'R') {
+		// Reset Script (pause menu only)
+		if (IsKeyBindingPressed(config.keyResetScript)) {
 			ResetScript();
-			TogglePauseMenu();
-		}
-		if (key == 'd' || key == 'D') {
-			show_debug_ = !show_debug_;
 			TogglePauseMenu();
 		}
 		return;
@@ -585,6 +799,21 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 
 	if (key == 'l' || key == 'L') {
 		show_hud_ = !show_hud_;
+		return;
+	}
+
+	if (key == 'h' || key == 'H') {
+		int modifiers = glutGetModifiers();
+		bool ctrl = (modifiers & GLUT_ACTIVE_CTRL);
+		if (ctrl || !pause_mode_) {
+			show_help_ = !show_help_;
+			if (!pause_mode_) {
+				// If not in pause mode, pause when showing help
+				if (show_help_) {
+					pause_mode_ = true;
+				}
+			}
+		}
 		return;
 	}
 
@@ -739,6 +968,36 @@ void App::ResetScript() {
 
 
 void App::Input_OnKeyboardUp(unsigned char key, int x, int y) {
+	auto& config = Config::Get();
+
+	// Check for modifier keys - if pressed, skip movement key checks
+	int modifiers = glutGetModifiers();
+	bool has_modifiers = (modifiers & (GLUT_ACTIVE_CTRL | GLUT_ACTIVE_SHIFT | GLUT_ACTIVE_ALT));
+
+	// Check movement keys (regular keyboard characters) - case insensitive
+	// Only check if the config key is a regular character (ASCII < 128 and not a special key code)
+	// Special key codes (arrow keys) are >= 100 and should not match regular character keys
+	if (!has_modifiers) {
+		// Only check movement keys if they are regular characters, not special keys
+		// Special keys have codes >= 100 (GLUT_KEY_UP=101, DOWN=103, LEFT=100, RIGHT=102)
+		if (config.keyMoveForward < 100 && config.keyMoveForward > 0 && toupper(key) == toupper(config.keyMoveForward)) {
+			input_.keys_ &= ~MK_FORWARD;
+			return;
+		}
+		if (config.keyMoveBackward < 100 && config.keyMoveBackward > 0 && toupper(key) == toupper(config.keyMoveBackward)) {
+			input_.keys_ &= ~MK_BACKWARD;
+			return;
+		}
+		if (config.keyMoveLeft < 100 && config.keyMoveLeft > 0 && toupper(key) == toupper(config.keyMoveLeft)) {
+			input_.keys_ &= ~MK_LEFT;
+			return;
+		}
+		if (config.keyMoveRight < 100 && config.keyMoveRight > 0 && toupper(key) == toupper(config.keyMoveRight)) {
+			input_.keys_ &= ~MK_RIGHT;
+			return;
+		}
+	}
+
 	for (int i = 0; i < count_of(MOVEMENT_KEYS); ++i) {
 		const movement_key_s& mk = MOVEMENT_KEYS[i];
 		if (key == mk.lower_case_ || key == mk.upper_case_) {
@@ -790,6 +1049,7 @@ void App::Frame(float delta_seconds) {
 			.cam_fov_ = 60.0f,
 			.pause_mode_ = true,
 			.show_debug_ = show_debug_,
+			.show_help_ = show_help_,
 			.edit_mode_ = edit_mode_,
 			.terrain_edit_enabled_ = terrain_edit_enabled_,
 			.selected_object_index_ = selected_object_index_,
@@ -875,6 +1135,7 @@ void App::Frame(float delta_seconds) {
 		.cam_fov_ = 60.0f, // Placeholder
 		.pause_mode_ = pause_mode_,
 		.show_debug_ = show_debug_,
+		.show_help_ = show_help_,
 		.edit_mode_ = edit_mode_,
 		.terrain_edit_enabled_ = terrain_edit_enabled_,
 		.selected_object_index_ = selected_object_index_,
@@ -1542,67 +1803,92 @@ std::string App::GetLevelQSCPath(int level_no) {
 }
 
 std::string App::GetLevelQVMPath(int level_no) {
-	// Read from config
+	// Read from config in exe directory
+	std::string exeDir = GetExeDirectory();
+	std::string configPath = exeDir + "\\config.ini";
 	char igiPath[MAX_PATH];
-	GetPrivateProfileStringA("GamePath", "IGIPath", "D:\\IGI1", igiPath, MAX_PATH, ".\\config.ini");
+	GetPrivateProfileStringA("GamePath", "IGIPath", "D:\\IGI1", igiPath, MAX_PATH, configPath.c_str());
 	std::string game_path = std::string(igiPath);
+	Logger::Get().Log(LogLevel::INFO, "[App] GetLevelQVMPath using IGIPath: " + game_path + " (from config: " + configPath + ")");
 	return game_path + "\\missions\\location0\\level" + std::to_string(level_no) + "\\objects.qvm";
 }
 
 void App::LoadQSCForLevel(int level_no) {
-	namespace fs = std::filesystem;
-
-	std::string qsc_source = GetLevelQSCPath(level_no);
-	std::string cwd = GetCurrentWorkingDirectory();
-	std::string qsc_dest = cwd + "\\objects.qsc";
-
-	// Set up compiler output callback
-	compiler_.SetOutputCallback([](const std::string& msg) {
-		Logger::Get().Log(LogLevel::INFO, msg);
-		printf("%s\n", msg.c_str());
-	});
-
-	// Check if source exists
-	if (!fs::exists(qsc_source)) {
-		Logger::Get().Log(LogLevel::WARNING, "[App] QSC file not found at: " + qsc_source);
-		Logger::Get().Log(LogLevel::INFO, "[App] Attempting to decompile from game QVM...");
-		DecompileFromGame(level_no);
-		return;
-	}
-
-	// Copy to current directory
 	try {
+		namespace fs = std::filesystem;
+
+		std::string qsc_source = GetLevelQSCPath(level_no);
+		std::string cwd = GetCurrentWorkingDirectory();
+		std::string qsc_dest = cwd + "\\objects.qsc";
+
+		// Set up compiler output callback
+		compiler_.SetOutputCallback([](const std::string& msg) {
+			Logger::Get().Log(LogLevel::INFO, msg);
+			printf("%s\n", msg.c_str());
+		});
+
+		// Check if source exists
+		if (!fs::exists(qsc_source)) {
+			Logger::Get().Log(LogLevel::WARNING, "[App] QSC file not found at: " + qsc_source);
+			Logger::Get().Log(LogLevel::INFO, "[App] Attempting to decompile from game QVM...");
+			DecompileFromGame(level_no);
+			return;
+		}
+
+		// Copy to current directory
 		if (fs::exists(qsc_dest)) fs::remove(qsc_dest);
 		fs::copy_file(qsc_source, qsc_dest, fs::copy_options::overwrite_existing);
 		Logger::Get().Log(LogLevel::INFO, "[App] Loaded QSC from: " + qsc_source + " to: " + qsc_dest);
-	} catch (const std::exception& e) {
-		Logger::Get().Log(LogLevel::ERR, "[App] Failed to copy QSC: " + std::string(e.what()));
+	}
+	catch (const std::exception& e) {
+		std::string errorMsg = "Error loading QSC file for level " + std::to_string(level_no) + ":\n" + std::string(e.what());
+		Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
+		Logger::Get().Log(LogLevel::ERR, errorMsg);
+	}
+	catch (...) {
+		std::string errorMsg = "Unknown error loading QSC file for level " + std::to_string(level_no);
+		Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
+		Logger::Get().Log(LogLevel::ERR, errorMsg);
 	}
 }
 
 void App::DecompileFromGame(int level_no) {
-	namespace fs = std::filesystem;
+	try {
+		namespace fs = std::filesystem;
 
-	std::string qvm_source = GetLevelQVMPath(level_no);
-	std::string cwd = GetCurrentWorkingDirectory();
-	std::string qsc_dest = cwd + "\\objects.qsc";
+		std::string qvm_source = GetLevelQVMPath(level_no);
+		std::string cwd = GetCurrentWorkingDirectory();
+		std::string qsc_dest = cwd + "\\objects.qsc";
 
-	if (!fs::exists(qvm_source)) {
-		Logger::Get().Log(LogLevel::ERR, "[App] Game QVM not found at: " + qvm_source);
-		return;
+		if (!fs::exists(qvm_source)) {
+			std::string errorMsg = "Game QVM not found at:\n" + qvm_source + "\n\nPlease check your IGI game path in config.ini";
+			Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
+			Logger::Get().Log(LogLevel::ERR, "[App] Game QVM not found at: " + qvm_source);
+			return;
+		}
+
+		// Set up decompiler output callback
+		decompiler_.SetOutputCallback([](const std::string& msg) {
+			Logger::Get().Log(LogLevel::INFO, msg);
+			printf("%s\n", msg.c_str());
+		});
+
+		bool success = decompiler_.Decompile(qvm_source, qsc_dest);
+		if (!success) {
+			std::string errorMsg = "Failed to decompile QVM from:\n" + qvm_source;
+			Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
+			Logger::Get().Log(LogLevel::ERR, "[App] Failed to decompile from game QVM");
+		}
 	}
-
-	// Set up decompiler output callback
-	decompiler_.SetOutputCallback([](const std::string& msg) {
-		Logger::Get().Log(LogLevel::INFO, msg);
-		printf("%s\n", msg.c_str());
-	});
-
-	bool success = decompiler_.Decompile(qvm_source, qsc_dest);
-	if (success) {
-		Logger::Get().Log(LogLevel::INFO, "[App] Successfully decompiled to: " + qsc_dest);
-	} else {
-		Logger::Get().Log(LogLevel::ERR, "[App] Failed to decompile from game QVM");
+	catch (const std::exception& e) {
+		std::string errorMsg = "Error decompiling QVM for level " + std::to_string(level_no) + ":\n" + std::string(e.what());
+		Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
+		Logger::Get().Log(LogLevel::ERR, errorMsg);
+	}
+	catch (...) {
+		std::string errorMsg = "Unknown error decompiling QVM for level " + std::to_string(level_no);
+		Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
+		Logger::Get().Log(LogLevel::ERR, errorMsg);
 	}
 }
 
@@ -1653,5 +1939,87 @@ void App::SetInitialStickToGround(bool stick) {
 		SnapObjectsToTerrain();
 		Logger::Get().Log(LogLevel::INFO, "[App] Enabled stick_to_ground mode");
 	}
+}
+
+bool App::ValidateAndSetupQEditor() {
+	namespace fs = std::filesystem;
+
+	char appData[1024];
+	GetEnvironmentVariableA("APPDATA", appData, 1024);
+	std::string appDataQEditor = std::string(appData) + "\\QEditor";
+	std::string exeDir = GetExeDirectory();
+	std::string exeQEditor = exeDir + "\\QEditor";
+
+	printf("[App] Validating QEditor folder structure...\n");
+	Logger::Get().Log(LogLevel::INFO, "[App] Validating QEditor folder structure...");
+	printf("[App] AppData QEditor: %s\n", appDataQEditor.c_str());
+	printf("[App] Exe QEditor: %s\n", exeQEditor.c_str());
+
+	// Check if QEditor exists in AppData
+	bool appDataExists = fs::exists(appDataQEditor);
+	bool exeExists = fs::exists(exeQEditor);
+
+	if (appDataExists) {
+		// QEditor exists in AppData - use it (exe directory is optional)
+		printf("[App] QEditor found in AppData, using it\n");
+		Logger::Get().Log(LogLevel::INFO, "[App] QEditor found in AppData, using it");
+
+		// If exe QEditor also exists, sync it to AppData
+		if (exeExists) {
+			printf("[App] QEditor also exists in exe directory, performing sync...\n");
+			Logger::Get().Log(LogLevel::INFO, "[App] QEditor also exists in exe directory, performing sync...");
+			try {
+				fs::copy(exeQEditor, appDataQEditor, 
+					fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+				printf("[App] Successfully synced QEditor from exe to AppData\n");
+				Logger::Get().Log(LogLevel::INFO, "[App] Successfully synced QEditor from exe to AppData");
+			}
+			catch (const std::exception& e) {
+				// Sync failed but AppData QEditor is still usable, just log a warning
+				std::string warningMsg = "WARNING: Failed to sync QEditor from exe to AppData (using existing AppData version): " + std::string(e.what());
+				printf("[App] %s\n", warningMsg.c_str());
+				Logger::Get().Log(LogLevel::WARNING, warningMsg);
+			}
+		}
+		return true;
+	}
+
+	// QEditor not in AppData, check exe directory
+	if (exeExists) {
+		// Copy from exe to AppData
+		printf("[App] QEditor not found in AppData, copying from exe directory...\n");
+		Logger::Get().Log(LogLevel::INFO, "[App] QEditor not found in AppData, copying from exe directory...");
+
+		try {
+			fs::create_directories(appDataQEditor);
+			fs::copy(exeQEditor, appDataQEditor, 
+				fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+			printf("[App] Successfully copied QEditor to AppData\n");
+			Logger::Get().Log(LogLevel::INFO, "[App] Successfully copied QEditor to AppData");
+		}
+		catch (const std::exception& e) {
+			std::string errorMsg = "FATAL ERROR: Failed to copy QEditor from exe to AppData:\n" + std::string(e.what());
+			Utils::LogAndShowError(errorMsg, "IGI Editor - Fatal Error");
+			printf("[App] %s\n", errorMsg.c_str());
+			Log(log_type_t::LOG_FATAL, __FILE__, __LINE__, 
+				"FATAL ERROR: Failed to copy QEditor from exe to AppData: %s", e.what());
+			return false;
+		}
+		return true;
+	}
+
+	// QEditor missing from both locations
+	std::string errorMsg = "INSTALL ERROR: QEditor not found in AppData or exe directory!\n\n"
+		"AppData: " + appDataQEditor + "\n"
+		"Exe Directory: " + exeQEditor + "\n\n"
+		"Please ensure QEditor is properly installed in either location.";
+	Utils::LogAndShowError(errorMsg, "IGI Editor - Installation Error");
+	printf("[App] %s\n", errorMsg.c_str());
+	Log(log_type_t::LOG_FATAL, __FILE__, __LINE__, errorMsg.c_str());
+	return false;
+
+	printf("[App] QEditor validation and setup completed successfully\n");
+	Logger::Get().Log(LogLevel::INFO, "[App] QEditor validation and setup completed successfully");
+	return true;
 }
 

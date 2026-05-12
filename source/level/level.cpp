@@ -153,7 +153,7 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 		Str_SPrintf(filename, 1024, "%s\\objects.qsc", exeDir.c_str());
 	}
 	else {
-		// A QSC is newest, copy it to editor directory and compile it
+		// A QSC is newest, copy it to editor directory if not already there
 		if (strcmp(latest.path.c_str(), editorQsc) != 0) {
 			std::filesystem::copy_file(latest.path, editorQsc, std::filesystem::copy_options::overwrite_existing);
 			Logger::Get().Log(LogLevel::INFO, "[Level] Copied latest QSC to editor: " + std::string(editorQsc));
@@ -337,20 +337,25 @@ void Level::CopyTerrainFromQEditor(int level_no) {
 	char appData[1024];
 	GetEnvironmentVariableA("APPDATA", appData, 1024);
 
-	char srcTerrain[1024];
-	Str_SPrintf(srcTerrain, 1024, "%s\\QEditor\\QFiles\\IGI_QSC\\missions\\location0\\level%d\\terrain", appData, level_no);
+	// Source is AppData QEditor
+	std::string srcTerrain = std::string(appData) + "\\QEditor\\QFiles\\IGI_QVM\\missions\\location0\\level" + std::to_string(level_no) + "\\terrain";
 
 	// Copy to executable directory terrains\levelX\terrain
 	std::string exeDir = GetExeDirectory();
 	std::string dstTerrain = exeDir + "\\terrains\\level" + std::to_string(level_no) + "\\terrain";
 
+	Logger::Get().Log(LogLevel::INFO, "[Level] CopyTerrainFromQEditor: level=" + std::to_string(level_no));
+	Logger::Get().Log(LogLevel::INFO, "[Level] Source: " + srcTerrain);
+	Logger::Get().Log(LogLevel::INFO, "[Level] Dest: " + dstTerrain);
+
 	try {
 		if (!std::filesystem::exists(srcTerrain)) {
-			Logger::Get().Log(LogLevel::ERR, "[Level] FATAL: ERROR Missing terrain folder at: " + std::string(srcTerrain));
+			Logger::Get().Log(LogLevel::ERR, "[Level] FATAL: Missing terrain folder at: " + srcTerrain);
 			throw std::runtime_error("Missing terrain folder in QEditor path");
 		}
 
 		std::filesystem::create_directories(dstTerrain);
+		
 		std::filesystem::copy(srcTerrain, dstTerrain,
 			std::filesystem::copy_options::overwrite_existing | std::filesystem::copy_options::recursive);
 		Logger::Get().Log(LogLevel::INFO, "[Level] Copied terrain from QEditor to: " + dstTerrain);

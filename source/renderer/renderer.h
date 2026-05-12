@@ -54,6 +54,7 @@ public:
 		float cam_pitch_, cam_yaw_, cam_roll_, cam_fov_;
 		bool pause_mode_;
 		bool show_debug_;
+		bool show_help_;
 		bool edit_mode_;
 		bool terrain_edit_enabled_;
 		int selected_object_index_;

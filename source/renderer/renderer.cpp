@@ -8,6 +8,7 @@
 
 #include "pch.h"
 #include "logger.h"
+#include "config.h"
 #include <glm/gtc/type_ptr.hpp>
 
 
@@ -336,31 +337,56 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                         // Draw shadow
                         glColor3f(0.0f, 0.0f, 0.0f);
                         glRasterPos2i(x + 1, params.view_define_->viewport_height_ - y - 1);
-                        for (const char* c = str; *c != '\0'; c++) {
-                                glutBitmapCharacter(GLUT_BITMAP_8_BY_13, *c);
-                        }
+                        for (const char* c = str; *c; ++c) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, *c);
+                        
                         // Draw main text
                         glColor3f(r, g, b);
                         glRasterPos2i(x, params.view_define_->viewport_height_ - y);
-                        for (const char* c = str; *c != '\0'; c++) {
-                                glutBitmapCharacter(GLUT_BITMAP_8_BY_13, *c);
-                        }
+                        for (const char* c = str; *c; ++c) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, *c);
                 };
 
+                // Helper to convert KeyBinding to display string
+                auto keybinding_to_string = [&](const KeyBinding& kb) -> std::string {
+                        std::string result;
+                        if (kb.ctrl) result += "CTRL+";
+                        if (kb.shift) result += "SHIFT+";
+                        if (kb.alt) result += "ALT+";
+                        
+                        // Convert vkCode to key name
+                        if (kb.vkCode >= VK_F1 && kb.vkCode <= VK_F12) {
+                                result += "F" + std::to_string(kb.vkCode - VK_F1 + 1);
+                        } else {
+                                // For regular keys, use the character
+                                char key = MapVirtualKeyA(kb.vkCode, MAPVK_VK_TO_CHAR) & 0xFF;
+                                if (key) {
+                                        result += std::string(1, toupper(key));
+                                } else {
+                                        result += "?";
+                                }
+                        }
+                        return result;
+                };
+
+                // Get font color from config
+                ConfigData& cfg = Config::Get();
+                float font_r = cfg.fontColorR / 255.0f;
+                float font_g = cfg.fontColorG / 255.0f;
+                float font_b = cfg.fontColorB / 255.0f;
+
                 int line_y = 30;
-                draw_text(20, line_y, "--- IGI EDITOR ---", 1.0f, 1.0f, 1.0f); line_y += 15;
+                draw_text(20, line_y, "--- IGI EDITOR 0.0.0.1 BETA - Jones - HM ---", font_r, font_g, font_b); line_y += 15;
                 
-                float status_r = 1.0f, status_g = 1.0f, status_b = 0.0f; // Yellow
-                if (hud.status_msg_.find("CONNECTED") != std::string::npos) { status_r = 0.0f; status_g = 1.0f; status_b = 0.0f; } // Green
+                float status_r = font_r, status_g = font_g, status_b = font_b;
+                if (hud.status_msg_.find("CONNECTED") != std::string::npos) { status_r = 0.0f; status_g = 1.0f; status_b = 0.0f; }
                 draw_text(20, line_y, hud.status_msg_.c_str(), status_r, status_g, status_b); line_y += 15;
 
                 // Show Editor (Player) Position
                 char buf[256];
                 sprintf(buf, "EDITOR POSITION X: %.2f Y: %.2f Z: %.2f", hud.raw_pos_.x, hud.raw_pos_.y, hud.raw_pos_.z);
-                draw_text(20, line_y, buf, 1.0f, 1.0f, 1.0f); line_y += 15;
+                draw_text(20, line_y, buf, font_r, font_g, font_b); line_y += 15;
 
                 sprintf(buf, "EDITOR YAW: %.3f PITCH: %.3f ROLL: %.3f", hud.cam_yaw_, hud.cam_pitch_, hud.cam_roll_);
-                draw_text(20, line_y, buf, 0.5f, 1.0f, 0.5f); line_y += 15;
+                draw_text(20, line_y, buf, font_r, font_g, font_b); line_y += 15;
 
                 // Show Selected Object Position if an object is selected
                 if (hud.selected_object_index_ >= 0 && hud.level_objects_) {
@@ -368,20 +394,20 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                         if (hud.selected_object_index_ < (int)objects.size()) {
                                 const auto& obj = objects[hud.selected_object_index_];
                                 sprintf(buf, "SELECTED OBJECT X: %.2f Y: %.2f Z: %.2f", obj.pos.x, obj.pos.y, obj.pos.z);
-                                draw_text(20, line_y, buf, 1.0f, 1.0f, 0.0f); line_y += 15;
+                                draw_text(20, line_y, buf, font_r, font_g, font_b); line_y += 15;
 
                                 sprintf(buf, "OBJECT YAW: %.2f PITCH: %.2f ROLL: %.2f", obj.rot.z, obj.rot.x, obj.rot.y);
-                                draw_text(20, line_y, buf, 0.5f, 1.0f, 0.5f); line_y += 15;
+                                draw_text(20, line_y, buf, font_r, font_g, font_b); line_y += 15;
                         }
                 }
                 
                 sprintf(buf, "ANGLE H: %.3f V: %.3f", hud.view_h_, hud.view_v_);
-                draw_text(20, line_y, buf, 1.0f, 0.5f, 0.0f); line_y += 15;
+                draw_text(20, line_y, buf, font_r, font_g, font_b); line_y += 15;
 
                 sprintf(buf, "LEVEL: %d | FOV: %.1f", hud.game_level_, hud.cam_fov_);
-                draw_text(20, line_y, buf, 0.7f, 0.7f, 1.0f); line_y += 15;
+                draw_text(20, line_y, buf, font_r, font_g, font_b); line_y += 15;
                 
-                draw_text(20, line_y, "Checks: 0", 1.0f, 1.0f, 1.0f);
+                draw_text(20, line_y, "Checks: 0", font_r, font_g, font_b);
 
                 // Display object info at mouse position
                 int info_object_index = hud.edit_mode_ ? hud.selected_object_index_ : hud.hover_object_index_;
@@ -517,31 +543,137 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                         glLineWidth(1.0f);
 
                         // Title
-                        draw_text(menu_x + menu_w/2 - 50, menu_y + menu_h - 30, "PAUSE MENU", 1.0f, 1.0f, 0.0f);
+                        draw_text(menu_x + menu_w/2 - 50, menu_y + menu_h - 30, "PAUSE MENU", font_r, font_g, font_b);
+
+                        // Get keybindings from config
+                        std::string save_key = keybinding_to_string(cfg.keySave);
+                        std::string reset_key = keybinding_to_string(cfg.keyResetLevel);
+                        std::string debug_key = keybinding_to_string(cfg.keyDebug);
+                        std::string quit_key = keybinding_to_string(cfg.keyQuit);
+                        std::string reset_script_key = keybinding_to_string(cfg.keyResetScript);
 
                         // Menu items
-                        draw_text(menu_x + 30, menu_y + menu_h - 60, "[ESC] RESUME", 1.0f, 1.0f, 1.0f);
-                        draw_text(menu_x + 30, menu_y + menu_h - 85, "[S]   SAVE LEVEL", 1.0f, 1.0f, 1.0f);
-                        draw_text(menu_x + 30, menu_y + menu_h - 110, "[=]   RESET LEVEL", 0.5f, 1.0f, 1.0f);
-                        draw_text(menu_x + 30, menu_y + menu_h - 135, "[R]   RESET SCRIPT", 1.0f, 0.7f, 0.3f);
-                        draw_text(menu_x + 30, menu_y + menu_h - 160, "[D]   DEBUG", 0.0f, 1.0f, 0.0f);
-                        draw_text(menu_x + 30, menu_y + menu_h - 185, "[Q]   EXIT", 1.0f, 0.5f, 0.5f);
+                        draw_text(menu_x + 30, menu_y + menu_h - 60, "[ESC] RESUME", font_r, font_g, font_b);
+                        draw_text(menu_x + 30, menu_y + menu_h - 85, ("[" + save_key + "] SAVE LEVEL").c_str(), font_r, font_g, font_b);
+                        draw_text(menu_x + 30, menu_y + menu_h - 110, ("[" + reset_key + "] RESET LEVEL").c_str(), font_r, font_g, font_b);
+                        draw_text(menu_x + 30, menu_y + menu_h - 135, ("[" + reset_script_key + "] RESET SCRIPT").c_str(), font_r, font_g, font_b);
+                        draw_text(menu_x + 30, menu_y + menu_h - 160, ("[" + debug_key + "] DEBUG").c_str(), font_r, font_g, font_b);
+                        draw_text(menu_x + 30, menu_y + menu_h - 185, ("[" + quit_key + "] EXIT").c_str(), font_r, font_g, font_b);
 
 
                 }
 
                 if (hud.show_debug_) {
                         const auto& entries = Logger::Get().GetEntries();
-                        int startY = 250;
+                        int debug_w = 600;
+                        int debug_h = 280;
+                        int debug_x = 10;
+                        int viewport_h = params.view_define_->viewport_height_;
+                        // glVertex uses bottom-left origin, so Y=10 = near bottom of screen
+                        int debug_y_gl = 10;
+                        // draw_text uses top-left origin (flips internally), convert:
+                        // draw_text_y = viewport_h - (gl_y + box_h)
+                        int debug_y_text = viewport_h - (debug_y_gl + debug_h);
+
+                        // Draw semi-transparent background
+                        glEnable(GL_BLEND);
+                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                        glColor4f(0.0f, 0.0f, 0.0f, 0.7f);
+                        glBegin(GL_QUADS);
+                        glVertex2i(debug_x, debug_y_gl);
+                        glVertex2i(debug_x + debug_w, debug_y_gl);
+                        glVertex2i(debug_x + debug_w, debug_y_gl + debug_h);
+                        glVertex2i(debug_x, debug_y_gl + debug_h);
+                        glEnd();
+                        glDisable(GL_BLEND);
+
+                        // Draw border
+                        glLineWidth(2.0f);
+                        glColor3f(0.5f, 0.5f, 0.5f);
+                        glBegin(GL_LINE_LOOP);
+                        glVertex2i(debug_x, debug_y_gl);
+                        glVertex2i(debug_x + debug_w, debug_y_gl);
+                        glVertex2i(debug_x + debug_w, debug_y_gl + debug_h);
+                        glVertex2i(debug_x, debug_y_gl + debug_h);
+                        glEnd();
+                        glLineWidth(1.0f);
+
+                        // Title at top of box (draw_text uses top-left origin)
+                        draw_text(debug_x + 10, debug_y_text + 10, "DEBUG CONSOLE", font_r, font_g, font_b);
+
+                        int startY = debug_y_text + 30; // Just below title, inside the frame
+                        int line_height = 12;
                         int count = 0;
-                        for (auto it = entries.rbegin(); it != entries.rend() && count < 15; ++it, ++count) {
+                        int max_lines = (debug_h - 50) / line_height;
+                        int max_chars = (debug_w - 20) / 7;
+
+                        for (auto it = entries.rbegin(); it != entries.rend() && count < max_lines; ++it, ++count) {
                                 float r = 1.0f, g = 1.0f, b = 1.0f;
                                 if (it->level == LogLevel::ERR) { r = 1.0f; g = 0.2f; b = 0.2f; }
                                 else if (it->level == LogLevel::FATAL) { r = 1.0f; g = 0.0f; b = 0.0f; }
                                 else if (it->level == LogLevel::WARNING) { r = 1.0f; g = 1.0f; b = 0.0f; }
 
-                                draw_text(10, startY - count * 15, it->message.c_str(), r, g, b);
+                                // Text truncation based on box width
+                                std::string msg = it->message;
+                                if (msg.length() > max_chars) {
+                                        msg = msg.substr(0, max_chars - 3) + "...";
+                                }
+                                draw_text(debug_x + 10, startY + count * line_height, msg.c_str(), r, g, b);
                         }
+                }
+
+                if (hud.show_help_) {
+                        int menu_w = 500;
+                        int menu_h = 450;
+                        int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
+                        int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
+
+                        // Draw semi-transparent background
+                        glEnable(GL_BLEND);
+                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                        glColor4f(0.0f, 0.0f, 0.0f, 0.8f);
+                        glBegin(GL_QUADS);
+                        glVertex2i(menu_x, menu_y);
+                        glVertex2i(menu_x + menu_w, menu_y);
+                        glVertex2i(menu_x + menu_w, menu_y + menu_h);
+                        glVertex2i(menu_x, menu_y + menu_h);
+                        glEnd();
+                        glDisable(GL_BLEND);
+
+                        // Draw border
+                        glColor3f(font_r, font_g, font_b);
+                        glLineWidth(2.0f);
+                        glBegin(GL_LINE_LOOP);
+                        glVertex2i(menu_x, menu_y);
+                        glVertex2i(menu_x + menu_w, menu_y);
+                        glVertex2i(menu_x + menu_w, menu_y + menu_h);
+                        glVertex2i(menu_x, menu_y + menu_h);
+                        glEnd();
+                        glLineWidth(1.0f);
+
+                        // Title
+                        draw_text(menu_x + menu_w/2 - 40, menu_y + menu_h - 30, "KEYBINDINGS", font_r, font_g, font_b);
+
+                        // Help items
+                        int line_y = menu_y + menu_h - 60;
+                        draw_text(menu_x + 30, line_y, "[W/A/S/D] Movement", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[F2] Terrain Edit Toggle", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[F3] Clip Toggle", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[F4] Edit Mode Toggle", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[PageUp/Down] Move Speed", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[Left/Right] Roll", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[TAB] Select Next Object", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[T] Teleport to Height Map", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[L] HUD Toggle", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[H/CTRL+H] Help Toggle", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[S] Snap Object to Ground", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[ESC] Pause Menu", font_r, font_g, font_b); line_y -= 30;
+                        draw_text(menu_x + 30, line_y, "PAUSE MENU:", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[CTRL+S] Save Level", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[CTRL+R] Reset Level", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[SHIFT+R] Reset Script", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[CTRL+D] Debug Toggle", font_r, font_g, font_b); line_y -= 20;
+                        draw_text(menu_x + 30, line_y, "[CTRL+Q] Exit", font_r, font_g, font_b); line_y -= 20;
                 }
 
 

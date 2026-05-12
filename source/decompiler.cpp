@@ -40,6 +40,23 @@ bool Decompiler::Decompile(const std::string& qvm_path, const std::string& qsc_o
         return false;
     }
 
+    // Clean input and output directories before decompiling
+    try {
+        int cleaned_input = 0;
+        int cleaned_output = 0;
+        for (const auto& entry : fs::directory_iterator(decompile_input_dir)) {
+            fs::remove_all(entry.path());
+            cleaned_input++;
+        }
+        for (const auto& entry : fs::directory_iterator(decompile_output_dir)) {
+            fs::remove_all(entry.path());
+            cleaned_output++;
+        }
+        if (output_callback_) output_callback_("[Decompiler] Cleaned input dir (removed " + std::to_string(cleaned_input) + " items), output dir (removed " + std::to_string(cleaned_output) + " items)");
+    } catch (const std::exception& e) {
+        if (output_callback_) output_callback_("[Decompiler] WARNING: Error cleaning directories: " + std::string(e.what()));
+    }
+
     // Copy qvm file to decompile input directory
     std::string qvm_filename = fs::path(qvm_path).filename().string();
     std::string input_qvm = decompile_input_dir + "\\" + qvm_filename;

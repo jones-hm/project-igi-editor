@@ -41,7 +41,7 @@ file(GLOB SHADERS_41 "shaders/41/*.*")
 file(GLOB SHADERS_45 "shaders/45/*.*")
 
 # Explicitly add new source files (GLOB might not pick them up immediately)
-list(APPEND SOURCES "source/compiler.cpp" "source/decompiler.cpp")
+list(APPEND SOURCES "source/compiler.cpp" "source/decompiler.cpp" "source/utils.cpp")
 
 # Add Windows icon resource file
 if (WIN32)
@@ -85,6 +85,20 @@ if (WIN32)
   # Ensure Release builds don't use debug runtime
   set_target_properties(igi-editor PROPERTIES
     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+  )
+
+  # Embed admin manifest
+  set(MANIFEST_FILE "${PROJECT_SOURCE_DIR}/igi-editor.exe.manifest")
+  if(EXISTS ${MANIFEST_FILE})
+    set_target_properties(igi-editor PROPERTIES
+      LINK_FLAGS "/MANIFEST:NO /MANIFESTINPUT:${MANIFEST_FILE}"
+    )
+  endif()
+
+  # Use Windows subsystem for Release (no console), Console for Debug
+  set_target_properties(igi-editor PROPERTIES
+    LINK_FLAGS_DEBUG "/SUBSYSTEM:CONSOLE"
+    LINK_FLAGS_RELEASE "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
   )
 else()
   target_link_libraries(igi-editor PRIVATE glut GL GLEW)

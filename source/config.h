@@ -1,5 +1,13 @@
 #pragma once
 #include <string>
+#include <vector>
+
+struct KeyBinding {
+    int vkCode; // Windows virtual key code
+    bool ctrl;
+    bool shift;
+    bool alt;
+};
 
 struct ConfigData {
     // [GamePath]
@@ -7,7 +15,7 @@ struct ConfigData {
     int level;
     std::string editorPath;     // Path to this editor
     std::string qEditorPath;    // Path to %APPDATA%\QEditor
-    
+
     // [Paths]
     std::string aiPath;
     std::string compilerPath;
@@ -15,7 +23,6 @@ struct ConfigData {
     std::string graphsPath;
     std::string texturesPath;
 
-    
     // [Marker] - IGI 2 Style Manipulation
     char keySnapGround;
     char keySnapObject;
@@ -23,7 +30,7 @@ struct ConfigData {
     char keyRotateBeta;
     char keyRotateGamma;
     char keyResetOri;
-    
+
     // [Marker] - Shortcuts
     char teleportToMarker;
     char resetMarkerToPlayer;
@@ -33,6 +40,20 @@ struct ConfigData {
     char keyMoveBackward;
     char keyMoveLeft;
     char keyMoveRight;
+
+    // [UI] - Font and UI settings
+    float fontSize;
+    int fontColorR;
+    int fontColorG;
+    int fontColorB;
+
+    // [Keybindings] - Configurable shortcuts
+    KeyBinding keySave;
+    KeyBinding keyResetLevel;
+    KeyBinding keyDebug;
+    KeyBinding keyQuit;
+    KeyBinding keyHelp;
+    KeyBinding keyResetScript;
 };
 
 class Config {

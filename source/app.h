@@ -28,6 +28,9 @@ public:
 	void					ResetLevel();
 	void					ResetScript();
 
+	// QEditor folder validation and setup
+	bool					ValidateAndSetupQEditor();
+
 
 	// level_no: 1 ~ 13
 	void					LoadLevel(int level_no);
@@ -129,6 +132,7 @@ private:
 	int						transform_flag_;	// 0-7 for cube transform flags
 	bool					show_hud_;
 	bool					show_debug_;
+	bool					show_help_;
 
 	bool					sync_from_game_once_;
 	int						last_game_level_;
