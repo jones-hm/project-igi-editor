@@ -111,5 +111,6 @@ docs/
 
 # Dont Ignore
 !assets
+!assets/*.png
 !bin/
 !build/
