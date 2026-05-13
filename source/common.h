@@ -181,6 +181,7 @@ void	Pic_FreePics(pics_s & pics);
 struct folders_s {
 	char					res_folder_[1024];
 	char					shader_folder_[1024];
+	char					models_folder_[1024];
 	char					objects_folder_[1024];
 	char					buildings_folder_[1024];
 	char					textures_folder_[1024];

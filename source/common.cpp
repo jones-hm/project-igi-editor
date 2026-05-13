@@ -876,7 +876,9 @@ void Folders_Init() {
 	// Always use AppData path for QFiles
 	if (appdata_buf[0] != 0) {
 		Str_SPrintf(g_folders.res_folder_, 1024, "%s/QFiles/IGI_QSC", appdata_buf);
-		Str_SPrintf(g_folders.objects_folder_, 1024, "%s/3DEditor/objects", appdata_buf);
+		// Use unified models folder instead of separate objects/buildings
+			Str_SPrintf(g_folders.models_folder_, 1024, "%s/3DEditor/models", appdata_buf);
+			Str_SPrintf(g_folders.objects_folder_, 1024, "%s/3DEditor/objects", appdata_buf);
 		Str_SPrintf(g_folders.buildings_folder_, 1024, "%s/3DEditor/buildings", appdata_buf);
 		// Use configured textures path from Config
 		std::string configuredTexturesPath = Config::Get().texturesPath;
@@ -888,6 +890,7 @@ void Folders_Init() {
 	} else {
 		Logger::Get().Log(LogLevel::ERR, "[Common] AppData path not found, cannot set folder paths");
 		Str_SPrintf(g_folders.res_folder_, 1024, ".");
+			Str_SPrintf(g_folders.models_folder_, 1024, ".");
 		Str_SPrintf(g_folders.objects_folder_, 1024, ".");
 		Str_SPrintf(g_folders.buildings_folder_, 1024, ".");
 		Str_SPrintf(g_folders.textures_folder_, 1024, ".");

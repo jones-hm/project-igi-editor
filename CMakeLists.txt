@@ -21,7 +21,7 @@ message("CMAKE_BUILD_TYPE = ${CMAKE_BUILD_TYPE}")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions(-DDEBUG)
-	add_definitions(-D_DEBUG)
+    add_definitions(-D_DEBUG)
     message("Set cmake debug")
 endif ()
 
@@ -59,19 +59,36 @@ if (WIN32)
   set_target_properties(igi-editor PROPERTIES ICON ${PROJECT_SOURCE_DIR}/assets/igi-editor-icon.ico)
 endif()
 
+# Copy Assimp DLL to output directory (Windows only)
+if (WIN32)
+  add_custom_command(TARGET igi-editor POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${PROJECT_SOURCE_DIR}/libs/assimp/bin/assimp-vc143-mt.dll
+    $<TARGET_FILE_DIR:igi-editor>
+    COMMENT "Copying Assimp DLL to output directory"
+  )
+endif()
+
 target_precompile_headers(igi-editor PRIVATE source/pch.h)
 
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source)
-target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/libs/assimp/include)
+# Add Assimp support if available
+if (EXISTS ${PROJECT_SOURCE_DIR}/libs/assimp/include)
+  target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/libs/assimp/include)
+  target_compile_definitions(igi-editor PRIVATE -DASSIMP_AVAILABLE)
+endif()
 
 
 if (WIN32)
   target_link_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/lib/x64)
   target_link_libraries(igi-editor PRIVATE freeglut glew32 OpenGL32)
-  target_link_libraries(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/libs/assimp/lib/assimp-vc143-mt.lib)
+  # Link Assimp if available
+  if (EXISTS ${PROJECT_SOURCE_DIR}/libs/assimp/lib/assimp-vc143-mt.lib)
+    target_link_libraries(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/libs/assimp/lib/assimp-vc143-mt.lib)
+  endif()
 
   # Increase PCH memory limit to fix compiler heap errors
   if (MSVC)
@@ -98,11 +115,14 @@ if (WIN32)
   endif()
 
   # Use Windows subsystem for Release (no console), Console for Debug
-  set_target_properties(igi-editor PROPERTIES
-    LINK_FLAGS_DEBUG "/SUBSYSTEM:CONSOLE"
-    LINK_FLAGS_RELEASE "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
-  )
-else()
-  target_link_libraries(igi-editor PRIVATE glut GL GLEW)
-endif()
+  if (CMAKE_BUILD_TYPE STREQUAL "Release")
+    set_target_properties(igi-editor PROPERTIES
+      LINK_FLAGS "/SUBSYSTEM:WINDOWS"
+    )
+  else()
+    set_target_properties(igi-editor PROPERTIES
+      LINK_FLAGS "/SUBSYSTEM:CONSOLE"
+    )
+  endif()
 
+endif()

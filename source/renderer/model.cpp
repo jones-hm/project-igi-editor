@@ -1,7 +1,5 @@
-#define TINYOBJLOADER_IMPLEMENTATION
-#define TINYOBJLOADER_DISABLE_FAST_FLOAT
-#include "../../third_party/tiny_obj_loader.h"
 #include "model.h"
+#include "model_loader.h"
 #include "wic_loader.h"
 #include "../pch.h"
 #include <glm/gtc/type_ptr.hpp>
@@ -10,130 +8,92 @@
 #include <iostream>
 
 Mesh loadObjModel(const std::string& filepath, const std::string& texturePath) {
-    tinyobj::attrib_t attrib;
-    std::vector<tinyobj::shape_t>    shapes;
-    std::vector<tinyobj::material_t> materials;
-    std::string warn, err;
-
-    bool ok = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filepath.c_str());
-
-    if (!warn.empty()) {
-		std::cerr << "[OBJ WARN] " << warn << "\n";
-	}
-
-    if (!err.empty()) {
-		std::cerr << "[OBJ ERR]  " << err  << "\n";
-	}
+    // For FBX migration, we'll ignore the separate texture path since textures are embedded
+    std::string fbxPath = filepath;
     
-	if (!ok) {
-		throw std::runtime_error("Failed to load OBJ: " + filepath);
-	}
-
-    // Layout: position(3) + normal(3) + uv(2) = 8 floats per vertex
-    std::vector<float> vertices;
-    vertices.reserve(shapes[0].mesh.indices.size() * 8);
-
-    // Compute Centroid
-    glm::vec3 centroid(0.0f);
-    int total_v = 0;
-    for (const auto& shape : shapes) {
-        for (const auto& idx : shape.mesh.indices) {
-            centroid.x += attrib.vertices[3 * idx.vertex_index + 0];
-            centroid.y += attrib.vertices[3 * idx.vertex_index + 1];
-            centroid.z += attrib.vertices[3 * idx.vertex_index + 2];
-            total_v++;
-        }
+    // Replace .obj extension with .fbx if needed
+    if (fbxPath.substr(fbxPath.length() - 4) == ".obj") {
+        fbxPath = fbxPath.substr(0, fbxPath.length() - 4) + ".fbx";
     }
-    if (total_v > 0) centroid /= (float)total_v;
-
-    glm::vec3 min_p(1e10f), max_p(-1e10f);
-    for (const auto& shape : shapes) {
-        for (const auto& idx : shape.mesh.indices) {
-
-            // --- Position ---
-            float vx = attrib.vertices[3 * idx.vertex_index + 0] - centroid.x;
-            float vy = attrib.vertices[3 * idx.vertex_index + 1] - centroid.y;
-            float vz = attrib.vertices[3 * idx.vertex_index + 2] - centroid.z;
-            
-            vertices.push_back(vx);
-            vertices.push_back(vy);
-            vertices.push_back(vz);
-
-            min_p.x = std::min(min_p.x, vx);
-            min_p.y = std::min(min_p.y, vy);
-            min_p.z = std::min(min_p.z, vz);
-            max_p.x = std::max(max_p.x, vx);
-            max_p.y = std::max(max_p.y, vy);
-            max_p.z = std::max(max_p.z, vz);
-
-
-            // --- Normal (fallback to UP if missing) ---
-            if (idx.normal_index >= 0) {
-                vertices.push_back(attrib.normals[3 * idx.normal_index + 0]);
-                vertices.push_back(attrib.normals[3 * idx.normal_index + 1]);
-                vertices.push_back(attrib.normals[3 * idx.normal_index + 2]);
-            } else {
-                vertices.push_back(0.0f);
-                vertices.push_back(1.0f);
-                vertices.push_back(0.0f);
-            }
-
-            // --- UV (fallback to 0,0 if missing) ---
-            if (idx.texcoord_index >= 0) {
-                vertices.push_back(attrib.texcoords[2 * idx.texcoord_index + 0]);
-                vertices.push_back(attrib.texcoords[2 * idx.texcoord_index + 1]);
-            } else {
-                vertices.push_back(0.0f);
-                vertices.push_back(0.0f);
-            }
-        }
+    
+    ModelData modelData = ModelLoader::Load(fbxPath);
+    
+    if (!modelData.loaded) {
+        throw std::runtime_error("Failed to load FBX model: " + fbxPath);
     }
-
+    
+    // For now, we'll just use the first mesh. In the future, we might want to handle multiple meshes
+    if (modelData.meshes.empty()) {
+        throw std::runtime_error("No meshes found in FBX model: " + fbxPath);
+    }
+    
+    const MeshData& meshData = modelData.meshes[0];
+    
     Mesh mesh;
-    mesh.textureID = 0;
-
-    // Load texture if path provided
-    if (!texturePath.empty()) {
-        pic_s pic = {0};
-        if (WIC_LoadImage(texturePath.c_str(), pic)) {
-            mesh.textureID = GL_RegisterTexture(&pic, GL_REPEAT, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR, true);
-            MEM_FREE_(pic.pixels_);
-            std::cout << "[OBJ] Loaded texture: " << texturePath << " (ID: " << mesh.textureID << ")\n";
-        } else {
-            std::cerr << "[OBJ] Failed to load texture: " << texturePath << "\n";
-        }
+    mesh.textureID = meshData.textureID;
+    mesh.vertexCount = static_cast<int>(meshData.vertices.size());
+    
+    // Convert Vertex struct to flat float array (position + normal + UV)
+    std::vector<float> vertices;
+    vertices.reserve(meshData.vertices.size() * 8); // 8 floats per vertex
+    
+    // Compute bounds for halfExtents and zOffset
+    glm::vec3 minPos(1e10f), maxPos(-1e10f);
+    
+    for (const auto& vertex : meshData.vertices) {
+        // Position
+        vertices.push_back(vertex.x);
+        vertices.push_back(vertex.y);
+        vertices.push_back(vertex.z);
+        
+        // Update bounds
+        minPos.x = std::min(minPos.x, vertex.x);
+        minPos.y = std::min(minPos.y, vertex.y);
+        minPos.z = std::min(minPos.z, vertex.z);
+        maxPos.x = std::max(maxPos.x, vertex.x);
+        maxPos.y = std::max(maxPos.y, vertex.y);
+        maxPos.z = std::max(maxPos.z, vertex.z);
+        
+        // Normal
+        vertices.push_back(vertex.nx);
+        vertices.push_back(vertex.ny);
+        vertices.push_back(vertex.nz);
+        
+        // UV
+        vertices.push_back(vertex.u);
+        vertices.push_back(vertex.v);
     }
-
-    mesh.vertexCount = static_cast<int>(vertices.size()) / 8;
-    mesh.halfExtents = (max_p - min_p) * 0.5f;
-    mesh.zOffset = -min_p.y; // Y-up models rotated 90deg, so Y becomes Z in world space
-
+    
+    mesh.halfExtents = (maxPos - minPos) * 0.5f;
+    mesh.zOffset = -minPos.y; // Y-up models rotated 90deg, so Y becomes Z in world space
+    
     // Store vertex data in the mesh for client-side rendering
     mesh.vertexData = new float[vertices.size()];
     memcpy(mesh.vertexData, vertices.data(), vertices.size() * sizeof(float));
-
+    
+    // Create OpenGL buffers
     glGenVertexArrays(1, &mesh.VAO);
-    glGenBuffers(1,     &mesh.VBO);
-
+    glGenBuffers(1, &mesh.VBO);
+    
     glBindVertexArray(mesh.VAO);
     glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-
+    
     // attrib 0 = position
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-
+    
     // attrib 1 = normal
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
-
+    
     // attrib 2 = uv
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
     glEnableVertexAttribArray(2);
-
+    
     glBindVertexArray(0);
-
-    std::cout << "[OBJ] Loaded: " << filepath << " | Vertices: " << mesh.vertexCount << "\n";
+    
+    std::cout << "[FBX] Loaded: " << fbxPath << " | Vertices: " << mesh.vertexCount << "\n";
     return mesh;
 }
 
