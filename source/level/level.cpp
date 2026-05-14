@@ -337,34 +337,73 @@ void Level::CompileCurrentQSC(int level_no) {
 void Level::CopyTerrainFromQEditor(int level_no) {
 	char appData[1024];
 	GetEnvironmentVariableA("APPDATA", appData, 1024);
+	ConfigData& cfg = Config::Get();
 
 	// Source is AppData QEditor
 	std::string srcTerrain = std::string(appData) + "\\QEditor\\QFiles\\IGI_QVM\\missions\\location0\\level" + std::to_string(level_no) + "\\terrain";
+	// Fallback source is game path
+	std::string gameTerrain = cfg.igiPath + "\\missions\\location0\\level" + std::to_string(level_no) + "\\terrain";
 
 	// Copy to executable directory terrains\levelX\terrain
 	std::string exeDir = GetExeDirectory();
 	std::string dstTerrain = exeDir + "\\terrains\\level" + std::to_string(level_no) + "\\terrain";
 
 	Logger::Get().Log(LogLevel::INFO, "[Level] CopyTerrainFromQEditor: level=" + std::to_string(level_no));
-	Logger::Get().Log(LogLevel::INFO, "[Level] Source: " + srcTerrain);
+	Logger::Get().Log(LogLevel::INFO, "[Level] QEditor Source: " + srcTerrain);
+	Logger::Get().Log(LogLevel::INFO, "[Level] Game Source: " + gameTerrain);
 	Logger::Get().Log(LogLevel::INFO, "[Level] Dest: " + dstTerrain);
 
 	try {
-		if (!std::filesystem::exists(srcTerrain)) {
-			Logger::Get().Log(LogLevel::ERR, "[Level] FATAL: Missing terrain folder at: " + srcTerrain);
-			throw std::runtime_error("Missing terrain folder in QEditor path");
-		}
-
 		// Clean destination first to ensure no stale files from previous copies remain
 		if (std::filesystem::exists(dstTerrain)) {
 			std::filesystem::remove_all(dstTerrain);
 			Logger::Get().Log(LogLevel::INFO, "[Level] Cleaned old terrain dir: " + dstTerrain);
 		}
 		std::filesystem::create_directories(dstTerrain);
-		
-		std::filesystem::copy(srcTerrain, dstTerrain,
-			std::filesystem::copy_options::overwrite_existing | std::filesystem::copy_options::recursive);
-		Logger::Get().Log(LogLevel::INFO, "[Level] Copied terrain from QEditor to: " + dstTerrain);
+
+		// Try QEditor first
+		if (std::filesystem::exists(srcTerrain)) {
+			std::filesystem::copy(srcTerrain, dstTerrain,
+				std::filesystem::copy_options::overwrite_existing | std::filesystem::copy_options::recursive);
+			Logger::Get().Log(LogLevel::INFO, "[Level] Copied terrain from QEditor to: " + dstTerrain);
+		}
+		else {
+			Logger::Get().Log(LogLevel::WARNING, "[Level] QEditor terrain not found at: " + srcTerrain);
+		}
+
+		// Check if all required terrain files exist in destination
+		const char* requiredFiles[] = { "terrain.cmd", "terrain.ctr", "terrain.tex", "terrain.lmp", "terrain.bit" };
+		bool allExist = true;
+		for (const char* f : requiredFiles) {
+			std::string destFile = dstTerrain + "\\" + f;
+			if (!std::filesystem::exists(destFile)) {
+				allExist = false;
+				Logger::Get().Log(LogLevel::WARNING, "[Level] Missing terrain file: " + std::string(f));
+			}
+		}
+
+		// If any required files are missing, try to copy them from game path
+		if (!allExist && std::filesystem::exists(gameTerrain)) {
+			Logger::Get().Log(LogLevel::INFO, "[Level] Copying missing terrain files from game path...");
+			for (const auto& entry : std::filesystem::directory_iterator(gameTerrain)) {
+				std::string filename = entry.path().filename().string();
+				std::string destFile = dstTerrain + "\\" + filename;
+				if (!std::filesystem::exists(destFile)) {
+					std::filesystem::copy(entry.path(), destFile,
+						std::filesystem::copy_options::overwrite_existing);
+					Logger::Get().Log(LogLevel::INFO, "[Level] Copied from game: " + filename);
+				}
+			}
+		}
+
+		// Final check
+		for (const char* f : requiredFiles) {
+			std::string destFile = dstTerrain + "\\" + f;
+			if (!std::filesystem::exists(destFile)) {
+				Logger::Get().Log(LogLevel::ERR, "[Level] FATAL: Still missing terrain file after all fallbacks: " + std::string(f));
+				throw std::runtime_error(std::string("Missing terrain file: ") + f);
+			}
+		}
 	}
 	catch (const std::exception& e) {
 		Logger::Get().Log(LogLevel::ERR, "[Level] Terrain copy exception: " + std::string(e.what()));
