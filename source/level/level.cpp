@@ -159,8 +159,7 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 			Logger::Get().Log(LogLevel::INFO, "[Level] Copied latest QSC to editor: " + std::string(editorQsc));
 		}
 		Str_SPrintf(filename, 1024, "%s", editorQsc);
-		// Compile it so game QVM stays in sync
-		CompileCurrentQSC(params.level_no_);
+		// NOTE: Do NOT auto-compile on load - only compile when user explicitly saves
 	}
 
 	qsc_path_ = filename;
