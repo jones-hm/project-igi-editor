@@ -235,9 +235,17 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         // We now place it exactly at its world position (obj.pos) and apply its own rotation (obj.rot).
 
         glm::mat4 model = glm::mat4(1.0f);
-        
+
+        // 3. Scale (compute early for zOffset adjustment)
+        float base_scale = 40.96f;
+        float total_scale = base_scale * obj.scale;
+
         // 1. Translate to world position
-        model = glm::translate(model, glm::vec3(obj.pos.x, obj.pos.y, obj.pos.z));
+        // Apply zOffset so the mesh bottom sits at the placement point.
+        // Only apply when zOffset < 0 (mesh floats above origin) to avoid
+        // lifting buildings with basements (min_p.y <= 0) out of the ground.
+        float z_adjustment = (mesh.zOffset < 0.0f) ? (mesh.zOffset * total_scale) : 0.0f;
+        model = glm::translate(model, glm::vec3(obj.pos.x, obj.pos.y, obj.pos.z + z_adjustment));
 
         // 2. Apply IGI rotations (Yaw, Pitch, Roll)
         // IGI rotation order: Yaw (Z), then Pitch (X), then Roll (Y)
@@ -245,9 +253,8 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         model = glm::rotate(model, (float)obj.rot.x, glm::vec3(1.0f, 0.0f, 0.0f)); // Pitch
         model = glm::rotate(model, (float)obj.rot.y, glm::vec3(0.0f, 1.0f, 0.0f)); // Roll
 
-        // 3. Scale 
-        float base_scale = 40.96f; 
-        model = glm::scale(model, glm::vec3(base_scale * obj.scale));
+        // 3. Scale
+        model = glm::scale(model, glm::vec3(total_scale));
 
         // 4. Convert OBJ Y-up to IGI Z-up (90 degree X rotation)
         model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f)); 
@@ -266,8 +273,10 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
             b = 0.4f + (float)((hash >> 16) & 0xFF) / 255.0f * 0.4f;
         }
 
-        bool hasTexture = (mesh.textureID > 0) ||
-                          (!mesh.subMeshes.empty() && mesh.subMeshes[0].textureID > 0);
+        bool hasTexture = (mesh.textureID > 0);
+        for (const auto& sub : mesh.subMeshes) {
+            if (sub.textureID > 0) { hasTexture = true; break; }
+        }
         if (hasTexture) {
             glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
             glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);

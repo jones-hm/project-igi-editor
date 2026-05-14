@@ -4,6 +4,7 @@
 #include "tiny_gltf.h"
 #include "glb_loader.h"
 #include "../common.h"
+#include "../logger.h"
 #include <iostream>
 #include <glm/gtc/type_ptr.hpp>
 
@@ -237,6 +238,11 @@ static void traverse_nodes(const tinygltf::Model& model, int node_idx, const glm
                                 glTexImage2D(GL_TEXTURE_2D, 0, internal_fmt, tex_width, tex_height, 0,
                                     pixel_fmt, GL_UNSIGNED_BYTE, tex_data);
                                 glGenerateMipmap(GL_TEXTURE_2D);
+                                Logger::Get().Log(LogLevel::INFO, "[GLB] Texture loaded: ID=" + std::to_string(gp.texture_id) +
+                                    " size=" + std::to_string(tex_width) + "x" + std::to_string(tex_height) +
+                                    " comp=" + std::to_string(img.component));
+                            } else {
+                                Logger::Get().Log(LogLevel::WARNING, "[GLB] Texture image EMPTY for material " + std::to_string(prim.material));
                             }
                         }
                     }

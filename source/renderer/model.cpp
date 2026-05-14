@@ -1,6 +1,7 @@
 #include "model.h"
 #include "glb_loader.h"
 #include "../pch.h"
+#include "../logger.h"
 #include <glm/gtc/type_ptr.hpp>
 #include <vector>
 #include <stdexcept>
@@ -67,6 +68,9 @@ Mesh loadObjModel(const std::string& filepath, const std::string& texturePath) {
         sub.alphaMode   = prim.alpha_mode;
         sub.vertexCount = (int)verts.size() / 8;
         prim.texture_id = 0; // Mesh now owns the texture
+
+        Logger::Get().Log(LogLevel::INFO, "[Model] SubMesh texID=" + std::to_string(sub.textureID) +
+            " alpha=" + std::to_string(sub.alphaMode) + " verts=" + std::to_string(sub.vertexCount));
 
         glGenVertexArrays(1, &sub.VAO);
         glGenBuffers(1, &sub.VBO);
