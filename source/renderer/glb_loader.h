@@ -20,3 +20,7 @@ struct glb_model_s {
 
 glb_model_s  GLB_Load(const char* path);
 void         GLB_Free(glb_model_s& model);
+
+// Load a texture from an external file (PNG, JPG, etc.) for use with GLB models
+// that have no embedded textures. Returns 0 on failure.
+GLuint       GLB_LoadExternalTexture(const char* path);

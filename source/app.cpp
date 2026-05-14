@@ -1584,13 +1584,33 @@ bool App::CheckCollision(const glm::vec3& nextPos) {
     return false;
 }
 
+static bool IsUndergroundModel(const std::string& name) {
+    std::string upper = name;
+    std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
+    return upper.find("UNDERGROUND") != std::string::npos ||
+           upper.find("TUNNEL") != std::string::npos ||
+           upper.find("T-JUNCTION") != std::string::npos ||
+           upper.find("METALDOORBASE") != std::string::npos ||
+           upper.find("METAL_DOOR_BASE") != std::string::npos ||
+           upper.find("ELEVATORROOM") != std::string::npos ||
+           upper.find("GUARDROOM") != std::string::npos ||
+           upper.find("STRAIGHTUPWARDS") != std::string::npos;
+}
+
 void App::SnapObjectsToTerrain() {
     auto& objects = level_.GetLevelObjects().GetObjects();
     Logger::Get().Log(LogLevel::INFO, "[App] Snapping " + std::to_string(objects.size()) + " objects to terrain...");
 
     int snapped = 0;
+    int skipped = 0;
     int failed = 0;
     for (auto& obj : objects) {
+        // Underground models (tunnels, junctions, etc.) keep their original Z
+        if (IsUndergroundModel(obj.name)) {
+            obj.snap_z_offset = 0.0;
+            skipped++;
+            continue;
+        }
         float terrainZ = 0.0f;
         if (level_.GetTerrainZ(glm::vec3(obj.pos.x, obj.pos.y, 0.0f), terrainZ)) {
             float zOffset = renderer_.GetMeshZOffset(obj.modelId, obj.isBuilding);
@@ -1605,7 +1625,7 @@ void App::SnapObjectsToTerrain() {
             failed++;
         }
     }
-    Logger::Get().Log(LogLevel::INFO, "[App] Snap complete. snapped=" + std::to_string(snapped) + " failed=" + std::to_string(failed));
+    Logger::Get().Log(LogLevel::INFO, "[App] Snap complete. snapped=" + std::to_string(snapped) + " skipped=" + std::to_string(skipped) + " failed=" + std::to_string(failed));
 }
 void App::UpdateMarkerManipulation() {
 

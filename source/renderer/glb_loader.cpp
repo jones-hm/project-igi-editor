@@ -393,3 +393,28 @@ void GLB_Free(glb_model_s& model) {
     }
     model.primitives.clear();
 }
+
+// ─── External Texture Loader ──────────────────────────────────────────────────
+GLuint GLB_LoadExternalTexture(const char* path) {
+    int width, height, channels;
+    unsigned char* data = stbi_load(path, &width, &height, &channels, 0);
+    if (!data) {
+        Logger::Get().Log(LogLevel::WARNING, std::string("[GLB] Failed to load external texture: ") + path);
+        return 0;
+    }
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    GLenum internal_fmt = (channels == 4) ? GL_RGBA8 : GL_RGB8;
+    GLenum pixel_fmt    = (channels == 4) ? GL_RGBA  : GL_RGB;
+    glTexImage2D(GL_TEXTURE_2D, 0, internal_fmt, width, height, 0, pixel_fmt, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    stbi_image_free(data);
+    Logger::Get().Log(LogLevel::INFO, "[GLB] External texture loaded: ID=" + std::to_string(tex) +
+        " size=" + std::to_string(width) + "x" + std::to_string(height) + " comp=" + std::to_string(channels));
+    return tex;
+}
