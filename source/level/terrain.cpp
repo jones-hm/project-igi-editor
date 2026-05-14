@@ -346,6 +346,15 @@ void Terrain::Unload() {
 	cmd_ = nullptr;
 	cmd_sz_ = 0;
 
+	// Reset renderer buffer pointers - these point to renderer-managed memory
+	// that gets freed/reallocated when switching levels
+	vertices_ = nullptr;
+	indices_ = nullptr;
+	render_chunks_ = nullptr;
+	num_vertex_ = 0;
+	num_index_ = 0;
+	num_render_chunk_ = 0;
+
 	ClearCubeDataHash();
 }
 

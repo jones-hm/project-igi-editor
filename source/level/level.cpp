@@ -128,7 +128,9 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 		}
 	};
 
-	addCandidate(editorQsc, false);
+	// NOTE: Do NOT add editorQsc (exeDir\objects.qsc) as a candidate!
+	// That file is just a cache from the previously loaded level.
+	// Only look at actual source locations:
 	addCandidate(qeditorQsc, false);
 	addCandidate(igiQsc, false);
 	addCandidate(igiQvm, true);
@@ -353,6 +355,11 @@ void Level::CopyTerrainFromQEditor(int level_no) {
 			throw std::runtime_error("Missing terrain folder in QEditor path");
 		}
 
+		// Clean destination first to ensure no stale files from previous copies remain
+		if (std::filesystem::exists(dstTerrain)) {
+			std::filesystem::remove_all(dstTerrain);
+			Logger::Get().Log(LogLevel::INFO, "[Level] Cleaned old terrain dir: " + dstTerrain);
+		}
 		std::filesystem::create_directories(dstTerrain);
 		
 		std::filesystem::copy(srcTerrain, dstTerrain,

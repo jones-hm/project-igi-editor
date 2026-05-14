@@ -313,7 +313,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 }
 
 float Renderer_Objects::GetMeshZOffset(const std::string& modelId, bool isBuilding) {
-    std::string cacheKey = (isBuilding ? "building:" : "object:") + modelId;
+    std::string cacheKey = std::to_string(current_level_) + ":" + (isBuilding ? "building:" : "object:") + modelId;
     auto it = mesh_cache_.find(cacheKey);
     if (it != mesh_cache_.end()) {
         return it->second.zOffset;
@@ -328,7 +328,7 @@ glm::vec3 Renderer_Objects::GetMeshExtents(const std::string& modelId, bool isBu
 
 // ─── GetOrLoadMesh ────────────────────────────────────────────────────────────
 Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding) {
-    std::string cacheKey = (isBuilding ? "building:" : "object:") + modelId;
+    std::string cacheKey = std::to_string(current_level_) + ":" + (isBuilding ? "building:" : "object:") + modelId;
 
     // Return cached mesh if already loaded
     auto it = mesh_cache_.find(cacheKey);
