@@ -878,6 +878,7 @@ void Folders_Init() {
 		Str_SPrintf(g_folders.res_folder_, 1024, "%s/QFiles/IGI_QSC", appdata_buf);
 		Str_SPrintf(g_folders.objects_folder_, 1024, "%s/3DEditor/objects", appdata_buf);
 		Str_SPrintf(g_folders.buildings_folder_, 1024, "%s/3DEditor/buildings", appdata_buf);
+		Str_SPrintf(g_folders.ai_folder_, 1024, "%s/3DEditor/ai", appdata_buf);
 		// Use configured textures path from Config
 		std::string configuredTexturesPath = Config::Get().texturesPath;
 		if (!configuredTexturesPath.empty()) {
@@ -890,6 +891,7 @@ void Folders_Init() {
 		Str_SPrintf(g_folders.res_folder_, 1024, ".");
 		Str_SPrintf(g_folders.objects_folder_, 1024, ".");
 		Str_SPrintf(g_folders.buildings_folder_, 1024, ".");
+		Str_SPrintf(g_folders.ai_folder_, 1024, ".");
 		Str_SPrintf(g_folders.textures_folder_, 1024, ".");
 	}
 

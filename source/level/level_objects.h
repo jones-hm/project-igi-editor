@@ -9,6 +9,16 @@ struct LevelObject {
     std::string name;
     std::string modelId;
     std::string taskId;  // Task ID from QSC for save support
+    std::string aiId;    // AI ID from JSON
+    std::string type;    // AI Type
+    std::string graphId; // Graph ID from JSON
+    std::string graphName; // Graph Name from JSON
+    glm::dvec3 graphPos;   // Graph Position
+    std::string primaryWeapon; // Primary weapon name from JSON
+    std::string primaryAmmo;    // Primary ammo from JSON
+    std::string secondaryWeapon; // Secondary weapon name from JSON
+    std::string secondaryAmmo;    // Secondary ammo from JSON
+    int team; // 0 = Friendly, 1 = Enemy
     glm::dvec3 pos;
     glm::dvec3 original_pos;  // Original position from QSC for fallback matching
     glm::dvec3 rot;

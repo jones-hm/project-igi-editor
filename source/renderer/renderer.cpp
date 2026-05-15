@@ -434,14 +434,72 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                                 if (text_y < 0) text_y = 0;
                                 if (text_y > params.view_define_->viewport_height_ - 50) text_y = params.view_define_->viewport_height_ - 50;
 
-                                // Line 1: ModelName ID: Task_New first param
-                                snprintf(buf, sizeof(buf), "%s ID: %s", display_name.c_str(), task_id.c_str());
-                                draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
+                                // Check if this is an AI model (ID starts with 000-019)
+                                bool isAI = false;
+                                if (obj.modelId.size() >= 3) {
+                                        try {
+                                                int prefixNum = std::stoi(obj.modelId.substr(0, 3));
+                                                if (prefixNum >= 0 && prefixNum <= 19) {
+                                                        isAI = true;
+                                                }
+                                        } catch (...) {}
+                                }
 
-                                // Line 2: Full ModelID
-                                text_y += 15;
-                                snprintf(buf, sizeof(buf), "%s", obj.modelId.c_str());
-                                draw_text(text_x, text_y, buf, obj.isBuilding ? 1.0f : 0.0f, 1.0f, 0.0f);
+                                if (isAI) {
+                                        snprintf(buf, sizeof(buf), "Type: \"%s\"", obj.type.c_str());
+                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
+                                        text_y += 15;
+                                        snprintf(buf, sizeof(buf), "Name: \"%s\"", display_name.c_str());
+                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
+
+                                        text_y += 20;
+                                        snprintf(buf, sizeof(buf), "Soldier ID: %s", task_id.c_str());
+                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 0.0f);
+                                        text_y += 15;
+                                        snprintf(buf, sizeof(buf), "AI ID: %s", obj.aiId.c_str());
+                                        draw_text(text_x, text_y, buf, 0.0f, 1.0f, 1.0f);
+
+                                        text_y += 20;
+                                        snprintf(buf, sizeof(buf), "Position: X: %.7f Y: %.7f Z: %.7f", obj.pos.x, obj.pos.y, obj.pos.z);
+                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
+
+                                        text_y += 20;
+                                        snprintf(buf, sizeof(buf), "Rotation: %.10f", obj.rot.z);
+                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
+
+                                        text_y += 20;
+                                        snprintf(buf, sizeof(buf), "Model: ID: \"%s\" Name: \"%s\"", obj.modelId.c_str(), obj.type.c_str());
+                                        draw_text(text_x, text_y, buf, 0.0f, 1.0f, 1.0f);
+
+                                        text_y += 20;
+                                        snprintf(buf, sizeof(buf), "Graph: ID: %s Name: \"%s\"", obj.graphId.c_str(), obj.graphName.c_str());
+                                        draw_text(text_x, text_y, buf, 0.0f, 1.0f, 1.0f);
+
+                                        text_y += 20;
+                                        snprintf(buf, sizeof(buf), "Graph Position: X: %.7f Y: %.7f Z: %.7f", obj.graphPos.x, obj.graphPos.y, obj.graphPos.z);
+                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
+
+                                        text_y += 20;
+                                        snprintf(buf, sizeof(buf), "Primary Weapon: Name: \"%s\" Ammo: %s", obj.primaryWeapon.c_str(), obj.primaryAmmo.empty() ? "0" : obj.primaryAmmo.c_str());
+                                        draw_text(text_x, text_y, buf, 1.0f, 0.5f, 0.0f);
+
+                                        text_y += 20;
+                                        snprintf(buf, sizeof(buf), "Secondary Weapon: Name: \"%s\" Ammo: %s", obj.secondaryWeapon.c_str(), obj.secondaryAmmo.empty() ? "0" : obj.secondaryAmmo.c_str());
+                                        draw_text(text_x, text_y, buf, 1.0f, 0.5f, 0.0f);
+
+                                        text_y += 20;
+                                        snprintf(buf, sizeof(buf), "Team: %s", obj.team == 0 ? "Friendly" : "Enemy");
+                                        draw_text(text_x, text_y, buf, obj.team == 0 ? 0.0f : 1.0f, obj.team == 0 ? 1.0f : 0.0f, 0.0f);
+                                } else {
+                                        // Line 1: ModelName ID: Task_New first param
+                                        snprintf(buf, sizeof(buf), "%s ID: %s", display_name.c_str(), task_id.c_str());
+                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
+
+                                        // Line 2: Full ModelID
+                                        text_y += 15;
+                                        snprintf(buf, sizeof(buf), "%s", obj.modelId.c_str());
+                                        draw_text(text_x, text_y, buf, obj.isBuilding ? 1.0f : 0.0f, 1.0f, 0.0f);
+                                }
                         }
                 }
 

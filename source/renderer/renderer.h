@@ -25,6 +25,7 @@ public:
 	static constexpr int	DRAW_FLAT_SKY_LAYER = FLAG_BIT(3); // 8
     static constexpr int    DRAW_BUILDINGS = FLAG_BIT(4);      // 16
     static constexpr int    DRAW_PROPS = FLAG_BIT(5);          // 32
+    static constexpr int    DRAW_AI = FLAG_BIT(6);             // 64
     static constexpr int    DRAW_SKYDOME = FLAG_BIT(1);        // Alias for SKY
 
 

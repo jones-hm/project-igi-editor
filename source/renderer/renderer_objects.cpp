@@ -2,9 +2,39 @@
 #include "renderer_objects.h"
 #include <iostream>
 #include <filesystem>
+#include <unordered_set>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include "logger.h"
+
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+static bool IsFenceModel(const std::string& nameOrId) {
+    std::string upper = nameOrId;
+    std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
+    return upper.find("FENCE") != std::string::npos ||
+           upper.find("GATE") != std::string::npos ||
+           upper.find("POLE_WIRED") != std::string::npos ||
+           upper.find("WIRE") != std::string::npos;
+}
+
+// Known fence/gate model IDs from IGIModelsLevel.json
+static bool IsFenceModelId(const std::string& modelId) {
+    static const std::unordered_set<std::string> fenceIds = {
+        "303_01_1", "303_02_1", "303_03_1", "303_04_1", "304_01_1",
+        "302_01_1", "331_01_1",
+        "338_01_1",
+        "341_01_1", "341_02_1", "341_03_1", "341_04_1",
+        "341_05_1", "341_06_1", "341_07_1",
+        "366_01_1"
+    };
+    if (fenceIds.count(modelId) > 0) return true;
+    // Handle partial IDs from QSC (e.g. "303", "303_01")
+    for (const auto& fid : fenceIds) {
+        if (fid.find(modelId) == 0 || modelId.find(fid) == 0) return true;
+    }
+    return false;
+}
 
 
 // ─── Shader Sources ───────────────────────────────────────────────────────────
@@ -226,12 +256,21 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
         if (!shouldDraw) continue;
 
+        // TODO: Temporarily skip loading and rendering fence/gate/wire objects and colbox66 due to snapping issues.
+        // Fences are floating or misaligned on terrain. Need to implement proper Z-offset calculation
+        // for fence models that accounts for their unique geometry (posts vs wires).
+        // colbox66 is a collision box model that should not be rendered.
+        // GitHub issue to be created for tracking this fix.
+        if (IsFenceModelId(obj.modelId) || IsFenceModel(obj.name) || IsFenceModel(obj.modelId) ||
+            obj.modelId == "colbox" || obj.name == "colbox" || obj.modelId == "colbox66" || obj.name == "colbox66") {
+            continue;
+        }
+
         Mesh mesh = GetOrLoadMesh(obj.modelId, obj.isBuilding);
         if (mesh.vertexCount == 0) continue;
 
 
         // ── Build model matrix ────────────────────────────────────────────────
-        // Each mesh is centered around (0,0,0) during load.
         // We now place it exactly at its world position (obj.pos) and apply its own rotation (obj.rot).
 
         glm::mat4 model = glm::mat4(1.0f);
@@ -244,6 +283,8 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         // obj.pos.z already includes the terrain snap offset from app.cpp,
         // so we use it directly without adding zOffset again.
         model = glm::translate(model, glm::vec3(obj.pos.x, obj.pos.y, obj.pos.z));
+
+        const bool isFence = IsFenceModelId(obj.modelId) || IsFenceModel(obj.name) || IsFenceModel(obj.modelId);
 
         // 2. Apply IGI rotations (Yaw, Pitch, Roll)
         // IGI rotation order: Yaw (Z), then Pitch (X), then Roll (Y)
@@ -285,12 +326,11 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 }
             }
             bool mixedMesh = hasTextured && hasUntextured;
-
             for (const auto& sub : mesh.subMeshes) {
                 if (sub.VAO == 0 || sub.vertexCount == 0) continue;
 
-                // Skip large untextured foundations in mixed meshes
-                if (mixedMesh && sub.textureID == 0 && sub.vertexCount > maxTexturedVerts) {
+                // Skip large untextured foundations in mixed meshes (but NOT fences/gates)
+                if (!isFence && mixedMesh && sub.textureID == 0 && sub.vertexCount > maxTexturedVerts) {
                     continue;
                 }
 
@@ -358,12 +398,24 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 }
 
 float Renderer_Objects::GetMeshZOffset(const std::string& modelId, bool isBuilding) {
+    // TODO: Temporarily skip fence/gate/wire objects and colbox66 due to snapping issues.
+    // Fences are floating or misaligned on terrain. Need to implement proper Z-offset calculation.
+    // colbox66 is a collision box model that should not be rendered.
+    // See TODO in Draw function for more details.
+    if (IsFenceModelId(modelId) || modelId == "colbox66") {
+        return 0.0f;
+    }
+
     std::string cacheKey = std::to_string(current_level_) + ":" + (isBuilding ? "building:" : "object:") + modelId;
     auto it = mesh_cache_.find(cacheKey);
+    Mesh mesh;
     if (it != mesh_cache_.end()) {
-        return it->second.mainZOffset;
+        mesh = it->second;
+    } else {
+        mesh = GetOrLoadMesh(modelId, isBuilding);
     }
-    return GetOrLoadMesh(modelId, isBuilding).mainZOffset;
+
+    return mesh.mainZOffset;
 }
 
 glm::vec3 Renderer_Objects::GetMeshExtents(const std::string& modelId, bool isBuilding) {
@@ -602,6 +654,60 @@ Mesh Renderer_Objects::CreateCubeMesh() {
 
 std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isBuilding) {
     std::string levelDir = "level" + std::to_string(current_level_);
+    
+    // Try AI folder first if this might be an AI model (AI models have IDs starting with 000-019)
+    bool isAIModel = false;
+    if (modelId.size() >= 3) {
+        std::string prefix = modelId.substr(0, 3);
+        int prefixNum = 0;
+        try {
+            prefixNum = std::stoi(prefix);
+            if (prefixNum >= 0 && prefixNum <= 19) {
+                isAIModel = true;
+            }
+        } catch (...) {
+            // Not a number, not an AI model
+        }
+    }
+    
+    // Search in AI folder if it's an AI model
+    if (isAIModel) {
+        std::string aiBase = g_folders.ai_folder_;
+        for (char& c : aiBase) {
+            if (c == '/') c = '\\';
+        }
+        
+        std::filesystem::path aiBasePath(aiBase);
+        std::filesystem::path aiLevelPath = aiBasePath / levelDir;
+        
+        // Try exact match in AI folder
+        std::vector<std::filesystem::path> aiSearchPaths = { 
+            aiLevelPath / (modelId + ".glb"),
+            aiLevelPath / (modelId + ".obj")
+        };
+        for (const auto& path : aiSearchPaths) {
+            std::string pathStr = path.string();
+            if (std::filesystem::exists(pathStr)) {
+                return pathStr;
+            }
+        }
+        
+        // Try partial match in AI folder
+        if (std::filesystem::exists(aiLevelPath)) {
+            for (const auto& entry : std::filesystem::directory_iterator(aiLevelPath)) {
+                if (!entry.is_regular_file()) continue;
+                std::string fname = entry.path().filename().string();
+                std::string ext = entry.path().extension().string();
+                if (ext != ".glb" && ext != ".obj") continue;
+
+                if (fname.find(modelId) != std::string::npos) {
+                    return entry.path().string();
+                }
+            }
+        }
+    }
+    
+    // Fall back to buildings/objects folder
     std::string objectsBase = isBuilding ? g_folders.buildings_folder_ : g_folders.objects_folder_;
     
     // Convert forward slashes to backslashes for Windows

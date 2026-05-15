@@ -38,6 +38,9 @@ public:
 	void					SaveCurrentLevel();
 	int						GetCurLevelNo() const;
 
+	// Load AI models from ai\levelX folder
+	void					LoadAIModelsFromFolder(int level_no);
+
 	// draw wireframe on top of solid mesh
 	void					ToggleOverlayWireframe();
 	void					ToggleDrawParts(int part);

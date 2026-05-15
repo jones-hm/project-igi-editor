@@ -124,6 +124,7 @@ Mesh loadObjModel(const std::string& filepath, const std::string& texturePath) {
     mesh.textureID   = mesh.subMeshes[0].textureID;
     mesh.vertexCount = total_verts;
     mesh.halfExtents = (max_p - min_p) * 0.5f;
+    mesh.center      = (max_p + min_p) * 0.5f;
     mesh.zOffset     = -min_p.y;
     mesh.mainZOffset = has_textured ? -min_p_tex.y : mesh.zOffset;
     mesh.vertexData  = nullptr;

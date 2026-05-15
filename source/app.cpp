@@ -312,6 +312,40 @@ void App::LoadLevel(int level_no) {
 		// Always snap objects to terrain after any level load
 		Logger::Get().Log(LogLevel::INFO, "[App] Step 3: Snapping objects to terrain...");
 		SnapObjectsToTerrain();
+
+		// Level-specific rotation overrides for model 615 (Missile)
+		if (level_no == 9 || level_no == 12) {
+			auto& objects = level_.GetLevelObjects().GetObjects();
+			for (auto& obj : objects) {
+				if (obj.modelId == "615") {
+					if (level_no == 12) {
+						obj.rot.x = 0.0;       // PITCH
+						obj.rot.y = -1.54;     // ROLL
+						obj.rot.z = 1.57;      // YAW
+					} else if (level_no == 9) {
+						obj.rot.x = 0.0;       // PITCH
+						obj.rot.y = -1.58;     // ROLL
+						obj.rot.z = 0.0;       // YAW
+					}
+					Logger::Get().Log(LogLevel::INFO, "[App] Applied missile rotation override for model 615 in level " + std::to_string(level_no));
+				}
+			}
+		}
+
+		// AI rotation override: AI models only have horizontal 360 degree rotation (yaw = 2π, pitch = 0, roll = 0)
+		auto& objects = level_.GetLevelObjects().GetObjects();
+		for (auto& obj : objects) {
+			// Check if this is an AI model by checking if it's in the AI list from JSON
+			// AI models have specific IDs that we can identify
+			std::string upperName = obj.name;
+			std::transform(upperName.begin(), upperName.end(), upperName.begin(), ::toupper);
+			if (upperName.find("AI") != std::string::npos || upperName.find("AITYPE") != std::string::npos) {
+				obj.rot.x = 0.0;           // PITCH = 0
+				obj.rot.y = 0.0;           // ROLL = 0
+				obj.rot.z = 6.28318;       // YAW = 360 degrees (2π radians)
+				Logger::Get().Log(LogLevel::INFO, "[App] Applied AI rotation override (horizontal 360 only) for " + obj.name + " in level " + std::to_string(level_no));
+			}
+		}
 		
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 		Logger::Get().Log(LogLevel::INFO, "[App] LoadLevel() COMPLETE for level " + std::to_string(level_no));
@@ -331,6 +365,270 @@ void App::LoadLevel(int level_no) {
 
 void App::SetGameLevel(int level_no) {
 	bridge_.SetGameLevel(level_no);
+}
+
+void App::LoadAIModelsFromFolder(int level_no) {
+	Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
+	Logger::Get().Log(LogLevel::INFO, "[App] LoadAIModelsFromFolder() START for level " + std::to_string(level_no));
+	Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
+
+	char appDataPath[MAX_PATH];
+	GetEnvironmentVariableA("APPDATA", appDataPath, MAX_PATH);
+	std::string aiFolderPath = std::string(appDataPath) + "\\QEditor\\3DEditor\\ai\\level" + std::to_string(level_no);
+
+	Logger::Get().Log(LogLevel::INFO, "[App] AI folder path: " + aiFolderPath);
+
+	// Check if AI folder exists
+	if (!std::filesystem::exists(aiFolderPath)) {
+		Logger::Get().Log(LogLevel::WARNING, "[App] AI folder does not exist: " + aiFolderPath);
+		return;
+	}
+
+	// Get all GLB files in the AI folder
+	std::vector<std::string> aiModels;
+	for (const auto& entry : std::filesystem::directory_iterator(aiFolderPath)) {
+		if (entry.path().extension() == ".glb") {
+			aiModels.push_back(entry.path().filename().string());
+		}
+	}
+
+	Logger::Get().Log(LogLevel::INFO, "[App] Found " + std::to_string(aiModels.size()) + " AI GLB files");
+
+	// Read JSON file to get AI model positions
+	struct AIData {
+		glm::dvec3 pos;
+		double rotation;
+		std::string type;
+		std::string name;
+		std::string soldierId;
+		std::string modelId;
+		std::string aiId;
+		std::string graphId;
+		std::string graphName;
+		glm::dvec3 graphPos;
+		std::string primaryWeapon;
+		std::string primaryAmmo;
+		std::string secondaryWeapon;
+		std::string secondaryAmmo;
+		int team;
+	};
+	std::vector<AIData> aiDataList;
+	std::string jsonPath = std::string(appDataPath) + "\\QEditor\\IGIModelsAllLevel.json";
+	
+	if (std::filesystem::exists(jsonPath)) {
+		FILE* f = fopen(jsonPath.c_str(), "rb");
+		if (f) {
+			fseek(f, 0, SEEK_END);
+			long fileSize = ftell(f);
+			fseek(f, 0, SEEK_SET);
+			
+			char* buf = new char[fileSize + 1];
+			fread(buf, 1, fileSize, f);
+			buf[fileSize] = '\0';
+			fclose(f);
+			
+			std::string content(buf);
+			delete[] buf;
+			
+			// Find AI array for this level
+			std::string levelKey = "\"Level " + std::to_string(level_no) + "\"";
+			size_t levelPos = content.find(levelKey);
+			if (levelPos != std::string::npos) {
+				size_t aiPos = content.find("\"AI\"", levelPos);
+				if (aiPos != std::string::npos) {
+					size_t arrayStart = content.find("[", aiPos);
+					size_t arrayEnd = content.find("]", arrayStart);
+					if (arrayStart != std::string::npos && arrayEnd != std::string::npos) {
+						std::string aiArray = content.substr(arrayStart, arrayEnd - arrayStart + 1);
+						
+						// Parse each AI entry
+						size_t entryPos = 0;
+						while ((entryPos = aiArray.find("{", entryPos)) != std::string::npos) {
+							size_t entryEnd = aiArray.find("}", aiArray.find("}", aiArray.find("}", aiArray.find("}", entryPos) + 1) + 1) + 1); // skip nested braces (approximate)
+							if (entryEnd == std::string::npos) entryEnd = aiArray.length();
+							
+							// A better way to find the end of the JSON object matching the open brace
+							int braceCount = 0;
+							for (size_t i = entryPos; i < aiArray.length(); ++i) {
+								if (aiArray[i] == '{') braceCount++;
+								else if (aiArray[i] == '}') {
+									braceCount--;
+									if (braceCount == 0) {
+										entryEnd = i;
+										break;
+									}
+								}
+							}
+
+							std::string entry = aiArray.substr(entryPos, entryEnd - entryPos + 1);
+							
+							AIData aiData;
+							aiData.pos = glm::dvec3(0,0,0);
+							aiData.graphPos = glm::dvec3(0,0,0);
+							aiData.rotation = 0.0;
+							aiData.team = 0;
+							
+							// Helper lambda to extract string
+							auto extractString = [](const std::string& str, const std::string& key) -> std::string {
+								size_t pos = str.find("\"" + key + "\"");
+								if (pos == std::string::npos) return "";
+								size_t colon = str.find(":", pos);
+								size_t qStart = str.find("\"", colon);
+								size_t qEnd = str.find("\"", qStart + 1);
+								if (qStart != std::string::npos && qEnd != std::string::npos) {
+									return str.substr(qStart + 1, qEnd - qStart - 1);
+								}
+								return "";
+							};
+							
+							// Helper lambda to extract number as string
+							auto extractNumStr = [](const std::string& str, const std::string& key) -> std::string {
+								size_t pos = str.find("\"" + key + "\"");
+								if (pos == std::string::npos) return "";
+								size_t colon = str.find(":", pos);
+								size_t end = str.find_first_of(",}\n\r", colon + 1);
+								if (colon != std::string::npos && end != std::string::npos) {
+									std::string val = str.substr(colon + 1, end - colon - 1);
+									val.erase(0, val.find_first_not_of(" \t")); // ltrim
+									val.erase(val.find_last_not_of(" \t") + 1); // rtrim
+									return val;
+								}
+								return "";
+							};
+
+							aiData.type = extractString(entry, "Type");
+							aiData.name = extractString(entry, "Name");
+							aiData.soldierId = extractNumStr(entry, "SoldierId");
+							aiData.aiId = extractNumStr(entry, "AIId");
+							
+							// Extract Team
+							std::string teamStr = extractNumStr(entry, "Team");
+							if (!teamStr.empty()) aiData.team = std::stoi(teamStr);
+
+							// Extract Rotation
+							std::string rotStr = extractNumStr(entry, "Rotation");
+							if (!rotStr.empty()) aiData.rotation = std::stod(rotStr);
+							
+							// Extract positions using blocks
+							size_t posBlock = entry.find("\"Position\"");
+							if (posBlock != std::string::npos) {
+								size_t endBlock = entry.find("}", posBlock);
+								std::string blk = entry.substr(posBlock, endBlock - posBlock);
+								std::string xStr = extractNumStr(blk, "X");
+								std::string yStr = extractNumStr(blk, "Y");
+								std::string zStr = extractNumStr(blk, "Z");
+								if (!xStr.empty()) aiData.pos.x = std::stod(xStr);
+								if (!yStr.empty()) aiData.pos.y = std::stod(yStr);
+								if (!zStr.empty()) aiData.pos.z = std::stod(zStr);
+							}
+							
+							size_t modelBlock = entry.find("\"Model\"");
+							if (modelBlock != std::string::npos) {
+								size_t endBlock = entry.find("}", modelBlock);
+								std::string blk = entry.substr(modelBlock, endBlock - modelBlock);
+								aiData.modelId = extractString(blk, "ID");
+							}
+							
+							size_t graphBlock = entry.find("\"Graph\"");
+							if (graphBlock != std::string::npos) {
+								size_t endBlock = entry.find("}", graphBlock); // wait, graph contains Position, so endBlock must be calculated carefully
+								// actually let's just use the whole graph substring since keys are unique
+								aiData.graphId = extractNumStr(entry.substr(graphBlock), "ID");
+								aiData.graphName = extractString(entry.substr(graphBlock), "Name");
+								
+								size_t graphPosBlock = entry.find("\"Position\"", graphBlock);
+								if (graphPosBlock != std::string::npos) {
+									size_t gEndBlock = entry.find("}", graphPosBlock);
+									std::string blk = entry.substr(graphPosBlock, gEndBlock - graphPosBlock);
+									std::string xStr = extractNumStr(blk, "X");
+									std::string yStr = extractNumStr(blk, "Y");
+									std::string zStr = extractNumStr(blk, "Z");
+									if (!xStr.empty()) aiData.graphPos.x = std::stod(xStr);
+									if (!yStr.empty()) aiData.graphPos.y = std::stod(yStr);
+									if (!zStr.empty()) aiData.graphPos.z = std::stod(zStr);
+								}
+							}
+							
+							size_t weaponBlock = entry.find("\"Weapons\"");
+							if (weaponBlock != std::string::npos) {
+								size_t priBlock = entry.find("\"Primary\"", weaponBlock);
+								if (priBlock != std::string::npos) {
+									size_t endBlock = entry.find("}", priBlock);
+									std::string blk = entry.substr(priBlock, endBlock - priBlock);
+									aiData.primaryWeapon = extractString(blk, "Name");
+									aiData.primaryAmmo = extractNumStr(blk, "Ammo");
+								}
+								size_t secBlock = entry.find("\"Secondary\"", weaponBlock);
+								if (secBlock != std::string::npos) {
+									size_t endBlock = entry.find("}", secBlock);
+									std::string blk = entry.substr(secBlock, endBlock - secBlock);
+									aiData.secondaryWeapon = extractString(blk, "Name");
+									aiData.secondaryAmmo = extractNumStr(blk, "Ammo");
+								}
+							}
+
+							if (!aiData.modelId.empty()) {
+								aiDataList.push_back(aiData);
+							}
+							
+							entryPos = entryEnd + 1;
+						}
+					}
+				}
+			}
+		}
+		Logger::Get().Log(LogLevel::INFO, "[App] Found " + std::to_string(aiDataList.size()) + " AI entries in JSON file");
+	}
+
+	// Add AI models to level objects
+	auto& objects = level_.GetLevelObjects().GetObjects();
+	int addedCount = 0;
+
+	// Iterate through all AI entries from JSON (not just unique model IDs)
+	for (const auto& aiData : aiDataList) {
+		// Check if the GLB file exists for this model
+		std::string glbPath = aiFolderPath + "\\" + aiData.modelId + ".glb";
+		if (!std::filesystem::exists(glbPath)) {
+			Logger::Get().Log(LogLevel::WARNING, "[App] GLB file not found for AI model: " + aiData.modelId);
+			continue;
+		}
+
+		// Create new LevelObject for this AI entry
+		LevelObject newObj;
+		newObj.name = aiData.type;
+		newObj.modelId = aiData.modelId;
+		newObj.taskId = aiData.soldierId;
+		newObj.aiId = aiData.aiId;
+		newObj.graphId = aiData.graphId;
+		newObj.type = aiData.type;
+		newObj.graphName = aiData.graphName;
+		newObj.graphPos = aiData.graphPos;
+		newObj.team = aiData.team;
+		newObj.rot.z = aiData.rotation;
+		newObj.primaryWeapon = aiData.primaryWeapon;
+		newObj.primaryAmmo = aiData.primaryAmmo;
+		newObj.secondaryWeapon = aiData.secondaryWeapon;
+		newObj.secondaryAmmo = aiData.secondaryAmmo;
+		newObj.pos = aiData.pos;
+		newObj.original_pos = newObj.pos;
+		newObj.rot = glm::dvec3(0.0, 0.0, 6.28318);  // PITCH=0, ROLL=0, YAW=360 degrees (2π radians)
+		newObj.original_rot = newObj.rot;
+		newObj.isBuilding = false;  // AI models are not buildings
+		newObj.snap_z_offset = 0.0;
+		newObj.scale = 1.0f;
+
+		// Add to level objects
+		objects.push_back(newObj);
+		addedCount++;
+
+		Logger::Get().Log(LogLevel::INFO, "[App] Added AI model: " + aiData.modelId + " (" + aiData.type + ") at (" + 
+			std::to_string(aiData.pos.x) + ", " + std::to_string(aiData.pos.y) + ", " + std::to_string(aiData.pos.z) + ")");
+	}
+
+	Logger::Get().Log(LogLevel::INFO, "[App] Added " + std::to_string(addedCount) + " new AI models to level " + std::to_string(level_no));
+	Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
+	Logger::Get().Log(LogLevel::INFO, "[App] LoadAIModelsFromFolder() COMPLETE");
+	Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 }
 
 void App::SaveCurrentLevel() {
@@ -1776,8 +2074,8 @@ int App::PickObjectAtScreenPos(int screen_x, int screen_y) {
 	for (size_t i = 0; i < objects.size(); ++i) {
 		const auto& obj = objects[i];
 
-		if (obj.isBuilding && !(draw_params_.draw_parts_ & Renderer::DRAW_BUILDINGS)) continue;
-		if (!obj.isBuilding && !(draw_params_.draw_parts_ & Renderer::DRAW_OBJECTS) && !(draw_params_.draw_parts_ & Renderer::DRAW_PROPS)) continue;
+		// Allow hover/tooltip for ALL objects regardless of draw filter
+		// so background objects inside buildings can still be inspected
 
 		glm::vec3 he = renderer_.GetMeshExtents(obj.modelId, obj.isBuilding);
 		float max_he = glm::max(he.x, glm::max(he.y, he.z));

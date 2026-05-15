@@ -57,6 +57,12 @@ constexpr int MENU_SHOW_ALL = 88;
 constexpr int MENU_SHOW_OBJECTS_ONLY = 89;
 constexpr int MENU_SHOW_BUILDINGS_ONLY = 90;
 
+// load options
+constexpr int MENU_LOAD_ALL = 91;
+constexpr int MENU_LOAD_OBJECTS = 92;
+constexpr int MENU_LOAD_BUILDINGS = 93;
+constexpr int MENU_LOAD_AI = 94;
+
 constexpr int BRUSH_RAISE = 0;
 constexpr int BRUSH_LOWER = 1;
 
@@ -70,7 +76,7 @@ static int g_menu_terrain_modifier_opts;
 static int g_menu_choose_level;
 static int g_menu_editor_tools;
 static int g_menu_object_scale;
-static int g_menu_show_options;
+static int g_menu_load_options;
 static int g_menu_terrain_brush;
 static int g_main_menu;
 
@@ -452,17 +458,48 @@ static void OnMenu(int menu) {
 	case MENU_SCALE_10:  g_app.SetSelectedObjectScale(10.0f); g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS; break;
 	case MENU_SCALE_20:  g_app.SetSelectedObjectScale(20.0f); g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS; break;
 	case MENU_SHOW_ALL:
-		g_app.ToggleDrawParts(Renderer::DRAW_OBJECTS);
-		g_app.ToggleDrawParts(Renderer::DRAW_BUILDINGS);
+		// Toggle between all objects ON and all objects OFF
+		if ((g_app.GetDrawParts() & Renderer::DRAW_OBJECTS) && (g_app.GetDrawParts() & Renderer::DRAW_BUILDINGS)) {
+			// Both on -> turn all object rendering off
+			g_app.SetDrawParts(g_app.GetDrawParts() & ~(Renderer::DRAW_OBJECTS | Renderer::DRAW_BUILDINGS | Renderer::DRAW_PROPS));
+		} else {
+			// Turn all object rendering on
+			g_app.SetDrawParts(g_app.GetDrawParts() | (Renderer::DRAW_OBJECTS | Renderer::DRAW_BUILDINGS | Renderer::DRAW_PROPS));
+		}
 		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
 		break;
 	case MENU_SHOW_OBJECTS_ONLY:
-		g_app.ToggleDrawParts(Renderer::DRAW_OBJECTS);
+		// Objects (props) ON, Buildings OFF. Clear DRAW_OBJECTS so individual checks work.
+		g_app.SetDrawParts((g_app.GetDrawParts() & ~(Renderer::DRAW_OBJECTS | Renderer::DRAW_BUILDINGS)) | Renderer::DRAW_PROPS);
 		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
 		break;
 	case MENU_SHOW_BUILDINGS_ONLY:
-		g_app.ToggleDrawParts(Renderer::DRAW_BUILDINGS);
+		// Buildings ON, Objects (props) OFF. Clear DRAW_OBJECTS so individual checks work.
+		g_app.SetDrawParts((g_app.GetDrawParts() & ~(Renderer::DRAW_OBJECTS | Renderer::DRAW_PROPS)) | Renderer::DRAW_BUILDINGS);
 		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		break;
+	case MENU_LOAD_ALL:
+		// Toggle between everything ON and everything OFF
+		if ((g_app.GetDrawParts() & Renderer::DRAW_OBJECTS) && (g_app.GetDrawParts() & Renderer::DRAW_BUILDINGS) && (g_app.GetDrawParts() & Renderer::DRAW_AI)) {
+			g_app.SetDrawParts(g_app.GetDrawParts() & ~(Renderer::DRAW_OBJECTS | Renderer::DRAW_BUILDINGS | Renderer::DRAW_PROPS | Renderer::DRAW_AI));
+		} else {
+			g_app.SetDrawParts(g_app.GetDrawParts() | (Renderer::DRAW_OBJECTS | Renderer::DRAW_BUILDINGS | Renderer::DRAW_PROPS | Renderer::DRAW_AI));
+		}
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		break;
+	case MENU_LOAD_OBJECTS:
+		g_app.SetDrawParts((g_app.GetDrawParts() & ~(Renderer::DRAW_BUILDINGS | Renderer::DRAW_AI)) | Renderer::DRAW_PROPS);
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		break;
+	case MENU_LOAD_BUILDINGS:
+		g_app.SetDrawParts((g_app.GetDrawParts() & ~(Renderer::DRAW_OBJECTS | Renderer::DRAW_PROPS | Renderer::DRAW_AI)) | Renderer::DRAW_BUILDINGS);
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		break;
+	case MENU_LOAD_AI:
+		g_app.SetDrawParts(g_app.GetDrawParts() | Renderer::DRAW_AI);
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		// Load AI models from ai\levelX folder
+		g_app.LoadAIModelsFromFolder(g_app.GetCurLevelNo());
 		break;
 	case MENU_CLOSE:
 		glutLeaveMainLoop();
@@ -698,10 +735,11 @@ int main(int argc, char **argv) {
 	glutAddMenuEntry("10.0x", MENU_SCALE_10);
 	glutAddMenuEntry("20.0x", MENU_SCALE_20);
 
-	g_menu_show_options = glutCreateMenu(OnMenu);
-	glutAddMenuEntry("Show All", MENU_SHOW_ALL);
-	glutAddMenuEntry("Show Objects Only", MENU_SHOW_OBJECTS_ONLY);
-	glutAddMenuEntry("Show Buildings Only", MENU_SHOW_BUILDINGS_ONLY);
+	g_menu_load_options = glutCreateMenu(OnMenu);
+	glutAddMenuEntry("Load All", MENU_LOAD_ALL);
+	glutAddMenuEntry("Load Objects", MENU_LOAD_OBJECTS);
+	glutAddMenuEntry("Load Buildings", MENU_LOAD_BUILDINGS);
+	glutAddMenuEntry("Load AI", MENU_LOAD_AI);
 
 	g_main_menu = glutCreateMenu(OnMenu);
 	glutAddMenuEntry("", MENU_OVERLAY_WIREFRAME);
@@ -710,7 +748,7 @@ int main(int argc, char **argv) {
 	glutAddSubMenu("Terrain Mod Options", g_menu_terrain_modifier_opts);
 	glutAddSubMenu("Editor Tools", g_menu_editor_tools);
 	glutAddSubMenu("Object Scale", g_menu_object_scale);
-	glutAddSubMenu("Show Options", g_menu_show_options);
+	glutAddSubMenu("Load Options", g_menu_load_options);
 	glutAddSubMenu("Choose Level", g_menu_choose_level);
 	glutAddMenuEntry("Close", MENU_CLOSE);
 
