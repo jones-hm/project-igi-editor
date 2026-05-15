@@ -2,7 +2,7 @@
 
 **IGI Editor** is a professional 3D world and object manipulation toolkit for Project IGI. Inspired by the original IGI and IGI 2 editors, it provides a modern interface for level research, object placement, and terrain modification.
 
-**Current Status: BETA 0.0.2** - MVP Demo completed in just 3 days! Features full QSC/QVM compilation pipeline with proper IGIPath resolution and automated compiler folder cleaning.
+**Current Status: BETA 0.0.4** - Enhanced stability release with Intentional Change Tracking, QSC data preservation, and robust AI unit identification. Features a safe serialization pipeline that prevents accidental modification of static objects.
 
 This project is built upon the foundational work of the [Project-IGI-Terrain](https://github.com/hjcminus/Project-IGI-Terrain) repository. Special thanks to [hjcminus](https://github.com/hjcminus) for their research and for bringing this codebase to light. It is built using C++17 and OpenGL, and it is cross-platform, but it is mainly tested on Windows.
 

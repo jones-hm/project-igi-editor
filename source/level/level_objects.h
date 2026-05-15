@@ -9,6 +9,7 @@ struct LevelObject {
     std::string name;
     std::string modelId;
     std::string taskId;  // Task ID from QSC for save support
+    std::string original_name; // Original name from QSC to avoid noise changes
     std::string aiId;    // AI ID from JSON
     std::string type;    // AI Type
     std::string graphId; // Graph ID from JSON
@@ -24,6 +25,8 @@ struct LevelObject {
     glm::dvec3 rot;
     glm::dvec3 original_rot;  // Original rotation from QSC for change detection
     bool isBuilding;
+    bool modified = false;
+    bool has_original_name = false; // To distinguish between empty name and new object
     double snap_z_offset = 0.0;  // Z offset added by SnapObjectsToTerrain, subtracted when saving to QSC
 
     // Lighting

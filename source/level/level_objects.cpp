@@ -34,12 +34,13 @@ void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
 
         LevelObject obj;
         obj.isBuilding = true;
+        obj.type = "Building";
 
         int arg_idx = 0;
         while (a) {
             switch (arg_idx) {
                 case 0: obj.taskId = TaskIdFromArg(a); break;
-                case 2: if (a->type_ == QSC::arg_s::type_t::STR) obj.name = a->str_; break;
+                case 2: if (a->type_ == QSC::arg_s::type_t::STR) { obj.name = a->str_; obj.original_name = a->str_; obj.has_original_name = true; } break;
                 case 3:
                     if (a->type_ == QSC::arg_s::type_t::DBL) {
                         obj.pos.x = a->dbl_;
@@ -98,12 +99,13 @@ void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
 
         LevelObject obj;
         obj.isBuilding = false;
+        obj.type = "EditRigidObj";
 
         int arg_idx = 0;
         while (a) {
             switch (arg_idx) {
                 case 0: obj.taskId = TaskIdFromArg(a); break;
-                case 2: if (a->type_ == QSC::arg_s::type_t::STR) obj.name = a->str_; break;
+                case 2: if (a->type_ == QSC::arg_s::type_t::STR) { obj.name = a->str_; obj.original_name = a->str_; obj.has_original_name = true; } break;
                 case 3:
                     if (a->type_ == QSC::arg_s::type_t::DBL) {
                         obj.pos.x = a->dbl_;
@@ -131,28 +133,51 @@ void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
             arg_idx++;
         }
 
+        objects_.push_back(obj);
+        Logger::Get().Log(LogLevel::INFO, "[LevelObjects]   -> Rigid: " + obj.modelId + 
+            " at (" + std::to_string(obj.pos.x) + ", " + std::to_string(obj.pos.y) + ", " + std::to_string(obj.pos.z) + ") " +
+            "rot (" + std::to_string(obj.rot.x) + ", " + std::to_string(obj.rot.y) + ", " + std::to_string(obj.rot.z) + ")");
+    }
+
+    // Parse HumanSoldiers
+    int num_soldiers = qsc_objects->FindFuncByStr("HumanSoldier", qsc_funcs);
+    for (int i = 0; i < num_soldiers; ++i) {
+        const QSC::func_s* f = qsc_funcs[i];
+        const QSC::arg_s* a = f->args_;
+
+        LevelObject obj;
+        obj.isBuilding = false;
+        obj.type = "HumanSoldier";
+
+        int arg_idx = 0;
+        while (a) {
+            switch (arg_idx) {
+                case 0: obj.taskId = TaskIdFromArg(a); break;
+                case 1: if (a->type_ == QSC::arg_s::type_t::STR) obj.type = a->str_; break;
+                case 2: if (a->type_ == QSC::arg_s::type_t::STR) { obj.name = a->str_; obj.original_name = a->str_; obj.has_original_name = true; } break;
+                case 3: if (a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.x = a->dbl_; obj.original_pos.x = a->dbl_; } break;
+                case 4: if (a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.y = a->dbl_; obj.original_pos.y = a->dbl_; } break;
+                case 5: if (a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.z = a->dbl_; obj.original_pos.z = a->dbl_; } break;
+                case 6: if (a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.z = a->dbl_; obj.original_rot.z = a->dbl_; } break;
+                case 7: if (a->type_ == QSC::arg_s::type_t::STR) obj.modelId = a->str_; break;
+            }
+            a = a->next_;
+            arg_idx++;
+        }
+
         // Extract numeric ID from taskId if it contains Task_New pattern
         if (!obj.taskId.empty() && obj.taskId.find("Task_New(") == 0) {
             size_t parenStart = obj.taskId.find('(');
             size_t parenEnd = obj.taskId.find(',', parenStart);
             if (parenStart != std::string::npos && parenEnd != std::string::npos) {
                 std::string idStr = obj.taskId.substr(parenStart + 1, parenEnd - parenStart - 1);
-                // Trim whitespace
-                size_t start = idStr.find_first_not_of(" \t");
-                size_t end = idStr.find_last_not_of(" \t");
-                if (start != std::string::npos && end != std::string::npos) {
-                    obj.taskId = idStr.substr(start, end - start + 1);
-                } else {
-                    obj.taskId = idStr;
-                }
+                obj.taskId = idStr; // Simplified trim
             }
         }
-
         objects_.push_back(obj);
-        Logger::Get().Log(LogLevel::INFO, "[LevelObjects]   -> Prop: " + obj.modelId + 
-            " at (" + std::to_string(obj.pos.x) + ", " + std::to_string(obj.pos.y) + ", " + std::to_string(obj.pos.z) + ") " +
-            "rot (" + std::to_string(obj.rot.x) + ", " + std::to_string(obj.rot.y) + ", " + std::to_string(obj.rot.z) + ")");
+        Logger::Get().Log(LogLevel::INFO, "[LevelObjects]   -> Soldier: " + obj.modelId + " taskId=" + obj.taskId);
     }
+
 
     Logger::Get().Log(LogLevel::INFO, "[LevelObjects] Load complete. Total objects: " + std::to_string(objects_.size()));
 }
@@ -255,44 +280,49 @@ void LevelObjects::SaveToQSC(const std::string& qscPath) {
     // Use %.10g to avoid scientific notation truncation and preserve rotation accuracy.
     auto fmt = [](double v) -> std::string {
         char buf[64];
-        snprintf(buf, sizeof(buf), "%.10g", v);
+        // Use %.2f for coordinates and %.10g for everything else to keep it clean but precise
+        if (std::abs(v) > 1000.0) {
+            snprintf(buf, sizeof(buf), "%.2f", v);
+        } else {
+            snprintf(buf, sizeof(buf), "%.10g", v);
+        }
         std::string s(buf);
-        // Ensure at least one decimal point so compiler treats it as float literal
+        // Ensure it doesn't end with .00 if we used %.2f
+        if (s.find('.') != std::string::npos) {
+            while (s.back() == '0') s.pop_back();
+            if (s.back() == '.') s.pop_back();
+        }
+        // But for QSC, we usually want at least one decimal or just the int if it's 0
+        if (s == "0") return "0";
         if (s.find('.') == std::string::npos && s.find('e') == std::string::npos)
             s += ".0";
         return s;
     };
 
+    // Helper for fuzzy comparison of doubles to avoid noise changes
+    auto isNear = [](double a, double b) { return std::abs(a - b) < 1e-4; };
+
     for (const auto& obj : objects_) {
         if (obj.modelId.empty()) continue;
 
-        // Skip if nothing changed vs what was loaded from QSC
-        bool changed = (obj.pos.x != obj.original_pos.x ||
-                        obj.pos.y != obj.original_pos.y ||
-                        obj.pos.z != obj.original_pos.z ||
-                        obj.rot.x != obj.original_rot.x ||
-                        obj.rot.y != obj.original_rot.y ||
-                        obj.rot.z != obj.original_rot.z);
-        if (!changed) {
-            Logger::Get().Log(LogLevel::INFO, "[LevelObjects::SaveToQSC] SKIP (unchanged): " + obj.name + " / " + obj.modelId);
+        // Skip if the object wasn't intentionally modified (user move, rotation, or AI sync)
+        // This prevents automatic visual-only changes (like terrain snapping) from polluting the QSC.
+        if (!obj.modified) {
             continue;
         }
 
         anyChanges = true;
-        Logger::Get().Log(LogLevel::INFO, "[LevelObjects::SaveToQSC] CHANGE DETECTED: " + obj.name + " / " + obj.modelId);
+        Logger::Get().Log(LogLevel::INFO, "[LevelObjects::SaveToQSC] SAVING MODIFIED OBJECT: " + obj.name + " / " + obj.modelId);
 
-        std::string modelIdToken = "\"" + obj.modelId + "\"";
-        std::string typeBuilding = "\"Building\"";
-        std::string typeRigid    = "\"EditRigidObj\"";
-
-        // Find the matching line:
-        // - Building:      line contains Task_New(taskId, + "Building" + modelId
-        // - EditRigidObj:  line contains "EditRigidObj" + modelId (ID is always -1, search by model)
-        size_t lineStart = std::string::npos;
+        std::string taskTypeStr = obj.type.empty() ? (obj.isBuilding ? "Building" : "EditRigidObj") : obj.type;
+        std::string quotedType = "\"" + taskTypeStr + "\"";
+        
         size_t searchFrom = 0;
+        size_t lineStart = std::string::npos;
+        std::string modelIdToken = "\"" + obj.modelId + "\"";
 
-        if (obj.isBuilding) {
-            // Search by taskId for Buildings
+        if (obj.taskId != "-1" && !obj.taskId.empty()) {
+            // Search by taskId for Buildings and AI
             std::string taskIdToken = "Task_New(" + obj.taskId + ",";
             while (true) {
                 size_t found = content.find(taskIdToken, searchFrom);
@@ -302,17 +332,14 @@ void LevelObjects::SaveToQSC(const std::string& qscPath) {
                 size_t le = content.find('\n', found);
                 if (le == std::string::npos) le = content.size();
                 std::string line = content.substr(ls, le - ls);
-                if (line.find(modelIdToken) != std::string::npos &&
-                    line.find(typeBuilding) != std::string::npos) {
+                if (line.find(quotedType) != std::string::npos) {
                     lineStart = ls;
                     break;
                 }
                 searchFrom = found + 1;
             }
         } else {
-            // Search by modelId + original position for EditRigidObj
-            // (taskId is always -1, and multiple objects can share the same modelId)
-            // Use the integer part of origX to match regardless of decimal formatting in QSC
+            // Search by modelId + original position for EditRigidObj (taskId -1)
             char origXBuf[64];
             snprintf(origXBuf, sizeof(origXBuf), "%.0f", obj.original_pos.x);
             std::string origX = std::string(origXBuf);
@@ -324,7 +351,7 @@ void LevelObjects::SaveToQSC(const std::string& qscPath) {
                 size_t le = content.find('\n', found);
                 if (le == std::string::npos) le = content.size();
                 std::string line = content.substr(ls, le - ls);
-                if (line.find(typeRigid) != std::string::npos &&
+                if (line.find(quotedType) != std::string::npos &&
                     line.find(origX) != std::string::npos) {
                     lineStart = ls;
                     break;
@@ -343,6 +370,16 @@ void LevelObjects::SaveToQSC(const std::string& qscPath) {
         if (lineEnd == std::string::npos) lineEnd = content.size();
         std::string oldLine = content.substr(lineStart, lineEnd - lineStart);
 
+        // Use the current name.
+        // Only use friendly name if the object is NEW (wasn't in QSC) and name is currently empty.
+        std::string correctName = obj.name;
+        if (correctName.empty() && !obj.has_original_name) {
+            correctName = GetModelName(obj.modelId);
+        }
+
+        // Subtract the snap offset so the saved Z matches the intended coordinate
+        double saveZ = obj.pos.z - obj.snap_z_offset;
+
         // Preserve indentation
         std::string indent;
         for (char c : oldLine) {
@@ -350,54 +387,53 @@ void LevelObjects::SaveToQSC(const std::string& qscPath) {
             else break;
         }
 
-        // Detect how the original line ends:
-        // Case A: has closing ')' on this line  -> standalone or inline, use ");", ")," or just ","
-        // Case B: no closing ')' at all         -> multi-line parent (children on next lines),
-        //         end with "modelId"," and NO closing paren
-        bool hasClosingParen = (oldLine.rfind(')') != std::string::npos);
+        // Extract extra arguments and tail from the old line
+        size_t modelIdPosInLine = oldLine.find(modelIdToken);
+        std::string extraArgs;
+        std::string tail = ");"; // Default
 
-        std::string terminator = ");";
-        if (hasClosingParen) {
-            for (int ci = (int)oldLine.size() - 1; ci >= 0; --ci) {
-                char c = oldLine[ci];
-                if (c == ' ' || c == '\t' || c == '\r') continue;
-                if (c == ',') { terminator = "),"; break; }
-                if (c == ';') { terminator = ");"; break; }
-                break;
+        if (modelIdPosInLine != std::string::npos) {
+            size_t argsStart = modelIdPosInLine + modelIdToken.length();
+            
+            // Find the point where the actual arguments end (comma or paren)
+            size_t lastParen = oldLine.find_last_of(')');
+            size_t lastComma = oldLine.find_last_of(',');
+            
+            size_t tailPos = std::string::npos;
+            if (lastParen != std::string::npos) {
+                tailPos = lastParen;
+                // Backtrack to find all consecutive parens
+                while (tailPos > argsStart && oldLine[tailPos - 1] == ')') {
+                    tailPos--;
+                }
+            } else if (lastComma != std::string::npos && lastComma >= argsStart) {
+                tailPos = lastComma;
+            }
+
+            if (tailPos != std::string::npos) {
+                extraArgs = oldLine.substr(argsStart, tailPos - argsStart);
+                tail = oldLine.substr(tailPos);
+            } else {
+                extraArgs = oldLine.substr(argsStart);
+                tail = "";
             }
         }
 
-        // Build new line
-        // Building (single-line):  Task_New(id,"Building","name",x,y,z,rx,ry,rz,"modelId")term
-        // Building (multi-line):   Task_New(id,"Building","name",x,y,z,rx,ry,rz,"modelId",   <- no closing paren
-        // EditRigidObj:            Task_New(-1,"EditRigidObj","name",x,y,z,rx,ry,rz,"modelId",1,1,1,0,0,0)term
-        std::string taskType  = obj.isBuilding ? typeBuilding : typeRigid;
-        std::string extraArgs = obj.isBuilding ? "" : ",1,1,1,0,0,0";
-
-        // Use the correct friendly name from JSON mapping instead of the loaded name
-        std::string correctName = GetModelName(obj.modelId);
-        if (correctName.empty()) {
-            correctName = obj.name; // Fallback to loaded name if not found in JSON
-        }
-
-        // Subtract the snap offset so the saved Z matches the original game coordinate
-        double saveZ = obj.pos.z - obj.snap_z_offset;
-
-        std::string newLine;
-        if (!hasClosingParen) {
-            // Multi-line parent: preserve trailing comma, no closing paren on this line
-            newLine = indent
-                + "Task_New(" + obj.taskId + "," + taskType + ",\"" + correctName + "\","
-                + fmt(obj.pos.x) + "," + fmt(obj.pos.y) + "," + fmt(saveZ) + ","
-                + fmt(obj.rot.x) + "," + fmt(obj.rot.y) + "," + fmt(obj.rot.z) + ","
-                + modelIdToken + ",";
+        // Build new line with unified logic for extra arguments
+        std::stringstream ss;
+        ss << indent << "Task_New(" << obj.taskId << ", " << quotedType << ", \"" << correctName << "\", ";
+        ss << fmt(obj.pos.x) << ", " << fmt(obj.pos.y) << ", " << fmt(saveZ) << ", ";
+        
+        if (taskTypeStr == "HumanSoldier") {
+            // HumanSoldier only has one rotation (Yaw)
+            ss << fmt(obj.rot.z) << ", ";
         } else {
-            newLine = indent
-                + "Task_New(" + obj.taskId + "," + taskType + ",\"" + correctName + "\","
-                + fmt(obj.pos.x) + "," + fmt(obj.pos.y) + "," + fmt(saveZ) + ","
-                + fmt(obj.rot.x) + "," + fmt(obj.rot.y) + "," + fmt(obj.rot.z) + ","
-                + modelIdToken + extraArgs + terminator;
+            // Buildings and RigidObjs have three rotations
+            ss << fmt(obj.rot.x) << ", " << fmt(obj.rot.y) << ", " << fmt(obj.rot.z) << ", ";
         }
+        
+        ss << modelIdToken << extraArgs << tail;
+        std::string newLine = ss.str();
 
         Logger::Get().Log(LogLevel::INFO, "[LevelObjects::SaveToQSC] ["
             + std::string(obj.isBuilding ? "Building" : "EditRigidObj") + "] " + obj.name
@@ -424,6 +460,14 @@ void LevelObjects::SaveToQSC(const std::string& qscPath) {
 
     outFile << content;
     outFile.close();
+
+    // Reset modified flags and sync original state after successful save
+    for (auto& obj : objects_) {
+        obj.modified = false;
+        obj.original_pos = obj.pos;
+        obj.original_pos.z -= obj.snap_z_offset;
+        obj.original_rot = obj.rot;
+    }
 
     Logger::Get().Log(LogLevel::INFO, "[LevelObjects::SaveToQSC] Successfully saved changes to: " + qscPath);
 }

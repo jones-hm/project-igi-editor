@@ -28,8 +28,6 @@ public:
 	void					ResetLevel();
 	void					ResetScript();
 
-	// QEditor folder validation and setup
-	bool					ValidateAndSetupQEditor();
 
 
 	// level_no: 1 ~ 13
@@ -199,8 +197,5 @@ private:
 	void					LoadQSCForLevel(int level_no);
 	void					SaveAndCompile();
 	void					DecompileFromGame(int level_no);
-	std::string				GetLevelQSCPath(int level_no);
-	std::string				GetLevelQVMPath(int level_no);
-	std::string				GetCurrentWorkingDirectory();
 
 };

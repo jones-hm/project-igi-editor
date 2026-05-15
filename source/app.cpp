@@ -25,28 +25,6 @@ constexpr float		MAX_MOVE_SPEED = 8192.0f * WORLD_UNITS_PER_METER;
 constexpr float		MIN_JUMP_SPEED = 4.0f * WORLD_UNITS_PER_METER;
 constexpr float		MAX_JUMP_SPEED = 512.0f * WORLD_UNITS_PER_METER;
 
-static std::string GetExeDirectory() {
-	char exePath[MAX_PATH];
-	GetModuleFileNameA(NULL, exePath, MAX_PATH);
-	std::string exeDir(exePath);
-	size_t lastSlash = exeDir.find_last_of("\\/");
-	if (lastSlash != std::string::npos) {
-		exeDir = exeDir.substr(0, lastSlash);
-	}
-	return exeDir;
-}
-
-// Helper function to check if a keybinding is pressed using Windows API
-static bool IsKeyBindingPressed(const KeyBinding& kb) {
-	std::vector<int> keys;
-	if (kb.ctrl) keys.push_back(VK_CONTROL);
-	if (kb.shift) keys.push_back(VK_SHIFT);
-	if (kb.alt) keys.push_back(VK_MENU);
-	if (kb.vkCode) keys.push_back(kb.vkCode);
-	return Utils::HotKeysDown(keys);
-}
-
-
 // movement key down flags
 constexpr int MK_FORWARD		= FLAG_BIT(0);
 constexpr int MK_BACKWARD		= FLAG_BIT(1);
@@ -121,7 +99,7 @@ App::~App() {
 
 bool App::Init(int argc, char** argv) {
 	// Initialize logger with absolute path to exe directory
-	std::string exeDir = GetExeDirectory();
+	std::string exeDir = Utils::GetExeDirectory();
 	Logger::Get().Init(exeDir + "\\igi_editor.log");
 	Logger::Get().Log(LogLevel::INFO, "IGI Editor Initializing...");
 
@@ -135,7 +113,7 @@ bool App::Init(int argc, char** argv) {
 	}
 
 	// Validate and setup QEditor folder structure first
-	if (!ValidateAndSetupQEditor()) {
+	if (!Utils::ValidateAndSetupQEditor()) {
 		return false;
 	}
 
@@ -317,7 +295,7 @@ void App::LoadLevel(int level_no) {
 		if (level_no == 9 || level_no == 12) {
 			auto& objects = level_.GetLevelObjects().GetObjects();
 			for (auto& obj : objects) {
-				if (obj.modelId == "615") {
+				if (obj.modelId.find("615") == 0) {
 					if (level_no == 12) {
 						obj.rot.x = 0.0;       // PITCH
 						obj.rot.y = -1.54;     // ROLL
@@ -327,23 +305,20 @@ void App::LoadLevel(int level_no) {
 						obj.rot.y = -1.58;     // ROLL
 						obj.rot.z = 0.0;       // YAW
 					}
-					Logger::Get().Log(LogLevel::INFO, "[App] Applied missile rotation override for model 615 in level " + std::to_string(level_no));
+					Logger::Get().Log(LogLevel::INFO, "[App] Applied missile rotation override for model " + obj.modelId + " in level " + std::to_string(level_no));
 				}
 			}
 		}
 
-		// AI rotation override: AI models only have horizontal 360 degree rotation (yaw = 2π, pitch = 0, roll = 0)
+		// AI rotation override: AI models (HumanSoldier, HumanAI) only have horizontal rotation
 		auto& objects = level_.GetLevelObjects().GetObjects();
 		for (auto& obj : objects) {
-			// Check if this is an AI model by checking if it's in the AI list from JSON
-			// AI models have specific IDs that we can identify
-			std::string upperName = obj.name;
-			std::transform(upperName.begin(), upperName.end(), upperName.begin(), ::toupper);
-			if (upperName.find("AI") != std::string::npos || upperName.find("AITYPE") != std::string::npos) {
+			if (obj.type == "HumanSoldier" || obj.type == "HumanAI" || obj.type.find("AITYPE") == 0) {
 				obj.rot.x = 0.0;           // PITCH = 0
 				obj.rot.y = 0.0;           // ROLL = 0
-				obj.rot.z = 6.28318;       // YAW = 360 degrees (2π radians)
-				Logger::Get().Log(LogLevel::INFO, "[App] Applied AI rotation override (horizontal 360 only) for " + obj.name + " in level " + std::to_string(level_no));
+				// Preserve existing rotation if it's already set, otherwise default to a full circle
+				if (obj.rot.z == 0.0) obj.rot.z = 6.28318;
+				Logger::Get().Log(LogLevel::INFO, "[App] Applied AI rotation override (horizontal only) for " + obj.name + " (" + obj.type + ")");
 			}
 		}
 		
@@ -567,7 +542,27 @@ void App::LoadAIModelsFromFolder(int level_no) {
 								}
 							}
 
-							if (!aiData.modelId.empty()) {
+							// Validations
+							bool isValid = true;
+							if (aiData.type.empty()) isValid = false;
+							else {
+								// Type validation: ^[A-Z0-9_]+$
+								for (char c : aiData.type) {
+									if (!isalnum(c) && c != '_') { isValid = false; break; }
+								}
+							}
+							
+							// Model ID validation: ddd_dd_d (e.g. 000_01_1)
+							if (aiData.modelId.length() != 8 || aiData.modelId[3] != '_' || aiData.modelId[6] != '_') {
+								isValid = false;
+							} else {
+								for (int i = 0; i < 8; ++i) {
+									if (i == 3 || i == 6) continue;
+									if (!isdigit(aiData.modelId[i])) { isValid = false; break; }
+								}
+							}
+
+							if (isValid) {
 								aiDataList.push_back(aiData);
 							}
 							
@@ -577,53 +572,78 @@ void App::LoadAIModelsFromFolder(int level_no) {
 				}
 			}
 		}
-		Logger::Get().Log(LogLevel::INFO, "[App] Found " + std::to_string(aiDataList.size()) + " AI entries in JSON file");
+		Logger::Get().Log(LogLevel::INFO, "[App] Found " + std::to_string(aiDataList.size()) + " valid AI entries in JSON file");
 	}
 
-	// Add AI models to level objects
+
+	// Add or update AI models in level objects
 	auto& objects = level_.GetLevelObjects().GetObjects();
 	int addedCount = 0;
+	int updatedCount = 0;
 
-	// Iterate through all AI entries from JSON (not just unique model IDs)
 	for (const auto& aiData : aiDataList) {
-		// Check if the GLB file exists for this model
-		std::string glbPath = aiFolderPath + "\\" + aiData.modelId + ".glb";
-		if (!std::filesystem::exists(glbPath)) {
-			Logger::Get().Log(LogLevel::WARNING, "[App] GLB file not found for AI model: " + aiData.modelId);
-			continue;
+		// Search for existing object with this taskId
+		LevelObject* existingObj = nullptr;
+		for (auto& obj : objects) {
+			if (obj.taskId == aiData.soldierId && !obj.taskId.empty()) {
+				existingObj = &obj;
+				break;
+			}
 		}
 
-		// Create new LevelObject for this AI entry
-		LevelObject newObj;
-		newObj.name = aiData.type;
-		newObj.modelId = aiData.modelId;
-		newObj.taskId = aiData.soldierId;
-		newObj.aiId = aiData.aiId;
-		newObj.graphId = aiData.graphId;
-		newObj.type = aiData.type;
-		newObj.graphName = aiData.graphName;
-		newObj.graphPos = aiData.graphPos;
-		newObj.team = aiData.team;
-		newObj.rot.z = aiData.rotation;
-		newObj.primaryWeapon = aiData.primaryWeapon;
-		newObj.primaryAmmo = aiData.primaryAmmo;
-		newObj.secondaryWeapon = aiData.secondaryWeapon;
-		newObj.secondaryAmmo = aiData.secondaryAmmo;
-		newObj.pos = aiData.pos;
-		newObj.original_pos = newObj.pos;
-		newObj.rot = glm::dvec3(0.0, 0.0, 6.28318);  // PITCH=0, ROLL=0, YAW=360 degrees (2π radians)
-		newObj.original_rot = newObj.rot;
-		newObj.isBuilding = false;  // AI models are not buildings
-		newObj.snap_z_offset = 0.0;
-		newObj.scale = 1.0f;
+		if (existingObj) {
+			// Update existing object with AI metadata
+			existingObj->aiId = aiData.aiId;
+			existingObj->graphId = aiData.graphId;
+			existingObj->graphName = aiData.graphName;
+			existingObj->graphPos = aiData.graphPos;
+			existingObj->team = aiData.team;
+			existingObj->primaryWeapon = aiData.primaryWeapon;
+			existingObj->primaryAmmo = aiData.primaryAmmo;
+			existingObj->secondaryWeapon = aiData.secondaryWeapon;
+			existingObj->secondaryAmmo = aiData.secondaryAmmo;
+			
+			// If the position in JSON differs from QSC, update it 
+			// (JSON is usually more up-to-date for AI state)
+			existingObj->pos = aiData.pos;
+			existingObj->modified = true; // Mark as modified so it gets saved
+			
+			updatedCount++;
+			Logger::Get().Log(LogLevel::INFO, "[App] Updated existing AI object: " + aiData.modelId + " taskId=" + aiData.soldierId);
+		} else {
+			// Create new LevelObject for this AI entry
+			LevelObject newObj;
+			newObj.name = aiData.name; // Use JSON name
+			newObj.modelId = aiData.modelId;
+			newObj.taskId = aiData.soldierId;
+			newObj.aiId = aiData.aiId;
+			newObj.graphId = aiData.graphId;
+			newObj.type = aiData.type;
+			newObj.graphName = aiData.graphName;
+			newObj.graphPos = aiData.graphPos;
+			newObj.team = aiData.team;
+			newObj.modified = true; // New AI objects are definitely modified
+			newObj.rot.z = aiData.rotation;
+			newObj.primaryWeapon = aiData.primaryWeapon;
+			newObj.primaryAmmo = aiData.primaryAmmo;
+			newObj.secondaryWeapon = aiData.secondaryWeapon;
+			newObj.secondaryAmmo = aiData.secondaryAmmo;
+			newObj.pos = aiData.pos;
+			newObj.original_pos = newObj.pos;
+			newObj.rot = glm::dvec3(0.0, 0.0, aiData.rotation);
+			newObj.original_rot = newObj.rot;
+			newObj.isBuilding = false;
+			newObj.snap_z_offset = 0.0;
+			newObj.scale = 1.0f;
 
-		// Add to level objects
-		objects.push_back(newObj);
-		addedCount++;
-
-		Logger::Get().Log(LogLevel::INFO, "[App] Added AI model: " + aiData.modelId + " (" + aiData.type + ") at (" + 
-			std::to_string(aiData.pos.x) + ", " + std::to_string(aiData.pos.y) + ", " + std::to_string(aiData.pos.z) + ")");
+			objects.push_back(newObj);
+			addedCount++;
+			Logger::Get().Log(LogLevel::INFO, "[App] Added new AI model: " + aiData.modelId + " (" + aiData.type + ") at (" + 
+				std::to_string(aiData.pos.x) + ", " + std::to_string(aiData.pos.y) + ", " + std::to_string(aiData.pos.z) + ")");
+		}
 	}
+
+	Logger::Get().Log(LogLevel::INFO, "[App] AI sync: " + std::to_string(updatedCount) + " updated, " + std::to_string(addedCount) + " added.");
 
 	Logger::Get().Log(LogLevel::INFO, "[App] Added " + std::to_string(addedCount) + " new AI models to level " + std::to_string(level_no));
 	Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
@@ -811,31 +831,31 @@ void App::Input_OnSpecial(int key, int x, int y) {
 
 	// Check configurable keybindings for special keys (F-keys, etc.)
 	// Save
-	if (IsKeyBindingPressed(config.keySave)) {
+	if (Utils::IsKeyBindingPressed(config.keySave)) {
 		SaveCurrentLevel();
 		return;
 	}
 
 	// Reset Level
-	if (IsKeyBindingPressed(config.keyResetLevel)) {
+	if (Utils::IsKeyBindingPressed(config.keyResetLevel)) {
 		ResetLevel();
 		return;
 	}
 
 	// Debug
-	if (IsKeyBindingPressed(config.keyDebug)) {
+	if (Utils::IsKeyBindingPressed(config.keyDebug)) {
 		show_debug_ = !show_debug_;
 		return;
 	}
 
 	// Quit
-	if (IsKeyBindingPressed(config.keyQuit)) {
+	if (Utils::IsKeyBindingPressed(config.keyQuit)) {
 		exit(0);
 		return;
 	}
 
 	// Reset Script (pause menu only)
-	if (pause_mode_ && IsKeyBindingPressed(config.keyResetScript)) {
+	if (pause_mode_ && Utils::IsKeyBindingPressed(config.keyResetScript)) {
 		ResetScript();
 		TogglePauseMenu();
 		return;
@@ -1026,27 +1046,27 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	// Global shortcuts (work in both pause and normal mode)
 
 	// Save
-	if (IsKeyBindingPressed(config.keySave)) {
+	if (Utils::IsKeyBindingPressed(config.keySave)) {
 		SaveCurrentLevel();
 	}
 
 	// Reset Level
-	if (IsKeyBindingPressed(config.keyResetLevel)) {
+	if (Utils::IsKeyBindingPressed(config.keyResetLevel)) {
 		ResetLevel();
 	}
 
 	// Debug
-	if (IsKeyBindingPressed(config.keyDebug)) {
+	if (Utils::IsKeyBindingPressed(config.keyDebug)) {
 		show_debug_ = !show_debug_;
 	}
 
 	// Quit
-	if (IsKeyBindingPressed(config.keyQuit)) {
+	if (Utils::IsKeyBindingPressed(config.keyQuit)) {
 		exit(0);
 	}
 
 	// Help
-	if (IsKeyBindingPressed(config.keyHelp)) {
+	if (Utils::IsKeyBindingPressed(config.keyHelp)) {
 		show_help_ = !show_help_;
 		if (show_help_) {
 			if (!pause_mode_) {
@@ -1061,7 +1081,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 
 	if (pause_mode_) {
 		// Reset Script (pause menu only)
-		if (IsKeyBindingPressed(config.keyResetScript)) {
+		if (Utils::IsKeyBindingPressed(config.keyResetScript)) {
 			ResetScript();
 			TogglePauseMenu();
 		}
@@ -1137,12 +1157,14 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			auto& objects = level_.GetLevelObjects().GetObjects();
 			if (selected_object_index_ < (int)objects.size()) {
 				auto& obj = objects[selected_object_index_];
-				float terrainZ = 0.0f;
-				if (level_.GetTerrainZ(glm::vec3(obj.pos.x, obj.pos.y, 0.0f), terrainZ)) {
-					float zOffset = renderer_.GetMeshZOffset(obj.modelId, obj.isBuilding);
-					// Snap object bottom to terrain surface
-					obj.pos.z = (double)terrainZ + (double)(zOffset * 40.96f * obj.scale);
-					Logger::Get().Log(LogLevel::INFO, "[App] Snapped object to ground");
+				if (!Utils::IsUndergroundModel(obj.name, obj.modelId)) {
+					float terrainZ = 0.0f;
+					if (level_.GetTerrainZ(glm::vec3(obj.pos), terrainZ)) {
+						float zOffset = renderer_.GetMeshZOffset(obj.modelId, obj.isBuilding);
+						// Snap object bottom to terrain surface
+						obj.pos.z = (double)terrainZ + (double)(zOffset * 40.96f * obj.scale);
+						Logger::Get().Log(LogLevel::INFO, "[App] Snapped object to ground");
+					}
 				}
 			}
 		}
@@ -1176,13 +1198,7 @@ void App::ResetLevel() {
 	char srcQsc[1024];
 	Str_SPrintf(srcQsc, 1024, "%s\\QEditor\\QFiles\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", appData, levelNo);
 
-	char exePath[MAX_PATH];
-	GetModuleFileNameA(NULL, exePath, MAX_PATH);
-	std::string exeDir(exePath);
-	size_t lastSlash = exeDir.find_last_of("\\/");
-	if (lastSlash != std::string::npos) {
-		exeDir = exeDir.substr(0, lastSlash);
-	}
+	std::string exeDir = Utils::GetExeDirectory();
 	char dstQsc[1024];
 	Str_SPrintf(dstQsc, 1024, "%s\\objects.qsc", exeDir.c_str());
 
@@ -1250,13 +1266,7 @@ void App::ResetScript() {
 	Str_SPrintf(srcQsc, 1024, "%s\\QEditor\\QFiles\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", appData, levelNo);
 
 	// Destination: exe directory
-	char exePath[MAX_PATH];
-	GetModuleFileNameA(NULL, exePath, MAX_PATH);
-	std::string exeDir(exePath);
-	size_t lastSlash = exeDir.find_last_of("\\/");
-	if (lastSlash != std::string::npos) {
-		exeDir = exeDir.substr(0, lastSlash);
-	}
+	std::string exeDir = Utils::GetExeDirectory();
 	char dstQsc[1024];
 	Str_SPrintf(dstQsc, 1024, "%s\\objects.qsc", exeDir.c_str());
 
@@ -1882,21 +1892,6 @@ bool App::CheckCollision(const glm::vec3& nextPos) {
     return false;
 }
 
-static bool IsUndergroundModel(const std::string& name) {
-    std::string upper = name;
-    std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
-    return upper.find("UNDERGROUND") != std::string::npos ||
-           upper.find("TUNNEL") != std::string::npos ||
-           upper.find("T-JUNCTION") != std::string::npos ||
-           upper.find("METALDOORBASE") != std::string::npos ||
-           upper.find("METAL_DOOR_BASE") != std::string::npos ||
-           upper.find("ELEVATORROOM") != std::string::npos ||
-           upper.find("GUARDROOM") != std::string::npos ||
-           upper.find("STRAIGHTUPWARDS") != std::string::npos ||
-           upper.find("JOINT_FIXER") != std::string::npos ||
-           upper.find("JOINTFIXER") != std::string::npos;
-}
-
 void App::SnapObjectsToTerrain() {
     auto& objects = level_.GetLevelObjects().GetObjects();
     Logger::Get().Log(LogLevel::INFO, "[App] Snapping " + std::to_string(objects.size()) + " objects to terrain...");
@@ -1906,7 +1901,8 @@ void App::SnapObjectsToTerrain() {
     int failed = 0;
     for (auto& obj : objects) {
         // Underground models (tunnels, junctions, etc.) keep their original Z
-        if (IsUndergroundModel(obj.name)) {
+        if (Utils::IsUndergroundModel(obj.name, obj.modelId)) {
+            Logger::Get().Log(LogLevel::INFO, "[App] Skipping snap for underground model: " + obj.modelId + " (" + obj.name + ")");
             obj.snap_z_offset = 0.0;
             skipped++;
             continue;
@@ -1919,7 +1915,6 @@ void App::SnapObjectsToTerrain() {
             // After rotation, this becomes the Z offset in world space
             obj.snap_z_offset = (double)(zOffset * 40.96f * obj.scale);
             obj.pos.z = (double)terrainZ + obj.snap_z_offset;
-            obj.original_pos.z = obj.pos.z;  // sync so terrain snap doesn't count as a user change
             snapped++;
         } else {
             failed++;
@@ -2026,27 +2021,25 @@ void App::UpdateMarkerManipulation() {
 
 
 	// Instantaneous actions (one-off checks while dragging)
-
 	if (input_.keys_ & MK_MANIP_S) {
-
-		float terrainZ = 0.0f;
-
-		if (level_.GetTerrainZ(glm::vec3(obj.pos), terrainZ)) {
-
-			float zOffset = renderer_.GetMeshZOffset(obj.modelId, obj.isBuilding);
-
-			obj.pos.z = (double)terrainZ + (double)(zOffset * 40.96f * obj.scale);
-
+		if (!Utils::IsUndergroundModel(obj.name, obj.modelId)) {
+			float terrainZ = 0.0f;
+			if (level_.GetTerrainZ(glm::vec3(obj.pos), terrainZ)) {
+				float zOffset = renderer_.GetMeshZOffset(obj.modelId, obj.isBuilding);
+				obj.pos.z = (double)terrainZ + (double)(zOffset * 40.96f * obj.scale);
+				obj.modified = true;
+			}
 		}
-
 	}
 
 	if (input_.keys_ & MK_MANIP_SPACE) {
-
 		obj.rot = glm::vec3(0.0f);
-
+		obj.modified = true;
 	}
 
+	if (dx != 0 || dy != 0) {
+		obj.modified = true;
+	}
 }
 
 int App::PickObjectAtScreenPos(int screen_x, int screen_y) {
@@ -2133,42 +2126,16 @@ int App::PickObjectAtScreenPos(int screen_x, int screen_y) {
 
 // ─── QSC/QVM Workflow ─────────────────────────────────────────────────────────────
 
-std::string App::GetCurrentWorkingDirectory() {
-	char buffer[MAX_PATH];
-	GetModuleFileNameA(NULL, buffer, MAX_PATH);
-	std::string exePath(buffer);
-	size_t lastSlash = exePath.find_last_of("\\/");
-	if (lastSlash != std::string::npos) {
-		return exePath.substr(0, lastSlash);
-	}
-	return exePath;
-}
 
-std::string App::GetLevelQSCPath(int level_no) {
-	char appDataPath[MAX_PATH];
-	GetEnvironmentVariableA("APPDATA", appDataPath, MAX_PATH);
-	std::string qfiles_path = std::string(appDataPath) + "\\QEditor\\QFiles\\IGI_QSC\\missions\\location0\\level" + std::to_string(level_no);
-	return qfiles_path + "\\objects.qsc";
-}
 
-std::string App::GetLevelQVMPath(int level_no) {
-	// Read from config in exe directory
-	std::string exeDir = GetExeDirectory();
-	std::string configPath = exeDir + "\\config.ini";
-	char igiPath[MAX_PATH];
-	GetPrivateProfileStringA("GamePath", "IGIPath", "D:\\IGI1", igiPath, MAX_PATH, configPath.c_str());
-	std::string game_path = std::string(igiPath);
-	Logger::Get().Log(LogLevel::INFO, "[App] GetLevelQVMPath using IGIPath: " + game_path + " (from config: " + configPath + ")");
-	return game_path + "\\missions\\location0\\level" + std::to_string(level_no) + "\\objects.qvm";
-}
+
 
 void App::LoadQSCForLevel(int level_no) {
 	try {
 		namespace fs = std::filesystem;
 
-		std::string qsc_source = GetLevelQSCPath(level_no);
-		std::string cwd = GetCurrentWorkingDirectory();
-		std::string qsc_dest = cwd + "\\objects.qsc";
+		std::string qsc_source = Utils::GetLevelQSCPath(level_no);
+		std::string qsc_dest = Utils::GetExeDirectory() + "\\objects.qsc";
 		
 		Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] Source: " + qsc_source);
 		Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] Destination: " + qsc_dest);
@@ -2209,9 +2176,8 @@ void App::DecompileFromGame(int level_no) {
 	try {
 		namespace fs = std::filesystem;
 
-		std::string qvm_source = GetLevelQVMPath(level_no);
-		std::string cwd = GetCurrentWorkingDirectory();
-		std::string qsc_dest = cwd + "\\objects.qsc";
+		std::string qvm_source = Utils::GetLevelQVMPath(level_no);
+		std::string qsc_dest = Utils::GetExeDirectory() + "\\objects.qsc";
 
 		if (!fs::exists(qvm_source)) {
 			std::string errorMsg = "Game QVM not found at:\n" + qvm_source + "\n\nPlease check your IGI game path in config.ini";
@@ -2250,11 +2216,8 @@ void App::SaveAndCompile() {
 
 	Logger::Get().Log(LogLevel::INFO, "[App] SaveAndCompile() starting");
 
-	std::string cwd = GetCurrentWorkingDirectory();
-	Logger::Get().Log(LogLevel::INFO, "[App] .exe directory: " + cwd);
-
-	std::string qsc_source = cwd + "\\objects.qsc";
-	std::string qvm_dest = GetLevelQVMPath(level_.GetLevelNo());
+	std::string qsc_source = Utils::GetExeDirectory() + "\\objects.qsc";
+	std::string qvm_dest = Utils::GetLevelQVMPath(level_.GetLevelNo());
 
 	Logger::Get().Log(LogLevel::INFO, "[App] Full QSC path: " + qsc_source);
 	Logger::Get().Log(LogLevel::INFO, "[App] QVM destination: " + qvm_dest);
@@ -2294,85 +2257,4 @@ void App::SetInitialStickToGround(bool stick) {
 	}
 }
 
-bool App::ValidateAndSetupQEditor() {
-	namespace fs = std::filesystem;
-
-	char appData[1024];
-	GetEnvironmentVariableA("APPDATA", appData, 1024);
-	std::string appDataQEditor = std::string(appData) + "\\QEditor";
-	std::string exeDir = GetExeDirectory();
-	std::string exeQEditor = exeDir + "\\QEditor";
-
-	printf("[App] Validating QEditor folder structure...\n");
-	Logger::Get().Log(LogLevel::INFO, "[App] Validating QEditor folder structure...");
-	printf("[App] AppData QEditor: %s\n", appDataQEditor.c_str());
-	printf("[App] Exe QEditor: %s\n", exeQEditor.c_str());
-
-	// Check if QEditor exists in AppData
-	bool appDataExists = fs::exists(appDataQEditor);
-	bool exeExists = fs::exists(exeQEditor);
-
-	if (appDataExists) {
-		// QEditor exists in AppData - use it (exe directory is optional)
-		printf("[App] QEditor found in AppData, using it\n");
-		Logger::Get().Log(LogLevel::INFO, "[App] QEditor found in AppData, using it");
-
-		// If exe QEditor also exists, sync it to AppData
-		if (exeExists) {
-			printf("[App] QEditor also exists in exe directory, performing sync...\n");
-			Logger::Get().Log(LogLevel::INFO, "[App] QEditor also exists in exe directory, performing sync...");
-			try {
-				fs::copy(exeQEditor, appDataQEditor, 
-					fs::copy_options::recursive | fs::copy_options::overwrite_existing);
-				printf("[App] Successfully synced QEditor from exe to AppData\n");
-				Logger::Get().Log(LogLevel::INFO, "[App] Successfully synced QEditor from exe to AppData");
-			}
-			catch (const std::exception& e) {
-				// Sync failed but AppData QEditor is still usable, just log a warning
-				std::string warningMsg = "WARNING: Failed to sync QEditor from exe to AppData (using existing AppData version): " + std::string(e.what());
-				printf("[App] %s\n", warningMsg.c_str());
-				Logger::Get().Log(LogLevel::WARNING, warningMsg);
-			}
-		}
-		return true;
-	}
-
-	// QEditor not in AppData, check exe directory
-	if (exeExists) {
-		// Copy from exe to AppData
-		printf("[App] QEditor not found in AppData, copying from exe directory...\n");
-		Logger::Get().Log(LogLevel::INFO, "[App] QEditor not found in AppData, copying from exe directory...");
-
-		try {
-			fs::create_directories(appDataQEditor);
-			fs::copy(exeQEditor, appDataQEditor, 
-				fs::copy_options::recursive | fs::copy_options::overwrite_existing);
-			printf("[App] Successfully copied QEditor to AppData\n");
-			Logger::Get().Log(LogLevel::INFO, "[App] Successfully copied QEditor to AppData");
-		}
-		catch (const std::exception& e) {
-			std::string errorMsg = "FATAL ERROR: Failed to copy QEditor from exe to AppData:\n" + std::string(e.what());
-			Utils::LogAndShowError(errorMsg, "IGI Editor - Fatal Error");
-			printf("[App] %s\n", errorMsg.c_str());
-			Log(log_type_t::LOG_FATAL, __FILE__, __LINE__, 
-				"FATAL ERROR: Failed to copy QEditor from exe to AppData: %s", e.what());
-			return false;
-		}
-		return true;
-	}
-
-	// QEditor missing from both locations
-	std::string errorMsg = "INSTALL ERROR: QEditor not found in AppData or exe directory!\n\n"
-		"AppData: " + appDataQEditor + "\n"
-		"Exe Directory: " + exeQEditor + "\n\n"
-		"Please ensure QEditor is properly installed in either location.";
-	Utils::LogAndShowError(errorMsg, "IGI Editor - Installation Error");
-	printf("[App] %s\n", errorMsg.c_str());
-	Log(log_type_t::LOG_FATAL, __FILE__, __LINE__, errorMsg.c_str());
-	return false;
-
-	printf("[App] QEditor validation and setup completed successfully\n");
-	Logger::Get().Log(LogLevel::INFO, "[App] QEditor validation and setup completed successfully");
-	return true;
-}
 

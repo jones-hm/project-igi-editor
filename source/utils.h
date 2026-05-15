@@ -8,6 +8,9 @@
 #include <string>
 #include <optional>
 #include <vector>
+#include <algorithm>
+
+struct KeyBinding;
 
 namespace Utils {
 
@@ -44,5 +47,15 @@ std::string ToString(const T& value);
 bool HotKeysDown(const std::vector<int>& keys);
 bool IsKeyPressed(int keycode);
 bool IsKeyToggled(int keycode);
+bool IsKeyBindingPressed(const KeyBinding& kb);
+
+// File and path utilities
+std::string GetExeDirectory();
+std::string GetLevelQSCPath(int level_no);
+std::string GetLevelQVMPath(int level_no);
+bool ValidateAndSetupQEditor();
+
+// Game specific utilities
+bool IsUndergroundModel(const std::string& name, const std::string& modelId);
 
 } // namespace Utils

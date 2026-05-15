@@ -9,6 +9,8 @@
 #include <windows.h>
 #include <sstream>
 #include <algorithm>
+#include <filesystem>
+#include "config.h"
 
 namespace Utils {
 
@@ -164,6 +166,154 @@ bool IsKeyToggled(int keycode) {
 		LogError("IsKeyToggled: " + std::string(e.what()));
 		return false;
 	}
+}
+
+bool IsKeyBindingPressed(const KeyBinding& kb) {
+	std::vector<int> keys;
+	if (kb.ctrl) keys.push_back(VK_CONTROL);
+	if (kb.shift) keys.push_back(VK_SHIFT);
+	if (kb.alt) keys.push_back(VK_MENU);
+	if (kb.vkCode) keys.push_back(kb.vkCode);
+	return HotKeysDown(keys);
+}
+
+std::string GetExeDirectory() {
+	char exePath[MAX_PATH];
+	GetModuleFileNameA(NULL, exePath, MAX_PATH);
+	std::string exeDir(exePath);
+	size_t lastSlash = exeDir.find_last_of("\\/");
+	if (lastSlash != std::string::npos) {
+		exeDir = exeDir.substr(0, lastSlash);
+	}
+	return exeDir;
+}
+
+std::string GetLevelQSCPath(int level_no) {
+	char appDataPath[MAX_PATH];
+	GetEnvironmentVariableA("APPDATA", appDataPath, MAX_PATH);
+	std::string qfiles_path = std::string(appDataPath) + "\\QEditor\\QFiles\\IGI_QSC\\missions\\location0\\level" + std::to_string(level_no);
+	return qfiles_path + "\\objects.qsc";
+}
+
+std::string GetLevelQVMPath(int level_no) {
+	// Read from config in exe directory
+	std::string exeDir = GetExeDirectory();
+	std::string configPath = exeDir + "\\config.ini";
+	char igiPath[MAX_PATH];
+	GetPrivateProfileStringA("GamePath", "IGIPath", "D:\\IGI1", igiPath, MAX_PATH, configPath.c_str());
+	std::string game_path = std::string(igiPath);
+	Logger::Get().Log(LogLevel::INFO, "[Utils] GetLevelQVMPath using IGIPath: " + game_path + " (from config: " + configPath + ")");
+	return game_path + "\\missions\\location0\\level" + std::to_string(level_no) + "\\objects.qvm";
+}
+
+bool ValidateAndSetupQEditor() {
+	namespace fs = std::filesystem;
+
+	char appData[1024];
+	GetEnvironmentVariableA("APPDATA", appData, 1024);
+	std::string appDataQEditor = std::string(appData) + "\\QEditor";
+	std::string exeDir = GetExeDirectory();
+	std::string exeQEditor = exeDir + "\\QEditor";
+
+	printf("[Utils] Validating QEditor folder structure...\n");
+	Logger::Get().Log(LogLevel::INFO, "[Utils] Validating QEditor folder structure...");
+	printf("[Utils] AppData QEditor: %s\n", appDataQEditor.c_str());
+	printf("[Utils] Exe QEditor: %s\n", exeQEditor.c_str());
+
+	// Check if QEditor exists in AppData
+	bool appDataExists = fs::exists(appDataQEditor);
+	bool exeExists = fs::exists(exeQEditor);
+
+	if (appDataExists) {
+		// QEditor exists in AppData - use it (exe directory is optional)
+		printf("[Utils] QEditor found in AppData, using it\n");
+		Logger::Get().Log(LogLevel::INFO, "[Utils] QEditor found in AppData, using it");
+
+		// If exe QEditor also exists, sync it to AppData
+		if (exeExists) {
+			printf("[Utils] QEditor also exists in exe directory, performing sync...\n");
+			Logger::Get().Log(LogLevel::INFO, "[Utils] QEditor also exists in exe directory, performing sync...");
+			try {
+				fs::copy(exeQEditor, appDataQEditor,
+					fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+				printf("[Utils] Successfully synced QEditor from exe to AppData\n");
+				Logger::Get().Log(LogLevel::INFO, "[Utils] Successfully synced QEditor from exe to AppData");
+			}
+			catch (const std::exception& e) {
+				// Sync failed but AppData QEditor is still usable, just log a warning
+				std::string warningMsg = "WARNING: Failed to sync QEditor from exe to AppData (using existing AppData version): " + std::string(e.what());
+				printf("[Utils] %s\n", warningMsg.c_str());
+				Logger::Get().Log(LogLevel::WARNING, warningMsg);
+			}
+		}
+		return true;
+	}
+
+	// QEditor not in AppData, check exe directory
+	if (exeExists) {
+		// Copy from exe to AppData
+		printf("[Utils] QEditor not found in AppData, copying from exe directory...\n");
+		Logger::Get().Log(LogLevel::INFO, "[Utils] QEditor not found in AppData, copying from exe directory...");
+
+		try {
+			fs::create_directories(appDataQEditor);
+			fs::copy(exeQEditor, appDataQEditor,
+				fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+			printf("[Utils] Successfully copied QEditor to AppData\n");
+			Logger::Get().Log(LogLevel::INFO, "[Utils] Successfully copied QEditor to AppData");
+		}
+		catch (const std::exception& e) {
+			std::string errorMsg = "FATAL ERROR: Failed to copy QEditor from exe to AppData:\n" + std::string(e.what());
+			ShowError(errorMsg, "IGI Editor - Fatal Error");
+			printf("[Utils] %s\n", errorMsg.c_str());
+			Log(log_type_t::LOG_FATAL, __FILE__, __LINE__,
+				"FATAL ERROR: Failed to copy QEditor from exe to AppData: %s", e.what());
+			return false;
+		}
+		return true;
+	}
+
+	// QEditor missing from both locations
+	std::string errorMsg = "INSTALL ERROR: QEditor not found in AppData or exe directory!\n\n"
+		"AppData: " + appDataQEditor + "\n"
+		"Exe Directory: " + exeQEditor + "\n\n"
+		"Please ensure QEditor is properly installed in either location.";
+	LogAndShowError(errorMsg, "IGI Editor - Installation Error");
+	printf("[Utils] %s\n", errorMsg.c_str());
+	Log(log_type_t::LOG_FATAL, __FILE__, __LINE__, errorMsg.c_str());
+	return false;
+}
+
+bool IsUndergroundModel(const std::string& name, const std::string& modelId) {
+	auto prepare = [](std::string s) {
+		std::transform(s.begin(), s.end(), s.begin(), ::toupper);
+		// Basic trim
+		s.erase(0, s.find_first_not_of(" \t\r\n"));
+		if (s.empty()) return s;
+		s.erase(s.find_last_not_of(" \t\r\n") + 1);
+		return s;
+	};
+	std::string n = prepare(name);
+	std::string m = prepare(modelId);
+
+	auto matches = [&](const std::string& pattern) {
+		return n.find(pattern) != std::string::npos || m.find(pattern) != std::string::npos;
+	};
+
+	return matches("UNDERGROUND") ||
+		matches("TUNNEL") ||
+		matches("T-JUNCTION") ||
+		matches("METALDOORBASE") ||
+		matches("METAL_DOOR_BASE") ||
+		matches("ELEVATORROOM") ||
+		matches("GUARDROOM") ||
+		matches("STRAIGHTUPWARDS") ||
+		matches("JOINT_FIXER") ||
+		matches("JOINTFIXER") ||
+		matches("JOINT") ||
+		matches("FIXER") ||
+		matches("JNT") ||
+		matches("FIX");
 }
 
 } // namespace Utils
