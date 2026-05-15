@@ -21,7 +21,6 @@ struct ConfigData {
     std::string compilerPath;
     std::string filesPath;
     std::string graphsPath;
-    std::string texturesPath;
 
     // [Marker] - IGI 2 Style Manipulation
     char keySnapGround;

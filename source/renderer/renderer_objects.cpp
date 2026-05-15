@@ -445,21 +445,7 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
 
     // Load and cache
     try {
-        std::string texPath = "";
-        std::string ext = std::filesystem::path(filepath).extension().string();
-
-        // Search disk for external texture (for non-GLB legacy models, or GLB fallback)
-        std::string levelDir = "level" + std::to_string(current_level_);
-        std::string texturesBase = g_folders.textures_folder_;
-        texPath = texturesBase + "/" + levelDir + "/" + modelId + ".png";
-        if (!std::filesystem::exists(texPath))
-            texPath = texturesBase + "/" + levelDir + "/" + modelId + "_argb8888.png";
-        if (!std::filesystem::exists(texPath))
-            texPath = texturesBase + "/" + modelId + ".png";
-        if (!std::filesystem::exists(texPath))
-            texPath = "";
-
-        Mesh mesh = loadObjModel(filepath, texPath);
+        Mesh mesh = loadObjModel(filepath, "");
         mesh_cache_[cacheKey] = mesh;
         Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Success: Loaded model '" + modelId + "' from " + filepath + " (" + std::to_string(mesh.vertexCount) + " vertices)");
         return mesh;

@@ -53,7 +53,6 @@ void Config::CreateDefault() {
     data_.compilerPath = data_.qEditorPath + "\\QCompiler";
     data_.filesPath = data_.qEditorPath + "\\QFiles";
     data_.graphsPath = data_.qEditorPath + "\\QGraphs";
-    data_.texturesPath = data_.qEditorPath + "\\3DEditor\\textures";
 
 
     
@@ -160,7 +159,6 @@ void Config::Load() {
                 else if (key == "QCompiler") data_.compilerPath = val;
                 else if (key == "QFiles") data_.filesPath = val;
                 else if (key == "QGraphs") data_.graphsPath = val;
-                else if (key == "Textures") data_.texturesPath = val;
             } else if (section == "Marker") {
 
 
@@ -231,7 +229,6 @@ void Config::Save() {
     file << "MoveLeft=Left" << std::endl;
     file << "MoveRight=Right" << std::endl;
     file << "QCompiler=" << data_.compilerPath << std::endl;
-    file << "Textures=" << data_.texturesPath << std::endl;
     file << "QFiles=" << data_.filesPath << std::endl;
     file << "QGraphs=" << data_.graphsPath << std::endl;
     file << std::endl;

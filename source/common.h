@@ -184,7 +184,6 @@ struct folders_s {
 	char					objects_folder_[1024];
 	char					buildings_folder_[1024];
 	char					ai_folder_[1024];
-	char					textures_folder_[1024];
 };
 
 extern folders_s	g_folders;

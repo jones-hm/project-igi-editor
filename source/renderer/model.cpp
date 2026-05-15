@@ -8,20 +8,8 @@
 #include <iostream>
 #include <filesystem>
 
-Mesh loadObjModel(const std::string& filepath, const std::string& texturePath) {
+Mesh loadObjModel(const std::string& filepath, const std::string& /*unused*/) {
     glb_model_s glb = GLB_Load(filepath.c_str());
-
-    // If external texture is provided and GLB has no embedded textures, load it
-    GLuint externalTex = 0;
-    if (!texturePath.empty() && std::filesystem::exists(texturePath)) {
-        bool hasEmbedded = false;
-        for (auto& prim : glb.primitives) {
-            if (prim.texture_id > 0) { hasEmbedded = true; break; }
-        }
-        if (!hasEmbedded) {
-            externalTex = GLB_LoadExternalTexture(texturePath.c_str());
-        }
-    }
 
     Mesh mesh;
     glm::vec3 min_p(1e10f), max_p(-1e10f);
@@ -30,10 +18,6 @@ Mesh loadObjModel(const std::string& filepath, const std::string& texturePath) {
     int total_verts = 0;
 
     for (auto& prim : glb.primitives) {
-        // Apply external texture to primitives without embedded textures
-        if (externalTex > 0 && prim.texture_id == 0) {
-            prim.texture_id = externalTex;
-        }
         if (prim.VAO == 0 || prim.index_count == 0) continue;
 
         glBindVertexArray(prim.VAO);

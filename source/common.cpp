@@ -846,7 +846,6 @@ void Folders_Init() {
 		try {
 			fs::create_directories(std::string(appdata_buf) + "/QFiles/IGI_QSC");
 			fs::create_directories(std::string(appdata_buf) + "/3DEditor/objects");
-			fs::create_directories(std::string(appdata_buf) + "/3DEditor/textures");
 		} catch (...) {}
 	}
 #endif
@@ -879,20 +878,12 @@ void Folders_Init() {
 		Str_SPrintf(g_folders.objects_folder_, 1024, "%s/3DEditor/objects", appdata_buf);
 		Str_SPrintf(g_folders.buildings_folder_, 1024, "%s/3DEditor/buildings", appdata_buf);
 		Str_SPrintf(g_folders.ai_folder_, 1024, "%s/3DEditor/ai", appdata_buf);
-		// Use configured textures path from Config
-		std::string configuredTexturesPath = Config::Get().texturesPath;
-		if (!configuredTexturesPath.empty()) {
-			Str_Copy(g_folders.textures_folder_, 1024, configuredTexturesPath.c_str());
-		} else {
-			Str_SPrintf(g_folders.textures_folder_, 1024, "%s/3DEditor/textures", appdata_buf);
-		}
 	} else {
 		Logger::Get().Log(LogLevel::ERR, "[Common] AppData path not found, cannot set folder paths");
 		Str_SPrintf(g_folders.res_folder_, 1024, ".");
 		Str_SPrintf(g_folders.objects_folder_, 1024, ".");
 		Str_SPrintf(g_folders.buildings_folder_, 1024, ".");
 		Str_SPrintf(g_folders.ai_folder_, 1024, ".");
-		Str_SPrintf(g_folders.textures_folder_, 1024, ".");
 	}
 
 	Str_SPrintf(g_folders.shader_folder_, 1024, "%s/shaders", buf);
