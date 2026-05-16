@@ -1904,10 +1904,17 @@ void App::SnapObjectsToTerrain() {
         if (obj.type == "HumanSoldier" || obj.type == "HumanSoldierFemale" ||
             obj.type == "SCamera" || obj.type == "Terminal" || obj.type == "SplineObjWaypoint" ||
             obj.type == "AmbientArea" || obj.type == "Elevator" || obj.isWire) {
-            Logger::Get().Log(LogLevel::INFO, "[App] Skipping snap for " + obj.type + ": " + obj.modelId);
+            
+            // Only restore original Z if the object has NOT been moved/modified by the user
+            // or by its parent building. This allows hierarchical movement to stick.
+            if (!obj.modified) {
+                Logger::Get().Log(LogLevel::INFO, "[App] Snapping " + obj.type + " to original QSC Z: " + obj.modelId);
+                obj.pos.z = obj.original_pos.z;
+            } else {
+                Logger::Get().Log(LogLevel::INFO, "[App] Preserving modified Z for " + obj.type + ": " + obj.modelId);
+            }
+            
             obj.snap_z_offset = 0.0;
-            // Restore original QSC Z for these types
-            obj.pos.z = obj.original_pos.z;
             skipped++;
             continue;
         }
@@ -2068,6 +2075,17 @@ void App::PropagateTransformToChildren(int parentIdx, const glm::dvec3& deltaPos
 			}
 			child.pos = pivot + relativePos;
 			child.rot += deltaRot;
+
+			// If it's a soldier, update its internal AI graph position too
+			if (child.type == "HumanSoldier" || child.type == "HumanSoldierFemale") {
+				child.graphPos += deltaPos;
+			}
+		} else {
+			// Just a translation move
+			// If it's a soldier, update its internal AI graph position too
+			if (child.type == "HumanSoldier" || child.type == "HumanSoldierFemale") {
+				child.graphPos += deltaPos;
+			}
 		}
 		child.modified = true;
 		PropagateTransformToChildren(childIdx, deltaPos, deltaRot, pivot);

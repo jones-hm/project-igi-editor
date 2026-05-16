@@ -53,7 +53,7 @@ void LevelObjects::LoadRecursive(const QSC::func_s* func, int parentIdx) {
 
     bool isBuilding = (typeStr == "Building");
     bool isRigid = (typeStr == "EditRigidObj");
-    bool isSoldier = (typeStr == "HumanSoldier" || typeStr == "HumanSoldierFemale");
+    bool isSoldier = (typeStr == "HumanSoldier" || typeStr == "HumanSoldierFemale" || typeStr == "HumanPlayer");
     bool isDoor = (typeStr == "Door");
     bool isTerminal = (typeStr == "Terminal");
     bool isCamera = (typeStr == "SCamera");
