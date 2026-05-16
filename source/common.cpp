@@ -835,13 +835,11 @@ void Folders_Init() {
 	GetModuleFileName(GetModuleHandle(NULL), buf_wide, 1024);
 	Str_UTF16ToUTF8((const char16_t*)buf_wide, buf, 1024);
 
-	// Get AppData path
-	wchar_t appdata_wide[MAX_PATH];
-	if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appdata_wide))) {
-		Str_UTF16ToUTF8((const char16_t*)appdata_wide, appdata_buf, 1024);
-		Str_Cat(appdata_buf, 1024, "/QEditor");
-		
-		// Ensure base AppData directory exists
+	// Use configurable path from config.ini
+	std::string qeditor_path = Config::Get().qEditorPath;
+	if (!qeditor_path.empty()) {
+		Str_Copy(appdata_buf, 1024, qeditor_path.c_str());
+		// Ensure base directory exists (in case it's a new ToolKit path)
 		namespace fs = std::filesystem;
 		try {
 			fs::create_directories(std::string(appdata_buf) + "/QFiles/IGI_QSC");

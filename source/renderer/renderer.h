@@ -8,6 +8,7 @@
 #include <string>
 #include <unordered_map>
 #include "renderer_objects.h"
+#include "renderer_splines.h"
 
 
 /*
@@ -129,6 +130,7 @@ private:
 	Renderer_FlatSkyLayers	flat_sky_layers_;
 	Renderer_Terrain		terrain_;
 	Renderer_Objects		objects_;
+	Renderer_Splines		splines_;
 
 	glm::mat4				mat_proj_;
 	glm::mat4				mat_view_;

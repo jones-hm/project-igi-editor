@@ -32,6 +32,15 @@ struct LevelObject {
     int parentIndex = -1; // Index in LevelObjects::objects_
     std::vector<int> childrenIndices;
 
+    // Spline / Pathing Support
+    bool isSplineContainer = false;
+    bool isSplineWaypoint = false;
+    bool isWire = false;
+    std::string segmentModelId;    // The model repeated along the path (e.g. 368_01_1)
+    bool linearSegments = false;   // If true, straight lines; if false, curved
+    int splineSegmentCount = 20;   // Number of sub-segments per waypoint segment
+    glm::dmat3 orientationMatrix = glm::dmat3(1.0); // 3x3 rotation matrix for Splines/Joints
+
     // Lighting
     float dirlightR = 1.0f, dirlightG = 1.0f, dirlightB = 1.0f;
     float ambientR = 0.3f, ambientG = 0.3f, ambientB = 0.3f;

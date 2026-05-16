@@ -351,9 +351,8 @@ void App::LoadAIModelsFromFolder(int level_no) {
 	Logger::Get().Log(LogLevel::INFO, "[App] LoadAIModelsFromFolder() START for level " + std::to_string(level_no));
 	Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 
-	char appDataPath[MAX_PATH];
-	GetEnvironmentVariableA("APPDATA", appDataPath, MAX_PATH);
-	std::string aiFolderPath = std::string(appDataPath) + "\\QEditor\\3DEditor\\ai\\level" + std::to_string(level_no);
+	std::string qeditor_path = Config::Get().qEditorPath;
+	std::string aiFolderPath = qeditor_path + "\\AIFiles\\missions\\location0\\level" + std::to_string(level_no);
 
 	Logger::Get().Log(LogLevel::INFO, "[App] AI folder path: " + aiFolderPath);
 
@@ -392,7 +391,7 @@ void App::LoadAIModelsFromFolder(int level_no) {
 		int team;
 	};
 	std::vector<AIData> aiDataList;
-	std::string jsonPath = std::string(appDataPath) + "\\QEditor\\IGIModelsAllLevel.json";
+	std::string jsonPath = qeditor_path + "\\IGIModelsAllLevel.json";
 	
 	if (std::filesystem::exists(jsonPath)) {
 		FILE* f = fopen(jsonPath.c_str(), "rb");
@@ -1195,12 +1194,11 @@ void App::ResetLevel() {
 
 	printf("Resetting Level %d - copy objects.qsc, compile to QVM, copy to IGIPath\n", levelNo);
 
-	char appData[1024];
-	GetEnvironmentVariableA("APPDATA", appData, 1024);
+	std::string qeditor_path = Config::Get().qEditorPath;
 
 	// Step 1: Copy objects.qsc from QEditor to exe directory
 	char srcQsc[1024];
-	Str_SPrintf(srcQsc, 1024, "%s\\QEditor\\QFiles\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", appData, levelNo);
+	Str_SPrintf(srcQsc, 1024, "%s\\QFiles\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", qeditor_path.c_str(), levelNo);
 
 	std::string exeDir = Utils::GetExeDirectory();
 	char dstQsc[1024];
@@ -1230,7 +1228,7 @@ void App::ResetLevel() {
 	// Step 3: Copy QVM to IGIPath
 	ConfigData& cfg = Config::Get();
 	char srcQvm[1024];
-	Str_SPrintf(srcQvm, 1024, "%s\\QEditor\\QCompiler\\Compile\\output\\objects.qvm", appData);
+	Str_SPrintf(srcQvm, 1024, "%s\\Compile\\output\\objects.qvm", cfg.compilerPath.c_str());
 
 	char dstQvm[1024];
 	Str_SPrintf(dstQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", cfg.igiPath.c_str(), levelNo);
@@ -1262,12 +1260,11 @@ void App::ResetScript() {
 
 	printf("Resetting Script for Level %d - copy objects.qsc from QEditor to exe directory\n", levelNo);
 
-	char appData[1024];
-	GetEnvironmentVariableA("APPDATA", appData, 1024);
+	std::string qeditor_path = Config::Get().qEditorPath;
 
 	// Source: QEditor IGI_QSC
 	char srcQsc[1024];
-	Str_SPrintf(srcQsc, 1024, "%s\\QEditor\\QFiles\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", appData, levelNo);
+	Str_SPrintf(srcQsc, 1024, "%s\\QFiles\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", qeditor_path.c_str(), levelNo);
 
 	// Destination: exe directory
 	std::string exeDir = Utils::GetExeDirectory();
@@ -1902,38 +1899,51 @@ void App::SnapObjectsToTerrain() {
     int skipped = 0;
     int failed = 0;
     for (auto& obj : objects) {
-        // Skip snapping for AI Soldiers (they maintain original QSC height)
-        if (obj.type == "HumanSoldier" || obj.type == "HumanSoldierFemale") {
-            Logger::Get().Log(LogLevel::INFO, "[App] Skipping snap for AI: " + obj.modelId);
+        // Skip snapping for AI Soldiers, Cameras, Terminals, and Spline Waypoints
+        // Terminals sit on interior floors at their exact QSC Z, not outdoor terrain.
+        if (obj.type == "HumanSoldier" || obj.type == "HumanSoldierFemale" ||
+            obj.type == "SCamera" || obj.type == "Terminal" || obj.type == "SplineObjWaypoint" ||
+            obj.type == "AmbientArea" || obj.type == "Elevator" || obj.isWire) {
+            Logger::Get().Log(LogLevel::INFO, "[App] Skipping snap for " + obj.type + ": " + obj.modelId);
             obj.snap_z_offset = 0.0;
+            // Restore original QSC Z for these types
+            obj.pos.z = obj.original_pos.z;
             skipped++;
             continue;
         }
-        float terrainZ = 0.0f;
+
+        // Underground objects (Tunnels, ElevatorTunnels, UndergroundRooms) have their
+        // Z defined precisely in the QSC and must go below terrain. Preserve original Z.
+        // We also check parents: if a child (like a Door or Terminal) is inside an underground
+        // parent, it must also skip snapping.
         bool isUnderground = Utils::IsUndergroundModel(obj.name, obj.modelId) || (obj.type == "Underground");
-        if (level_.GetTerrainZ(obj.pos.x, obj.pos.y, terrainZ, isUnderground)) {
+        
+        if (!isUnderground && obj.parentIndex != -1 && obj.parentIndex < (int)objects.size()) {
+            int pIdx = obj.parentIndex;
+            while (pIdx != -1 && pIdx < (int)objects.size()) {
+                const auto& parent = objects[pIdx];
+                if (Utils::IsUndergroundModel(parent.name, parent.modelId) || (parent.type == "Underground")) {
+                    isUnderground = true;
+                    break;
+                }
+                pIdx = parent.parentIndex;
+            }
+        }
+
+        if (isUnderground) {
+            obj.snap_z_offset = 0.0;
+            obj.pos.z = obj.original_pos.z;
+            Logger::Get().Log(LogLevel::INFO, "[App] Underground context, preserving QSC Z for " + obj.modelId + " (" + obj.name + ") Z=" + std::to_string(obj.pos.z));
+            skipped++;
+            continue;
+        }
+
+        float terrainZ = 0.0f;
+        if (level_.GetTerrainZ(obj.pos.x, obj.pos.y, terrainZ, false)) {
             float zOffset = renderer_.GetMeshZOffset(obj.modelId, obj.isBuilding);
-            
-            // For regular objects, snap bottom to terrain surface (offset by min_y)
-            // For underground objects (tunnels, etc), keep origin at terrain surface (offset = 0)
-            if (isUnderground) {
-                obj.snap_z_offset = 0.0;
-            } else {
-                obj.snap_z_offset = (double)(zOffset * 40.96f * obj.scale);
-            }
-            
+            obj.snap_z_offset = (double)(zOffset * 40.96f * obj.scale);
             obj.pos.z = (double)terrainZ + obj.snap_z_offset;
-            
-            // Critical debug for user-reported issues
-            if (obj.modelId.find("471_") == 0 || obj.modelId.find("491_") == 0 || isUnderground) {
-                Logger::Get().Log(LogLevel::INFO, "[SnapDebug] Model: " + obj.modelId + 
-                    " (" + obj.type + ") | TerrainZ: " + std::to_string(terrainZ) + 
-                    " | MeshZOffset: " + std::to_string(zOffset) + 
-                    " | SnapOffset: " + std::to_string(obj.snap_z_offset) +
-                    " | FinalZ: " + std::to_string(obj.pos.z));
-            } else {
-                Logger::Get().Log(LogLevel::INFO, "[App] Snapped " + obj.modelId + " to Z=" + std::to_string(obj.pos.z));
-            }
+            Logger::Get().Log(LogLevel::INFO, "[App] Snapped " + obj.modelId + " to Z=" + std::to_string(obj.pos.z));
             snapped++;
         } else {
             Logger::Get().Log(LogLevel::WARNING, "[App] Snap FAILED for " + obj.modelId + " at (" + std::to_string(obj.pos.x) + ", " + std::to_string(obj.pos.y) + "). Outside terrain?");

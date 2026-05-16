@@ -21,7 +21,8 @@
 */
 Renderer::Renderer():
 	ubo_mats_(0),
-	ubo_fog_(0)
+	ubo_fog_(0),
+	splines_(objects_)
 {
 	LoadBuildingNames();
 }
@@ -304,6 +305,7 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                 glMatrixMode(GL_MODELVIEW);
                 glLoadMatrixf(glm::value_ptr(mat_view_));
                 objects_.Draw(ubo_mats_, params.overlay_wireframe_, params.level_objects_->GetObjects(), params.selected_object_index_, params.draw_parts_);
+                splines_.Draw(params.level_objects_->GetObjects(), ubo_mats_, objects_.GetShaderProgram());
         }
 
 
@@ -411,6 +413,18 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
 
                 // Display object info at mouse position
                 int info_object_index = hud.edit_mode_ ? hud.selected_object_index_ : hud.hover_object_index_;
+                if (info_object_index >= 0 && hud.level_objects_) {
+                        const auto& objects = hud.level_objects_->GetObjects();
+                        if (info_object_index < (int)objects.size()) {
+                                const auto& obj = objects[info_object_index];
+
+                                // Skip labels for skipped models (Poles, Wires, etc.)
+                                if (Renderer_Objects::IsSkippedModelId(obj.modelId)) {
+                                    info_object_index = -1; // Reset to hide label
+                                }
+                        }
+                }
+
                 if (info_object_index >= 0 && hud.level_objects_) {
                         const auto& objects = hud.level_objects_->GetObjects();
                         if (info_object_index < (int)objects.size()) {

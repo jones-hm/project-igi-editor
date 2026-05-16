@@ -189,9 +189,8 @@ std::string GetExeDirectory() {
 }
 
 std::string GetLevelQSCPath(int level_no) {
-	char appDataPath[MAX_PATH];
-	GetEnvironmentVariableA("APPDATA", appDataPath, MAX_PATH);
-	std::string qfiles_path = std::string(appDataPath) + "\\QEditor\\QFiles\\IGI_QSC\\missions\\location0\\level" + std::to_string(level_no);
+	std::string qeditor_path = Config::Get().qEditorPath;
+	std::string qfiles_path = qeditor_path + "\\QFiles\\IGI_QSC\\missions\\location0\\level" + std::to_string(level_no);
 	return qfiles_path + "\\objects.qsc";
 }
 
@@ -209,9 +208,7 @@ std::string GetLevelQVMPath(int level_no) {
 bool ValidateAndSetupQEditor() {
 	namespace fs = std::filesystem;
 
-	char appData[1024];
-	GetEnvironmentVariableA("APPDATA", appData, 1024);
-	std::string appDataQEditor = std::string(appData) + "\\QEditor";
+	std::string appDataQEditor = Config::Get().qEditorPath;
 	std::string exeDir = GetExeDirectory();
 	std::string exeQEditor = exeDir + "\\QEditor";
 
@@ -306,6 +303,9 @@ bool IsUndergroundModel(const std::string& name, const std::string& modelId) {
 		matches("METALDOORBASE") ||
 		matches("METAL_DOOR_BASE") ||
 		matches("ELEVATORROOM") ||
+		matches("ELEVATORSHAFT") ||
+		matches("ELEVATORTUNNEL") ||
+		matches("UNDERGROUNDROOM") ||
 		matches("GUARDROOM") ||
 		matches("STRAIGHTUPWARDS") ||
 		matches("JOINT_FIXER") ||

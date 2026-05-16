@@ -489,6 +489,9 @@ void Level::Update(update_params_s& params) {
 void Level::SaveChanges() {
 	terrain_.Save(cur_level_no_);
 
+	// IMPORTANT: AppData\Roaming\QEditor\QFiles is READ-ONLY.
+	// We NEVER write back to the QFiles source. All saves go to the local
+	// exe-directory copy of objects.qsc, which is then compiled to QVM.
 	std::string exeDir = GetExeDirectory();
 	std::string localQsc = exeDir + "\\objects.qsc";
 	Logger::Get().Log(LogLevel::INFO, "[Level] Saving QSC to .exe path: " + localQsc);

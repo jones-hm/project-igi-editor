@@ -8,6 +8,34 @@
 #include "logger.h"
 
 
+bool Renderer_Objects::IsSkippedModelId(const std::string& modelId) {
+    if (modelId.empty()) return false;
+
+    // Use a static set for O(1) exact matches
+    static const std::unordered_set<std::string> skippedIds = {
+        // ── Fences & Gates (terrain-snapping glitches) ──
+        "303_01_1", "303_02_1", "303_03_1", "304_01_1",
+        "302_01_1", "331_01_1",
+        "341_01_1", "341_02_1", "341_03_1", "341_04_1",
+        "341_05_1", "341_06_1", "341_07_1",
+        "366_01_1", "370_01_1", "370_02_1", "370_03_1", "370_04_1",
+
+        // ── Wires & Poles ──
+        "320", "338", "355", "307", "308", "312", "203",
+
+        // ── Holders / Brackets ──
+        "373", "615", "252"
+    };
+
+    if (skippedIds.count(modelId) > 0) return true;
+
+    // Robust prefix matching: skip if modelId starts with any skip ID
+    for (const auto& sid : skippedIds) {
+        if (modelId.find(sid) == 0) return true; 
+    }
+    return false;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 static bool IsFenceModel(const std::string& nameOrId) {
     std::string upper = nameOrId;

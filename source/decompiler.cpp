@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "decompiler.h"
+#include "utils.h"
 #include <filesystem>
 #include <sstream>
 #include <cstdio>
@@ -17,14 +18,17 @@ bool Decompiler::Decompile(const std::string& qvm_path, const std::string& qsc_o
     namespace fs = std::filesystem;
 
     // Read QCompiler path from config
-    char appDataPath[MAX_PATH];
-    GetEnvironmentVariableA("APPDATA", appDataPath, MAX_PATH);
-    std::string qcompiler_path = std::string(appDataPath) + "\\QEditor\\QCompiler";
+    std::string qcompiler_path = Config::Get().compilerPath;
 
-    // Paths
-    std::string decompile_input_dir = qcompiler_path + "\\Decompile\\input";
-    std::string decompile_output_dir = qcompiler_path + "\\Decompile\\output";
+    // Use local temp directory for writing instead of AppData
+    std::string local_temp = Utils::GetExeDirectory() + "\\temp_decompile";
+    std::string decompile_input_dir = local_temp + "\\input";
+    std::string decompile_output_dir = local_temp + "\\output";
     std::string decompile_bat = qcompiler_path + "\\decompile.bat";
+
+    // Ensure temp directories exist
+    fs::create_directories(decompile_input_dir);
+    fs::create_directories(decompile_output_dir);
 
     // Ensure directories exist
     if (!fs::exists(decompile_input_dir)) {
