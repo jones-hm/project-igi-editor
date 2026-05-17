@@ -3388,91 +3388,133 @@ void App::CopySelectedModelId() {
 void App::LookupHoveredModelName() { LookupSelectedModelName(); }
 void App::LookupHoveredModelId() { LookupSelectedModelId(); }
 
+struct ModelEntry {
+	std::string modelName;
+	std::string modelId;
+};
+
+static std::vector<ModelEntry> LoadAllModelsFromJson() {
+	std::vector<ModelEntry> entries;
+	std::string qeditor_path = Config::Get().qEditorPath;
+	std::string jsonPath = qeditor_path + "\\IGIModels.json";
+	
+	std::ifstream file(jsonPath, std::ios::binary);
+	if (!file) {
+		jsonPath = "C:\\Users\\hasee\\AppData\\Roaming\\QEditor\\IGIModels.json";
+		file.open(jsonPath, std::ios::binary);
+	}
+	
+	if (!file) {
+		Logger::Get().Log(LogLevel::WARNING, "[App] Could not open database file: " + jsonPath);
+		return entries;
+	}
+	
+	std::stringstream ss;
+	ss << file.rdbuf();
+	std::string content = ss.str();
+	
+	size_t pos = 0;
+	while ((pos = content.find("{", pos)) != std::string::npos) {
+		size_t end = content.find("}", pos);
+		if (end == std::string::npos) break;
+		
+		std::string entry = content.substr(pos, end - pos + 1);
+		pos = end + 1;
+		
+		auto extractValue = [](const std::string& str, const std::string& key) -> std::string {
+			size_t kpos = str.find("\"" + key + "\"");
+			if (kpos == std::string::npos) return "";
+			size_t colon = str.find(":", kpos);
+			if (colon == std::string::npos) return "";
+			size_t qStart = str.find("\"", colon);
+			if (qStart == std::string::npos) return "";
+			size_t qEnd = str.find("\"", qStart + 1);
+			if (qEnd == std::string::npos) return "";
+			return str.substr(qStart + 1, qEnd - qStart - 1);
+		};
+		
+		ModelEntry item;
+		item.modelName = extractValue(entry, "ModelName");
+		item.modelId = extractValue(entry, "ModelId");
+		
+		if (!item.modelId.empty() || !item.modelName.empty()) {
+			entries.push_back(item);
+		}
+	}
+	
+	return entries;
+}
+
 void App::SearchModelById() {
-	auto prompt = Utils::PromptForText("Search Model by ID", "Enter Model ID (e.g. 1506 or AITYPE_PATROL_AK):", "");
+	auto prompt = Utils::PromptForText("Search Model by ID", "Enter Model ID to search in IGIModels.json (e.g. 419_01_1):", "");
 	if (!prompt.has_value()) return;
 
 	std::string searchId = prompt.value();
 	searchId = Utils::Trim(searchId);
 	if (searchId.empty()) return;
 
-	std::string searchIdLower = searchId;
-	std::transform(searchIdLower.begin(), searchIdLower.end(), searchIdLower.begin(), [](unsigned char c) { return std::tolower(c); });
-
-	auto& objects = level_.GetLevelObjects().GetObjects();
-	int foundIdx = -1;
-	for (int i = 0; i < (int)objects.size(); ++i) {
-		if (objects[i].deleted) continue;
-
-		std::string taskIdLower = objects[i].taskId;
-		std::transform(taskIdLower.begin(), taskIdLower.end(), taskIdLower.begin(), [](unsigned char c) { return std::tolower(c); });
-
-		std::string modelIdLower = objects[i].modelId;
-		std::transform(modelIdLower.begin(), modelIdLower.end(), modelIdLower.begin(), [](unsigned char c) { return std::tolower(c); });
-
-		if (taskIdLower == searchIdLower || modelIdLower == searchIdLower) {
-			foundIdx = i;
-			break;
+	auto entries = LoadAllModelsFromJson();
+	std::vector<ModelEntry> matches;
+	
+	for (const auto& entry : entries) {
+		if (containsIgnoreCase(entry.modelId, searchId)) {
+			matches.push_back(entry);
 		}
 	}
-
-	if (foundIdx != -1) {
-		selected_object_index_ = foundIdx;
-		const auto& obj = objects[foundIdx];
-		viewer_.pos_ = glm::vec3(obj.pos.x, obj.pos.y, obj.pos.z + 1500.0f);
-		viewer_.pitch_ = -45.0f; 
-		SetLookupStatus(status_message_, "[App] Search: Found and selected model ID \"" + obj.modelId + "\" at index " + std::to_string(foundIdx));
+	
+	std::string resultMessage;
+	if (matches.empty()) {
+		resultMessage = "No matching models found in IGIModels.json for ID: " + searchId;
 	} else {
-		SetLookupStatus(status_message_, "[App] Search: No object matches ID \"" + searchId + "\"");
+		resultMessage = "Found " + std::to_string(matches.size()) + " matches in IGIModels.json:\n\n";
+		int count = 0;
+		for (const auto& match : matches) {
+			if (count >= 25) {
+				resultMessage += "... and " + std::to_string(matches.size() - count) + " more matches.";
+				break;
+			}
+			resultMessage += "- ID: " + match.modelId + "  ->  Name: " + match.modelName + "\n";
+			count++;
+		}
 	}
+	
+	MessageBoxA(NULL, resultMessage.c_str(), "IGIModels.json Search Results", MB_OK | MB_ICONINFORMATION);
 }
 
 void App::SearchModelByName() {
-	auto prompt = Utils::PromptForText("Search Model by Name", "Enter Model Name/Type (e.g. Heli or Soldier or Fence):", "");
+	auto prompt = Utils::PromptForText("Search Model by Name", "Enter Model Name to search in IGIModels.json (e.g. Soldier):", "");
 	if (!prompt.has_value()) return;
 
 	std::string searchName = prompt.value();
 	searchName = Utils::Trim(searchName);
 	if (searchName.empty()) return;
 
-	std::string searchNameLower = searchName;
-	std::transform(searchNameLower.begin(), searchNameLower.end(), searchNameLower.begin(), [](unsigned char c) { return std::tolower(c); });
-
-	auto& objects = level_.GetLevelObjects().GetObjects();
-	int foundIdx = -1;
+	auto entries = LoadAllModelsFromJson();
+	std::vector<ModelEntry> matches;
 	
-	int startIdx = (selected_object_index_ >= 0) ? (selected_object_index_ + 1) % objects.size() : 0;
-	
-	for (size_t step = 0; step < objects.size(); ++step) {
-		int i = (startIdx + step) % objects.size();
-		if (objects[i].deleted) continue;
-
-		std::string friendlyName = level_.GetLevelObjects().GetModelName(objects[i].modelId);
-		if (friendlyName.empty()) {
-			friendlyName = objects[i].name;
-		}
-		std::string typeName = objects[i].type;
-
-		std::transform(friendlyName.begin(), friendlyName.end(), friendlyName.begin(), [](unsigned char c) { return std::tolower(c); });
-		std::transform(typeName.begin(), typeName.end(), typeName.begin(), [](unsigned char c) { return std::tolower(c); });
-
-		if (friendlyName.find(searchNameLower) != std::string::npos || typeName.find(searchNameLower) != std::string::npos) {
-			foundIdx = i;
-			break;
+	for (const auto& entry : entries) {
+		if (containsIgnoreCase(entry.modelName, searchName)) {
+			matches.push_back(entry);
 		}
 	}
-
-	if (foundIdx != -1) {
-		selected_object_index_ = foundIdx;
-		const auto& obj = objects[foundIdx];
-		viewer_.pos_ = glm::vec3(obj.pos.x, obj.pos.y, obj.pos.z + 1500.0f);
-		viewer_.pitch_ = -45.0f;
-		std::string displayName = level_.GetLevelObjects().GetModelName(obj.modelId);
-		if (displayName.empty()) displayName = obj.name;
-		SetLookupStatus(status_message_, "[App] Search: Found \"" + displayName + "\" (Type: " + obj.type + ") at index " + std::to_string(foundIdx));
+	
+	std::string resultMessage;
+	if (matches.empty()) {
+		resultMessage = "No matching models found in IGIModels.json for Name: " + searchName;
 	} else {
-		SetLookupStatus(status_message_, "[App] Search: No object matches name \"" + searchName + "\"");
+		resultMessage = "Found " + std::to_string(matches.size()) + " matches in IGIModels.json:\n\n";
+		int count = 0;
+		for (const auto& match : matches) {
+			if (count >= 25) {
+				resultMessage += "... and " + std::to_string(matches.size() - count) + " more matches.";
+				break;
+			}
+			resultMessage += "- Name: " + match.modelName + "  ->  ID: " + match.modelId + "\n";
+			count++;
+		}
 	}
+	
+	MessageBoxA(NULL, resultMessage.c_str(), "IGIModels.json Search Results", MB_OK | MB_ICONINFORMATION);
 }
 
 std::vector<int> App::GetVisibleTreeNodes() {

@@ -1,13 +1,48 @@
 # Changelogs
 
-## BETA 0.0.7 - Live Sync & Task Systems
-### Core Features
-- **Live Editor Real-Time Sync**: Implemented real-sync capabilities allowing the editor to communicate directly with the game for instant feedback.
-- **Task Tree Editor**: Visual editor for mission objectives, enabling complex task logic manipulation.
-- **Spline Train Tracks**: Added support for spline-based train track generation and placement.
+## BETA 0.0.9 - Global Database Search & UI Polish
+### Global Model Search Database
+- **Global Model Search Mappings**: Replaced local viewport-only model searches in `SearchModelById()` with a global database search inside `%APPDATA%\QEditor\IGIModels.json`.
+- **Query Master JSON**: Replaced `SearchModelByName()` logic to query the global master JSON database and find matching model mappings.
+- **Robust JSON Parsing**: Implemented `LoadAllModelsFromJson()` standalone C++ helper to dynamically parse JSON structures containing `ModelName` and `ModelId`.
+- **Native Prompts**: Used standard, native **Windows InputBox** dialogue (`Utils::PromptForText`) to request user search queries.
+- **MessageBox Integration**: Used **Windows MessageBox** (`MessageBoxA`) to display structured, multi-line database search matches.
+- **Encoding Fix**: Prevented encoding glitches (such as the `â€¢` bullet character rendering bug) by implementing CP1252-safe ASCII hyphens (`- `) for item bulleting.
+- **Output Truncation**: Capped maximum displayed search results to the first 25 matches with trailing count truncation (`... and X more matches`) to prevent message boxes from overflowing the screen.
 
-### Stability
-- Fixed several edge cases in the live sync pipeline to prevent engine desynchronization.
+### UI Telemetry & Rendering Stabilization
+- **Right-Click Context Fix**: Fixed right-click context menu crash by ensuring safe pointer validation on selected tree index.
+- **Tooltip Realignment**: Realigned context menu tooltip coordinates to track mouse cursor coordinates exactly.
+- **HUD Active State Indicator**: Added conditional telemetry text displaying "Moving" or "Rotating" in the HUD only during active manipulation.
+- **Natural Light Restore**: Removed bright red directional/ambient lighting overrides from `renderer_objects.cpp` and restored standard white natural lighting.
+- **GLB Translation Alignment**: Corrected coordinate transformation matrices for GLB model rendering (reconciling Y-up to Z-up model coordinates).
+- **Scale Glitch Resolution**: Resolved scaling mismatch glitches by removing redundant scaling multiplications in `renderer_objects.cpp`.
+
+### QSC/QVM Pipeline Enhancements
+- **Compiler Repairs**: Repaired template-arguments compiler errors and duplicate declarations at the end of `app.cpp`.
+- **Scale Getter Signature**: Restructured `App::GetSelectedObjectScale()` function signature to return correct scale parameters.
+- **Matrix Syntax Correction**: Restored proper rotation matrix index syntax in `app.cpp` line 2270 to ensure error-free builds.
+- **Automated Backup Reset**: Added automatic level reset logic restoring `objects.qsc` and `objects.qvm` from read-only backups upon command.
+- **Implicit Node Filtering**: Prevented duplicate-node serialization errors in QSC by refining implicit static node hierarchy filtering.
+
+---
+
+## BETA 0.0.8 - Cutscene Graph Area Protection & AppData Migration
+### AppData & Migration Integration
+- **Automatic AppData Sync**: Implemented automatic local `QEditor` to `%APPDATA%\QEditor` migration and synchronization logic in `utils.cpp` (`ValidateAndSetupQEditor`).
+- **Pristine Backup Guard**: Created exclusions for read-only `QFiles` folder during `AppData` folder copying to protect pristine level configuration backups.
+- **Config Path Resolution**: Replaced legacy config directory resolution to consistently target local executable directory using `GetExeDirectory()`.
+- **Level Texture Resolution**: Resolved level texture resolution failures by mapping local GLB path references directly to `AppData` textures folders.
+- **Altitude Override Guard**: Implemented dynamic coordinate Z-snapping bypass pipeline to keep specific critical actors at their defined altitudes.
+
+### Cutscene Graph Area Protection
+- **Graph Area JSON Mapping**: Implemented a custom JSON parser for mapping Graph Area details from `graph_area_levelX.json`.
+- **Graph ID Conversions**: Added automatic parser logic that converts visual graph IDs (e.g., `Graph #1` -> integer `1`) for precise matching.
+- **Parser Pipeline**: Created the `LoadCutsceneGraphIds` pipeline inside `app.cpp` to parse Graph Area mappings on load.
+- **Static Actor Protection**: Flagged all AI models located in "Cutscene" graph zones to preserve author-defined orientations.
+- **AI Rotation Bypasses**: Added a static rotation override guard to skip standard yaw adjustments (`0.0` -> `6.28318`) for cutscene actors.
+- **Ground Snapping Bypasses**: Prevented terrain-snapping modifications for designated cutscene units in `SnapObjectsToTerrain()`.
+- **AI Sync Bypasses**: Bypassed position synchronization and metadata overrides inside `LoadAIModelsFromFolder()` for cutscene actor IDs.
 
 ---
 

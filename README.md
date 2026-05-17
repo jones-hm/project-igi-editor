@@ -2,7 +2,7 @@
 
 **IGI Editor** is a professional 3D world and object manipulation toolkit for Project IGI. Inspired by the original IGI and IGI 2 editors, it provides a modern interface for level research, object placement, and terrain modification.
 
-**Current Status: BETA 0.0.7** - Feature-rich release introducing Live Editor Real-Time Sync, Task Tree Editing, and Spline-based Train Tracks. Supports all levels including Level 14 with a modern GLB-based asset pipeline.
+**Current Status: BETA 0.0.9** - Professional modding suite introducing Global Model Database Search, UI Telemetry indicators, Cutscene Graph Area Protection, AppData syncing, Live Editor Real-Time Sync, and Task Tree Objective Editing. Supports all levels including Level 14 with a modern GLB-based asset pipeline.
 
 This project is built upon the foundational work of the [Project-IGI-Terrain](https://github.com/hjcminus/Project-IGI-Terrain) repository. Special thanks to [hjcminus](https://github.com/hjcminus) for their research and for bringing this codebase to light. It is built using C++17 and OpenGL, and it is cross-platform, but it is mainly tested on Windows.
 
@@ -47,21 +47,18 @@ See the [CHANGELOGS.md](CHANGELOGS.md) for version history and detailed change l
 ---
  
 ## 📸 Screenshots
- 
+
 ![IGI Editor Screenshot](assets/igi-editor.png)
-*The editor in action showing terrain editing capabilities.*
+*3D viewport showing level models, objects, and real-time navigation.*
 
 ![IGI Editor Task Tree](assets/igi-editor-task-tree.png)
 *Visual Task Tree Editor for mission objective management.*
 
 ![IGI Editor Controls](assets/igi-editor-controls.png)
-*IGI 2 style control scheme for precise object manipulation.*
+*HUD telemetry displaying precise translation, rotation, and selection info.*
 
 ![IGI Editor AI](assets/igi-editor-ai.png)
 *AI Unit identification and management interface.*
-
-![IGI Editor BETA Screenshot](assets/igi-editor-beta.png)
-*Working BETA version - BETA 0.0.1*
 
 ![IGI Editor Debug Screenshot](assets/igi-editor-debug.png)
 *Debug Console showing IGIPath resolution and QVM compilation pipeline.*
