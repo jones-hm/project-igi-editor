@@ -9,7 +9,8 @@
 #include "utils.h"
 #include <filesystem>
 #include <fstream>
-
+#include <sstream>
+#include <algorithm>
 
 /*
 ================================================================================
@@ -255,7 +256,6 @@ void App::Shutdown() {
 
 void App::LoadLevel(int level_no) {
 	try {
-		LoadCutsceneSoldierIDs();
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 		Logger::Get().Log(LogLevel::INFO, "[App] LoadLevel() START for level " + std::to_string(level_no));
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
@@ -295,7 +295,6 @@ void App::LoadLevel(int level_no) {
 		// Load QSC file for this level
 		Logger::Get().Log(LogLevel::INFO, "[App] Step 2: Loading QSC file for level " + std::to_string(level_no));
 		LoadQSCForLevel(level_no);
-		LoadCutsceneSoldierIDs();
 
 		// Load AI models from JSON for this level
 		Logger::Get().Log(LogLevel::INFO, "[App] Step 2.5: Loading AI models from IGIModelsAllLevel.json...");
@@ -331,14 +330,13 @@ void App::LoadLevel(int level_no) {
 		// AI rotation override: AI models (HumanSoldier, HumanAI) only have horizontal rotation
 		auto& objects = level_.GetLevelObjects().GetObjects();
 		for (auto& obj : objects) {
+			if (obj.modelId == "000_01_1") continue; // Skip Player Jones
 			if (obj.type == "HumanSoldier" || obj.type == "HumanAI" || obj.type.find("AITYPE") == 0) {
-				if (cutscene_soldier_ids_.find(obj.taskId) == cutscene_soldier_ids_.end()) {
-					obj.rot.x = 0.0;           // PITCH = 0
-					obj.rot.y = 0.0;           // ROLL = 0
-					// Preserve existing rotation if it's already set, otherwise default to a full circle
-					if (obj.rot.z == 0.0) obj.rot.z = 6.28318;
-					Logger::Get().Log(LogLevel::INFO, "[App] Applied AI rotation override (horizontal only) for " + obj.name + " (" + obj.type + ")");
-				}
+				obj.rot.x = 0.0;           // PITCH = 0
+				obj.rot.y = 0.0;           // ROLL = 0
+				// Preserve existing rotation if it's already set, otherwise default to a full circle
+				if (obj.rot.z == 0.0) obj.rot.z = 6.28318;
+				Logger::Get().Log(LogLevel::INFO, "[App] Applied AI rotation override (horizontal only) for " + obj.name + " (" + obj.type + ")");
 			}
 		}
 		
@@ -362,8 +360,7 @@ void App::SetGameLevel(int level_no) {
 	bridge_.SetGameLevel(level_no);
 }
 
-#include <sstream>
-#include <algorithm>
+
 
 static bool containsIgnoreCase(const std::string& str, const std::string& substr) {
     if (substr.empty()) return true;
@@ -375,63 +372,7 @@ static bool containsIgnoreCase(const std::string& str, const std::string& substr
     return it != str.end();
 }
 
-static std::set<std::string> LoadCutsceneGraphIds(int level_no) {
-    std::set<std::string> cutscene_graph_ids;
-    std::string graphsPath = Config::Get().graphsPath;
-    std::string jsonPath = graphsPath + "\\Areas\\graph_area_level" + std::to_string(level_no) + ".json";
-    
-    Logger::Get().Log(LogLevel::INFO, "[App] Loading cutscene graphs from: " + jsonPath);
-    
-    std::ifstream file(jsonPath, std::ios::binary);
-    if (!file) {
-        Logger::Get().Log(LogLevel::WARNING, "[App] Could not open graph area file: " + jsonPath);
-        return cutscene_graph_ids;
-    }
-    
-    std::stringstream ss;
-    ss << file.rdbuf();
-    std::string content = ss.str();
-    
-    size_t pos = 0;
-    while ((pos = content.find("{", pos)) != std::string::npos) {
-        size_t end = content.find("}", pos);
-        if (end == std::string::npos) break;
-        
-        std::string entry = content.substr(pos, end - pos + 1);
-        pos = end + 1;
-        
-        // Extract Graph and Area
-        auto extractValue = [](const std::string& str, const std::string& key) -> std::string {
-            size_t kpos = str.find("\"" + key + "\"");
-            if (kpos == std::string::npos) return "";
-            size_t colon = str.find(":", kpos);
-            if (colon == std::string::npos) return "";
-            size_t qStart = str.find("\"", colon);
-            if (qStart == std::string::npos) return "";
-            size_t qEnd = str.find("\"", qStart + 1);
-            if (qEnd == std::string::npos) return "";
-            return str.substr(qStart + 1, qEnd - qStart - 1);
-        };
-        
-        std::string graphVal = extractValue(entry, "Graph");
-        std::string areaVal = extractValue(entry, "Area");
-        
-        if (containsIgnoreCase(areaVal, "Cutscene")) {
-            // Extract number from "Graph #123"
-            size_t hashPos = graphVal.find('#');
-            if (hashPos != std::string::npos) {
-                std::string graphId = graphVal.substr(hashPos + 1);
-                graphId = Utils::Trim(graphId);
-                if (!graphId.empty()) {
-                    cutscene_graph_ids.insert(graphId);
-                    Logger::Get().Log(LogLevel::INFO, "[App] Identified cutscene graph ID: " + graphId + " (Area: " + areaVal + ")");
-                }
-            }
-        }
-    }
-    
-    return cutscene_graph_ids;
-}
+
 
 void App::LoadAIModelsFromFolder(int level_no) {
 	Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
@@ -653,15 +594,6 @@ void App::LoadAIModelsFromFolder(int level_no) {
 	int addedCount = 0;
 	int updatedCount = 0;
 
-	// Load Cutscene Graph IDs and populate cutscene_soldier_ids_
-	std::set<std::string> cutsceneGraphIds = LoadCutsceneGraphIds(level_no);
-	for (const auto& aiData : aiDataList) {
-		if (cutsceneGraphIds.count(aiData.graphId)) {
-			cutscene_soldier_ids_.insert(aiData.soldierId);
-			Logger::Get().Log(LogLevel::INFO, "[App] Added soldier taskId " + aiData.soldierId + " to cutscene list due to Graph ID " + aiData.graphId);
-		}
-	}
-
 	for (const auto& aiData : aiDataList) {
 		// Search for existing object with this taskId
 		LevelObject* existingObj = nullptr;
@@ -673,9 +605,9 @@ void App::LoadAIModelsFromFolder(int level_no) {
 		}
 
 		if (existingObj) {
-			// Skip sync for cutscene soldiers to preserve authored QSC state
-			if (cutscene_soldier_ids_.count(existingObj->taskId)) {
-				Logger::Get().Log(LogLevel::INFO, "[App] Skipping AI sync for cutscene soldier: " + aiData.modelId + " taskId=" + aiData.soldierId);
+			// Skip sync for Player Jones (000_01_1) to preserve exact QSC position and avoid automated edits
+			if (existingObj->modelId == "000_01_1") {
+				Logger::Get().Log(LogLevel::INFO, "[App] Skipping AI sync for Player Jones: " + aiData.modelId + " taskId=" + aiData.soldierId);
 				continue;
 			}
 			// Update existing object with AI metadata
@@ -2492,8 +2424,8 @@ void App::SnapObjectsToTerrain() {
     int skipped = 0;
     int failed = 0;
     for (auto& obj : objects) {
-        // Skip snapping for cutscene soldiers
-        if (cutscene_soldier_ids_.count(obj.taskId)) {
+        // Skip snapping for Player Jones (000_01_1) to preserve exact QSC position
+        if (obj.modelId == "000_01_1") {
             skipped++;
             continue;
         }
@@ -3562,21 +3494,6 @@ std::vector<int> App::GetVisibleTreeNodes() {
     return visibleIndices;
 }
 
-void App::LoadCutsceneSoldierIDs() {
-	cutscene_soldier_ids_.clear();
-	auto& objects = level_.GetLevelObjects().GetObjects();
-	for (const auto& obj : objects) {
-		if (obj.type == "AnimTask" && obj.argTokens.size() > 9) {
-			std::string targetId = Utils::Trim(obj.argTokens[9]);
-			if (!targetId.empty() && targetId.front() == '"' && targetId.back() == '"') {
-				targetId = targetId.substr(1, targetId.size() - 2);
-			}
-			if (!targetId.empty()) {
-				cutscene_soldier_ids_.insert(targetId);
-				Logger::Get().Log(LogLevel::INFO, "[App] Registered cutscene soldier task ID: " + targetId);
-			}
-		}
-	}
-}
+
 
 

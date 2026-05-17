@@ -159,7 +159,6 @@ private:
 	bool					sync_from_game_once_;
 	int						last_game_level_;
 	int						level_root_index_;
-	std::set<std::string>	cutscene_soldier_ids_;
 	std::vector<LevelObject> clipboard_;
 
 
@@ -211,7 +210,6 @@ private:
 	void					ProcessInput(float delta_seconds);
 	bool					CheckCollision(const glm::vec3& next_pos);
 	void					SnapObjectsToTerrain();
-	void					LoadCutsceneSoldierIDs();
 
 	bool					stick_to_ground_ = false;
 	bool					noclip_mode_ = true; // By default true as requested by user
