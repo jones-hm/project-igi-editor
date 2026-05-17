@@ -1,6 +1,6 @@
 # IGI Editor
 
-**IGI Editor** is a professional 3D world and object manipulation toolkit for Project IGI. Inspired by the original IGI 2 editor, it provides a modern interface for level research, object placement, and terrain modification.
+**IGI Editor** is a professional 3D world and object manipulation toolkit for Project IGI. Inspired by the official [IGI 2 Editor](https://www.nexusmods.com/igi2covertstrike/mods/1) created by the original IGI Developers, it provides a modern interface for level research, object placement, and terrain modification.
 
 **Current Status: Version 1.0.0 (Official First Public Release)** - Premium 3D modding suite featuring dynamic 3D terrain rendering, spline waypoint layouts, advanced flight camera navigation, full AI behavior customization, and visual task objective management. Supports editing and compiling for all 14 original game levels (with the first 3 levels fully tested and verified).
 
