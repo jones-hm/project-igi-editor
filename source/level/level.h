@@ -31,11 +31,14 @@ public:
 	int						GetLevelNo() const;
 
 	void					Update(update_params_s & params);
+	void					SaveObjectsLocalOnly();
 	void					SaveChanges();
+	void					SaveAndReloadObjects();
 
-	bool					GetTerrainZ(const glm::vec3 & pos, float & z);
+	bool					GetTerrainZ(double x, double y, float & z, bool ignore_discard = false);
 	void					EditorRaycastAndModify(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type);
 	void					TeleportToHMP(glm::vec3& pos) const;
+	void					CompileCurrentQSC(int level_no);
 
 	const LevelObjects&		GetLevelObjects() const { return level_objects_; }
 	LevelObjects&			GetLevelObjects() { return level_objects_; }
@@ -65,6 +68,9 @@ private:
 	void					LoadSkydomeInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loader);
 	void					LoadFlatSkyLayersInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loader);
 	void					DecompileObjects(int levelNo);
+	bool					FilesDiffer(const std::string& file1, const std::string& file2);
+	void					CopyTerrainFromQEditor(int level_no);
+	void					MoveTerrainToGamePath(int level_no);
 
 	// pos range: [-2^30, 2^30]
 	dyn_cube_s *			GetDynCube(const double pos[3], int cube_lod_level, glm::ivec3& cube_ctr) override;

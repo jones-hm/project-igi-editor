@@ -33,7 +33,11 @@
 *.i86
 *.x86_64
 *.conf
-
+*.ps1
+*.zip
+*.rc
+bin/*/shaders
+scratch/*
 # CMake
 CMakeCache.txt
 CMakeFiles/
@@ -107,3 +111,10 @@ Release/
 *.webp
 *.py
 *.qsc
+docs/
+
+# Dont Ignore
+!assets
+!assets/*.png
+!bin/
+!build/

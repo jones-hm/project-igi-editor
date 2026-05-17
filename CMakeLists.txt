@@ -40,6 +40,14 @@ file(GLOB SOURCES_RENDERER "source/renderer/*.*")
 file(GLOB SHADERS_41 "shaders/41/*.*")
 file(GLOB SHADERS_45 "shaders/45/*.*")
 
+# Explicitly add new source files (GLOB might not pick them up immediately)
+list(APPEND SOURCES "source/compiler.cpp" "source/decompiler.cpp" "source/utils.cpp")
+
+# Add Windows icon resource file
+if (WIN32)
+  list(APPEND SOURCES "assets/igi-editor-icon.rc")
+endif()
+
 source_group("level" FILES ${SOURCES_LEVEL})
 source_group("renderer" FILES ${SOURCES_RENDERER})
 source_group("shaders/41" FILES ${SHADERS_41})
@@ -47,17 +55,72 @@ source_group("shaders/45" FILES ${SHADERS_45})
 
 add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SHADERS_41} ${SHADERS_45})
 
+if (WIN32)
+  set_target_properties(igi-editor PROPERTIES 
+    ICON ${PROJECT_SOURCE_DIR}/assets/igi-editor-icon.ico
+    OUTPUT_NAME "igi1ed"
+  )
+endif()
+
 target_precompile_headers(igi-editor PRIVATE source/pch.h)
+
+# A few translation units pull in very large header graphs (glm, tinygltf/json,
+# renderer stacks). MSVC can exhaust virtual memory while trying to map the
+# shared PCH for all of them at once, especially on Release builds.
+# Let these heavy files compile without the shared PCH to keep memory usage
+# stable while preserving PCH speed for the rest of the project.
+set_source_files_properties(
+  source/app.cpp
+  source/renderer/glb_loader.cpp
+  source/renderer/renderer_flat_sky_layers.cpp
+  source/renderer/renderer_objects.cpp
+  source/renderer/renderer_skydome.cpp
+  source/renderer/renderer_splines.cpp
+  source/renderer/renderer_terrain.cpp
+  source/renderer/wic_loader.cpp
+  PROPERTIES SKIP_PRECOMPILE_HEADERS ON
+)
 
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source)
+target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/tinygltf)
 
 
 if (WIN32)
   target_link_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/lib/x64)
   target_link_libraries(igi-editor PRIVATE freeglut glew32 OpenGL32)
+
+  # Increase PCH memory limit to fix compiler heap errors
+  if (MSVC)
+    target_compile_options(igi-editor PRIVATE "/Zm300" "/bigobj")
+  endif()
+
+  # Set runtime library based on configuration
+  set_target_properties(igi-editor PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${PROJECT_SOURCE_DIR}/bin/Debug"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}/bin/Release"
+  )
+  
+  # Ensure Release builds don't use debug runtime
+  set_target_properties(igi-editor PROPERTIES
+    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+  )
+
+  # Embed admin manifest
+  set(MANIFEST_FILE "${PROJECT_SOURCE_DIR}/igi-editor.exe.manifest")
+  if(EXISTS ${MANIFEST_FILE})
+    set_target_properties(igi-editor PROPERTIES
+      LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${MANIFEST_FILE} /MANIFESTUAC:\"level='requireAdministrator' uiAccess='false'\""
+    )
+  endif()
+
+  # Use Windows subsystem for Release (no console), Console for Debug
+  set_target_properties(igi-editor PROPERTIES
+    LINK_FLAGS_DEBUG "/SUBSYSTEM:CONSOLE"
+    LINK_FLAGS_RELEASE "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
+  )
 else()
   target_link_libraries(igi-editor PRIVATE glut GL GLEW)
 endif()

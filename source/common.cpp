@@ -7,6 +7,7 @@
 #include <mutex>
 #include <stdarg.h>
 #include "logger.h"
+#include "config.h"
 #include <string>
 #include <filesystem>
 
@@ -591,6 +592,17 @@ bool File_Exists(const char* filename) {
 }
 
 FILE* File_Open(const char* filename, const char* mod) {
+	// SECURITY: Strictly prohibit WRITING to the QFiles directory
+	bool isWriteMode = (strpbrk(mod, "wa+") != nullptr);
+	if (isWriteMode && filename) {
+		std::string lowerPath = filename;
+		std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
+		if (lowerPath.find("qfiles") != std::string::npos) {
+			Logger::Get().Log(LogLevel::ERR, "[File_Open] CRITICAL ERROR: Blocked attempt to WRITE to READ-ONLY QFiles: " + std::string(filename));
+			return nullptr;
+		}
+	}
+
 #if defined(_MSC_VER)
 	char16_t char16_filename[1024], char16_mod[64];
 	Str_UTF8ToUTF16(filename, char16_filename, 1024);
@@ -834,18 +846,15 @@ void Folders_Init() {
 	GetModuleFileName(GetModuleHandle(NULL), buf_wide, 1024);
 	Str_UTF16ToUTF8((const char16_t*)buf_wide, buf, 1024);
 
-	// Get AppData path
-	wchar_t appdata_wide[MAX_PATH];
-	if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appdata_wide))) {
-		Str_UTF16ToUTF8((const char16_t*)appdata_wide, appdata_buf, 1024);
-		Str_Cat(appdata_buf, 1024, "/QEditor");
-		
-		// Ensure base AppData directory exists
+	// Use configurable path from config.ini
+	std::string qeditor_path = Config::Get().qEditorPath;
+	if (!qeditor_path.empty()) {
+		Str_Copy(appdata_buf, 1024, qeditor_path.c_str());
+		// Ensure base directory exists (in case it's a new ToolKit path)
 		namespace fs = std::filesystem;
 		try {
 			fs::create_directories(std::string(appdata_buf) + "/QFiles/IGI_QSC");
 			fs::create_directories(std::string(appdata_buf) + "/3DEditor/objects");
-			fs::create_directories(std::string(appdata_buf) + "/3DEditor/textures");
 		} catch (...) {}
 	}
 #endif
@@ -860,25 +869,30 @@ void Folders_Init() {
 
 	Str_ExtractFileDirSelf(buf);
 
-#if defined(_WIN32)
-	Str_Cat(buf, 1024, "/../..");
-#endif
+	// For portable mode, use exe directory for shaders
+	// Don't go up directories - keep shaders in exe directory
+	// #if defined(_WIN32)
+	// 	Str_Cat(buf, 1024, "/../..");
+	// #endif
 
-#if defined(__linux__)
-	Str_Cat(buf, 1024, "/..");
-#endif
+	// #if defined(__linux__)
+	// 	Str_Cat(buf, 1024, "/..");
+	// #endif
 
-	Str_EraseDoubleDotsInPath(buf);
+	// Str_EraseDoubleDotsInPath(buf);
 
-	// If we have AppData path, use it for res, objects, and textures
+	// Always use AppData path for QFiles
 	if (appdata_buf[0] != 0) {
 		Str_SPrintf(g_folders.res_folder_, 1024, "%s/QFiles/IGI_QSC", appdata_buf);
 		Str_SPrintf(g_folders.objects_folder_, 1024, "%s/3DEditor/objects", appdata_buf);
-		Str_SPrintf(g_folders.textures_folder_, 1024, "%s/3DEditor/textures", appdata_buf);
+		Str_SPrintf(g_folders.buildings_folder_, 1024, "%s/3DEditor/buildings", appdata_buf);
+		Str_SPrintf(g_folders.ai_folder_, 1024, "%s/3DEditor/ai", appdata_buf);
 	} else {
-		Str_SPrintf(g_folders.res_folder_, 1024, "%s/res", buf);
-		Str_SPrintf(g_folders.objects_folder_, 1024, "%s/objects", buf);
-		Str_SPrintf(g_folders.textures_folder_, 1024, "%s/textures", buf);
+		Logger::Get().Log(LogLevel::ERR, "[Common] AppData path not found, cannot set folder paths");
+		Str_SPrintf(g_folders.res_folder_, 1024, ".");
+		Str_SPrintf(g_folders.objects_folder_, 1024, ".");
+		Str_SPrintf(g_folders.buildings_folder_, 1024, ".");
+		Str_SPrintf(g_folders.ai_folder_, 1024, ".");
 	}
 
 	Str_SPrintf(g_folders.shader_folder_, 1024, "%s/shaders", buf);

@@ -5,6 +5,8 @@
 
 #include "pch.h"
 #include <freeglut.h>
+#include "utils.h"
+#include "config.h"
 
 /*
 ================================================================================
@@ -38,10 +40,17 @@ constexpr int MENU_TERRAIN_HEIGHT_MOD = 52;
 constexpr int MENU_TERRAIN_DISCARD_MOD = 53;
 
 constexpr int MENU_EDITOR_TOGGLE = 71;
-constexpr int MENU_EDITOR_BRUSH_RAISE = 72;
-constexpr int MENU_EDITOR_BRUSH_LOWER = 73;
-constexpr int MENU_EDITOR_SAVE = 74;
-constexpr int MENU_IGI_LIVE_DATA = 75;
+constexpr int MENU_EDIT_OBJECTS = 72;
+constexpr int MENU_EDIT_TERRAIN = 73;
+constexpr int MENU_TERRAIN_BRUSH_RAISE = 74;
+constexpr int MENU_TERRAIN_BRUSH_LOWER = 75;
+constexpr int MENU_EDITOR_SAVE = 76;
+constexpr int MENU_TOGGLE_TASK_TREE = 77;
+constexpr int MENU_IGI_LIVE_DATA = 78;
+constexpr int MENU_SEARCH_MODEL_BY_ID = 95;
+constexpr int MENU_SEARCH_MODEL_BY_NAME = 96;
+constexpr int MENU_COPY_MODEL_NAME = 97;
+constexpr int MENU_COPY_MODEL_ID = 98;
 constexpr int MENU_SCALE_0_1 = 81;
 constexpr int MENU_SCALE_0_5 = 82;
 constexpr int MENU_SCALE_1 = 83;
@@ -49,6 +58,15 @@ constexpr int MENU_SCALE_2 = 84;
 constexpr int MENU_SCALE_5 = 85;
 constexpr int MENU_SCALE_10 = 86;
 constexpr int MENU_SCALE_20 = 87;
+constexpr int MENU_SHOW_ALL = 88;
+constexpr int MENU_SHOW_OBJECTS_ONLY = 89;
+constexpr int MENU_SHOW_BUILDINGS_ONLY = 90;
+
+// load options
+constexpr int MENU_LOAD_ALL = 91;
+constexpr int MENU_LOAD_OBJECTS = 92;
+constexpr int MENU_LOAD_BUILDINGS = 93;
+constexpr int MENU_LOAD_AI = 94;
 
 constexpr int BRUSH_RAISE = 0;
 constexpr int BRUSH_LOWER = 1;
@@ -62,7 +80,10 @@ static int g_menu_terrain_draw_opts;
 static int g_menu_terrain_modifier_opts;
 static int g_menu_choose_level;
 static int g_menu_editor_tools;
+static int g_menu_model_lookup;
 static int g_menu_object_scale;
+static int g_menu_load_options;
+static int g_menu_terrain_brush;
 static int g_main_menu;
 
 // glut (ubuntu): Menu manipulation not allowed while menus in use.
@@ -75,8 +96,9 @@ constexpr int UPDATE_MENU_OVERLAY_WIREFRAME = FLAG_BIT(0);
 constexpr int UPDATE_MENU_DRAW_PARTS = FLAG_BIT(1);
 constexpr int UPDATE_MENU_TERRAIN_DRAW_OPTS = FLAG_BIT(2);
 constexpr int UPDATE_MENU_TERRAIN_MODIFIER_OPTS = FLAG_BIT(3);
-constexpr int UPDATE_MENU_CHOOSE_LEVEL = FLAG_BIT(4);
-constexpr int UPDATE_MENU_EDITOR_TOOLS = FLAG_BIT(5);
+constexpr int UPDATE_MENU_EDITOR_TOOLS = FLAG_BIT(4);
+constexpr int UPDATE_MENU_SHOW_OPTIONS = FLAG_BIT(5);
+constexpr int UPDATE_MENU_CHOOSE_LEVEL = FLAG_BIT(6);
 
 /*
 ================================================================================
@@ -90,6 +112,10 @@ static void OnReshape(int width, int height) {
 
 static void OnMouse(int button, int state, int x, int y) {
 	g_app.Input_OnMouse(button, state, x, y);
+}
+
+static void OnMouseWheel(int wheel, int direction, int x, int y) {
+	g_app.Input_OnMouseWheel(wheel, direction, x, y);
 }
 
 static void OnMotion(int x, int y) {
@@ -161,6 +187,10 @@ static void OnIdle() {
 			UpdateEditorToolsMenuText();
 			UpdateIGILiveDataMenuText();
 			UpdateScaleMenuText();
+		}
+
+		if (g_update_menu_flags & UPDATE_MENU_SHOW_OPTIONS) {
+			// Update show options menu text if needed
 		}
 
 		// clear menu update flags
@@ -293,32 +323,32 @@ static void UpdateChooseLevelMenuText() {
 static void UpdateEditorToolsMenuText() {
 	glutSetMenu(g_menu_editor_tools);
 
-	if (g_app.GetEditMode()) {
-		glutChangeToMenuEntry(1, "Toggle Edit Mode [+]", MENU_EDITOR_TOGGLE);
+	glutChangeToMenuEntry(1, "Task Tree Always On", MENU_TOGGLE_TASK_TREE);
+
+	if (g_app.GetTerrainEditEnabled()) {
+		glutChangeToMenuEntry(2, "Edit Objects [ ]", MENU_EDIT_OBJECTS);
+		glutChangeToMenuEntry(3, "Edit Terrain [*]", MENU_EDIT_TERRAIN);
 	}
 	else {
-		glutChangeToMenuEntry(1, "Toggle Edit Mode [-]", MENU_EDITOR_TOGGLE);
+		glutChangeToMenuEntry(2, "Edit Objects [*]", MENU_EDIT_OBJECTS);
+		glutChangeToMenuEntry(3, "Edit Terrain [ ]", MENU_EDIT_TERRAIN);
 	}
 
+	glutSetMenu(g_menu_terrain_brush);
 	if (g_app.GetEditBrush() == BRUSH_RAISE) {
-		glutChangeToMenuEntry(2, "Brush: Raise Terrain [*]", MENU_EDITOR_BRUSH_RAISE);
-		glutChangeToMenuEntry(3, "Brush: Lower Terrain [ ]", MENU_EDITOR_BRUSH_LOWER);
+		glutChangeToMenuEntry(1, "Brush: Raise Terrain [*]", MENU_TERRAIN_BRUSH_RAISE);
+		glutChangeToMenuEntry(2, "Brush: Lower Terrain [ ]", MENU_TERRAIN_BRUSH_LOWER);
 	}
 	else {
-		glutChangeToMenuEntry(2, "Brush: Raise Terrain [ ]", MENU_EDITOR_BRUSH_RAISE);
-		glutChangeToMenuEntry(3, "Brush: Lower Terrain [*]", MENU_EDITOR_BRUSH_LOWER);
+		glutChangeToMenuEntry(1, "Brush: Raise Terrain [ ]", MENU_TERRAIN_BRUSH_RAISE);
+		glutChangeToMenuEntry(2, "Brush: Lower Terrain [*]", MENU_TERRAIN_BRUSH_LOWER);
 	}
+
+	// Editor Tools menu no longer has a separate IGI Live Data entry here.
 }
 
 static void UpdateIGILiveDataMenuText() {
-	glutSetMenu(g_menu_editor_tools);
-
-	if (g_app.GetShowHUD()) {
-		glutChangeToMenuEntry(5, "Show IGI Live Data [*]", MENU_IGI_LIVE_DATA);
-	}
-	else {
-		glutChangeToMenuEntry(5, "Show IGI Live Data [ ]", MENU_IGI_LIVE_DATA);
-	}
+	// Keep this function for call-site compatibility; live data toggle isn't a visible menu entry.
 }
 
 static void UpdateScaleMenuText() {
@@ -383,20 +413,40 @@ static void OnMenu(int menu) {
 		g_app.ToggleTerrainModOption(TERRAIN_DISCARD_MOD);
 		g_update_menu_flags |= UPDATE_MENU_TERRAIN_MODIFIER_OPTS;
 		break;
-	case MENU_EDITOR_TOGGLE:
-		g_app.ToggleEditMode();
+	case MENU_TOGGLE_TASK_TREE:
+		g_app.SetShowHUD(true);
 		g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
 		break;
-	case MENU_EDITOR_BRUSH_RAISE:
+	case MENU_EDIT_OBJECTS:
+		g_app.SetTerrainEditEnabled(false);
+		g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
+		break;
+	case MENU_EDIT_TERRAIN:
+		g_app.SetTerrainEditEnabled(true);
+		g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
+		break;
+	case MENU_TERRAIN_BRUSH_RAISE:
 		g_app.SetEditBrush(BRUSH_RAISE);
 		g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
 		break;
-	case MENU_EDITOR_BRUSH_LOWER:
+	case MENU_TERRAIN_BRUSH_LOWER:
 		g_app.SetEditBrush(BRUSH_LOWER);
 		g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
 		break;
 	case MENU_EDITOR_SAVE:
 		g_app.SaveCurrentLevel();
+		break;
+	case MENU_SEARCH_MODEL_BY_ID:
+		g_app.SearchModelById();
+		break;
+	case MENU_SEARCH_MODEL_BY_NAME:
+		g_app.SearchModelByName();
+		break;
+	case MENU_COPY_MODEL_NAME:
+		g_app.CopySelectedModelName();
+		break;
+	case MENU_COPY_MODEL_ID:
+		g_app.CopySelectedModelId();
 		break;
 	case MENU_IGI_LIVE_DATA:
 		g_app.ToggleShowHUD();
@@ -409,6 +459,50 @@ static void OnMenu(int menu) {
 	case MENU_SCALE_5:   g_app.SetSelectedObjectScale(5.0f); g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS; break;
 	case MENU_SCALE_10:  g_app.SetSelectedObjectScale(10.0f); g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS; break;
 	case MENU_SCALE_20:  g_app.SetSelectedObjectScale(20.0f); g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS; break;
+	case MENU_SHOW_ALL:
+		// Toggle between all objects ON and all objects OFF
+		if ((g_app.GetDrawParts() & Renderer::DRAW_OBJECTS) && (g_app.GetDrawParts() & Renderer::DRAW_BUILDINGS)) {
+			// Both on -> turn all object rendering off
+			g_app.SetDrawParts(g_app.GetDrawParts() & ~(Renderer::DRAW_OBJECTS | Renderer::DRAW_BUILDINGS | Renderer::DRAW_PROPS));
+		} else {
+			// Turn all object rendering on
+			g_app.SetDrawParts(g_app.GetDrawParts() | (Renderer::DRAW_OBJECTS | Renderer::DRAW_BUILDINGS | Renderer::DRAW_PROPS));
+		}
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		break;
+	case MENU_SHOW_OBJECTS_ONLY:
+		// Objects (props) ON, Buildings OFF. Clear DRAW_OBJECTS so individual checks work.
+		g_app.SetDrawParts((g_app.GetDrawParts() & ~(Renderer::DRAW_OBJECTS | Renderer::DRAW_BUILDINGS)) | Renderer::DRAW_PROPS);
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		break;
+	case MENU_SHOW_BUILDINGS_ONLY:
+		// Buildings ON, Objects (props) OFF. Clear DRAW_OBJECTS so individual checks work.
+		g_app.SetDrawParts((g_app.GetDrawParts() & ~(Renderer::DRAW_OBJECTS | Renderer::DRAW_PROPS)) | Renderer::DRAW_BUILDINGS);
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		break;
+	case MENU_LOAD_ALL:
+		// Toggle between everything ON and everything OFF
+		if ((g_app.GetDrawParts() & Renderer::DRAW_OBJECTS) && (g_app.GetDrawParts() & Renderer::DRAW_BUILDINGS) && (g_app.GetDrawParts() & Renderer::DRAW_AI)) {
+			g_app.SetDrawParts(g_app.GetDrawParts() & ~(Renderer::DRAW_OBJECTS | Renderer::DRAW_BUILDINGS | Renderer::DRAW_PROPS | Renderer::DRAW_AI));
+		} else {
+			g_app.SetDrawParts(g_app.GetDrawParts() | (Renderer::DRAW_OBJECTS | Renderer::DRAW_BUILDINGS | Renderer::DRAW_PROPS | Renderer::DRAW_AI));
+		}
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		break;
+	case MENU_LOAD_OBJECTS:
+		g_app.SetDrawParts((g_app.GetDrawParts() & ~(Renderer::DRAW_BUILDINGS | Renderer::DRAW_AI)) | Renderer::DRAW_PROPS);
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		break;
+	case MENU_LOAD_BUILDINGS:
+		g_app.SetDrawParts((g_app.GetDrawParts() & ~(Renderer::DRAW_OBJECTS | Renderer::DRAW_PROPS | Renderer::DRAW_AI)) | Renderer::DRAW_BUILDINGS);
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		break;
+	case MENU_LOAD_AI:
+		g_app.SetDrawParts(g_app.GetDrawParts() | Renderer::DRAW_AI);
+		g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
+		// Load AI models from ai\levelX folder
+		g_app.LoadAIModelsFromFolder(g_app.GetCurLevelNo());
+		break;
 	case MENU_CLOSE:
 		glutLeaveMainLoop();
 		break;
@@ -447,12 +541,24 @@ static int CustomAllocHook(int alloc_type, void* user_data, size_t size, int
 ================================================================================
 */
 int main(int argc, char **argv) {
+	std::string version = Utils::GetVersionString();
 #if defined(_WIN32) && defined(_DEBUG)
+	// Allocate console for debug mode
+	AllocConsole();
+	freopen("CONIN$", "r", stdin);
+	freopen("CONOUT$", "w", stdout);
+	freopen("CONOUT$", "w", stderr);
+	std::string consoleTitle = "IGI Editor v " + version + " BETA - Jones - HM - Debug Console";
+	SetConsoleTitleA(consoleTitle.c_str());
+
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);	// detect memory leak
 # if defined(HOOK_ALLOC)
 	_CrtSetAllocHook(CustomAllocHook);
 # endif
 #endif
+
+	// Initialize config first (before Folders_Init which uses Config)
+	Config::Init();
 
 	// setup path of res and shaders folders
 	Folders_Init();
@@ -460,6 +566,20 @@ int main(int argc, char **argv) {
 	// read window width & height from command line
 	int wnd_w = Arg_ReadInt(argc, argv, "-w", 800);
 	int wnd_h = Arg_ReadInt(argc, argv, "-h", 600);
+
+	// read level from command line
+	int level_no = Arg_ReadInt(argc, argv, "-level", 1);
+
+	// read draw_parts from command line (bitmask: 1=terrain, 2=sky, 4=objects, 8=flat_sky, 16=buildings, 32=props)
+	// Example: 17 = 1 (terrain) + 16 (buildings)
+	// We automatically add skydome (2) and flat sky (8) when draw_parts is specified
+	int draw_parts = Arg_ReadInt(argc, argv, "-draw_parts", 0);
+	if (draw_parts != 0) {
+		draw_parts |= Renderer::DRAW_SKYDOME | Renderer::DRAW_FLAT_SKY_LAYER;
+	}
+
+	// read stick_to_ground flag
+	bool stick_to_ground = (Arg_OptionIdx(argc, argv, "-stick_to_ground") > -1);
 
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
@@ -471,7 +591,61 @@ int main(int argc, char **argv) {
 	int pos_y = (screen_cy - wnd_h) >> 1;
 	glutInitWindowPosition(pos_x, pos_y);
 	glutInitWindowSize(wnd_w, wnd_h);
-	glutCreateWindow("IGI Editor");
+	std::string windowTitle = "IGI 1 Editor v" + version + " - JonesHM";
+	glutCreateWindow(windowTitle.c_str());
+
+#if defined(_WIN32)
+	// Load icon from file and set it
+	char iconPath[MAX_PATH];
+	GetModuleFileNameA(NULL, iconPath, MAX_PATH);
+	std::string exeDir(iconPath);
+	size_t lastSlash = exeDir.find_last_of("\\/");
+	if (lastSlash != std::string::npos) {
+		exeDir = exeDir.substr(0, lastSlash);
+	}
+	std::string iconFilePath = exeDir + "\\..\\..\\assets\\igi-editor-icon.ico";
+
+	HICON hIcon = (HICON)LoadImageA(
+		NULL,
+		iconFilePath.c_str(),
+		IMAGE_ICON,
+		GetSystemMetrics(SM_CXICON),
+		GetSystemMetrics(SM_CYICON),
+		LR_LOADFROMFILE | LR_DEFAULTSIZE
+	);
+
+	if (!hIcon) {
+		// Fallback to resource
+		hIcon = (HICON)LoadImageA(
+			GetModuleHandleA(NULL),
+			MAKEINTRESOURCEA(101),
+			IMAGE_ICON,
+			GetSystemMetrics(SM_CXICON),
+			GetSystemMetrics(SM_CYICON),
+			LR_DEFAULTSIZE | LR_SHARED
+		);
+	}
+
+	if (hIcon) {
+		HWND hwnd = GetActiveWindow();
+		if (!hwnd) {
+			hwnd = FindWindowA(NULL, windowTitle.c_str());
+		}
+		if (!hwnd) {
+			int glutWindow = glutGetWindow();
+			if (glutWindow) {
+				hwnd = GetForegroundWindow();
+			}
+		}
+
+		if (hwnd) {
+			SendMessageA(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+			SendMessageA(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+			SetClassLongPtrA(hwnd, GCLP_HICON, (LONG_PTR)hIcon);
+			SetClassLongPtrA(hwnd, GCLP_HICONSM, (LONG_PTR)hIcon);
+		}
+	}
+#endif
 
 	if (!GL_Init()) {
 		return 1;
@@ -500,9 +674,22 @@ int main(int argc, char **argv) {
 		return 2;
 	}
 
+	// Apply command line settings
+	if (draw_parts != 0) {
+		g_app.SetInitialDrawParts(draw_parts);
+	}
+	if (stick_to_ground) {
+		g_app.SetInitialStickToGround(true);
+	}
+	if (level_no > 0) {
+		g_app.LoadLevel(level_no);
+		g_app.SetGameLevel(level_no);
+	}
+
 	// setup glut callbacks
 	glutReshapeFunc(OnReshape);
 	glutMouseFunc(OnMouse);
+	glutMouseWheelFunc(OnMouseWheel);
 	glutMotionFunc(OnMotion);
 	glutPassiveMotionFunc(OnMotion); // trace cursor movement even cursor outside the viewport
 	glutSpecialFunc(OnSpecial);
@@ -534,12 +721,25 @@ int main(int argc, char **argv) {
 		glutAddMenuEntry("", i);
 	}
 
+	g_menu_terrain_brush = glutCreateMenu(OnMenu);
+	glutAddMenuEntry("Brush: Raise Terrain", MENU_TERRAIN_BRUSH_RAISE);
+	glutAddMenuEntry("Brush: Lower Terrain", MENU_TERRAIN_BRUSH_LOWER);
+
 	g_menu_editor_tools = glutCreateMenu(OnMenu);
-	glutAddMenuEntry("", MENU_EDITOR_TOGGLE);
-	glutAddMenuEntry("", MENU_EDITOR_BRUSH_RAISE);
-	glutAddMenuEntry("", MENU_EDITOR_BRUSH_LOWER);
+	glutAddMenuEntry("Task Tree Always On", MENU_TOGGLE_TASK_TREE);
+	glutAddMenuEntry("Edit Objects", MENU_EDIT_OBJECTS);
+	glutAddMenuEntry("Edit Terrain", MENU_EDIT_TERRAIN);
+	
+	g_menu_model_lookup = glutCreateMenu(OnMenu);
+	glutAddMenuEntry("By ID", MENU_SEARCH_MODEL_BY_ID);
+	glutAddMenuEntry("By Name", MENU_SEARCH_MODEL_BY_NAME);
+	glutAddMenuEntry("Copy Model Name", MENU_COPY_MODEL_NAME);
+	glutAddMenuEntry("Copy Model ID", MENU_COPY_MODEL_ID);
+	
+	glutSetMenu(g_menu_editor_tools); // Set back to editor tools before adding submenus
+	glutAddSubMenu("Terrain Brush", g_menu_terrain_brush);
 	glutAddMenuEntry("Save Changes", MENU_EDITOR_SAVE);
-	glutAddMenuEntry("", MENU_IGI_LIVE_DATA);
+
 
 	g_menu_object_scale = glutCreateMenu(OnMenu);
 	glutAddMenuEntry("0.1x", MENU_SCALE_0_1);
@@ -550,13 +750,21 @@ int main(int argc, char **argv) {
 	glutAddMenuEntry("10.0x", MENU_SCALE_10);
 	glutAddMenuEntry("20.0x", MENU_SCALE_20);
 
+	g_menu_load_options = glutCreateMenu(OnMenu);
+	glutAddMenuEntry("Load All", MENU_LOAD_ALL);
+	glutAddMenuEntry("Load Objects", MENU_LOAD_OBJECTS);
+	glutAddMenuEntry("Load Buildings", MENU_LOAD_BUILDINGS);
+	glutAddMenuEntry("Load AI", MENU_LOAD_AI);
+
 	g_main_menu = glutCreateMenu(OnMenu);
 	glutAddMenuEntry("", MENU_OVERLAY_WIREFRAME);
 	glutAddSubMenu("Draw Parts", g_menu_draw_parts);
 	glutAddSubMenu("Terrain Draw Options", g_menu_terrain_draw_opts);
 	glutAddSubMenu("Terrain Mod Options", g_menu_terrain_modifier_opts);
 	glutAddSubMenu("Editor Tools", g_menu_editor_tools);
+	glutAddSubMenu("Model Search", g_menu_model_lookup);
 	glutAddSubMenu("Object Scale", g_menu_object_scale);
+	glutAddSubMenu("Load Options", g_menu_load_options);
 	glutAddSubMenu("Choose Level", g_menu_choose_level);
 	glutAddMenuEntry("Close", MENU_CLOSE);
 
@@ -578,7 +786,7 @@ int main(int argc, char **argv) {
 	}
 	catch (const std::exception & e) {
 #if defined(_WIN32)
-		MessageBoxA(NULL, e.what(), "Fatal", MB_ICONSTOP);
+		Utils::LogAndShowError(e.what(), "Fatal Error");
 #else
 		fprintf(stderr, "Fatal: %s\n", e.what());
 #endif
