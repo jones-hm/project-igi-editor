@@ -10,6 +10,7 @@
 #include <sstream>
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include "config.h"
 
 namespace Utils {
@@ -498,6 +499,31 @@ std::string GetClipboardText() {
 	GlobalUnlock(hData);
 	CloseClipboard();
 	return text;
+}
+
+void TrimFileInPlace(const std::string& filepath) {
+	std::ifstream inFile(filepath, std::ios::in | std::ios::binary);
+	if (!inFile) return;
+	std::string content((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+	inFile.close();
+
+	std::stringstream ss(content);
+	std::string line;
+	std::string result = "";
+	bool first = true;
+	while (std::getline(ss, line)) {
+		std::string trimmedLine = Trim(line);
+		if (trimmedLine.empty()) continue;
+		if (!first) result += "\n";
+		result += trimmedLine;
+		first = false;
+	}
+
+	std::ofstream outFile(filepath, std::ios::out | std::ios::binary | std::ios::trunc);
+	if (outFile) {
+		outFile << result;
+		outFile.close();
+	}
 }
 
 } // namespace Utils

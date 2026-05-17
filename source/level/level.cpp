@@ -8,6 +8,7 @@
 #include <vector>
 #include <algorithm>
 #include "logger.h"
+#include "utils.h"
 
 
 
@@ -133,7 +134,9 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 	// Only look at actual source locations:
 	addCandidate(qeditorQsc, false);
 	addCandidate(igiQsc, false);
-	addCandidate(igiQvm, true);
+	if (!File_Exists(igiQsc)) {
+		addCandidate(igiQvm, true);
+	}
 
 	if (candidates.empty()) {
 		Logger::Get().Log(LogLevel::ERR, "[Level] FATAL: No objects.qsc or objects.qvm found anywhere");
@@ -262,6 +265,7 @@ void Level::DecompileObjects(int levelNo) {
 		if (std::filesystem::exists(outputPath)) {
 			std::filesystem::copy_file(outputPath, destPath, std::filesystem::copy_options::overwrite_existing);
 			Logger::Get().Log(LogLevel::INFO, "[Decompile] Success! Saved to executable directory: " + std::string(destPath));
+			Utils::TrimFileInPlace(destPath);
 		} else {
 			Logger::Get().Log(LogLevel::ERR, "[Decompile] FAILED: Decompiler did not produce output at: " + std::string(outputPath));
 		}
@@ -486,17 +490,20 @@ void Level::Update(update_params_s& params) {
 	terrain_.Update(params, root_dyn_cube_);
 }
 
+void Level::SaveObjectsLocalOnly() {
+	std::string exeDir = GetExeDirectory();
+	std::string localQsc = exeDir + "\\objects.qsc";
+	Logger::Get().Log(LogLevel::INFO, "[Level] Saving local live QSC to: " + localQsc);
+	level_objects_.SaveToQSC(localQsc);
+}
+
 void Level::SaveChanges() {
 	terrain_.Save(cur_level_no_);
 
 	// IMPORTANT: AppData\Roaming\QEditor\QFiles is READ-ONLY.
 	// We NEVER write back to the QFiles source. All saves go to the local
 	// exe-directory copy of objects.qsc, which is then compiled to QVM.
-	std::string exeDir = GetExeDirectory();
-	std::string localQsc = exeDir + "\\objects.qsc";
-	Logger::Get().Log(LogLevel::INFO, "[Level] Saving QSC to .exe path: " + localQsc);
-	level_objects_.SaveToQSC(localQsc);
-	Logger::Get().Log(LogLevel::INFO, "[Level] Saved QSC to: " + localQsc);
+	SaveObjectsLocalOnly();
 
 	// Move terrain from editor path to IGI game path
 	MoveTerrainToGamePath(cur_level_no_);

@@ -64,4 +64,7 @@ bool IsUndergroundModel(const std::string& name, const std::string& modelId);
 void SetClipboardText(const std::string& text);
 std::string GetClipboardText();
 
+// File trim utility
+void TrimFileInPlace(const std::string& filepath);
+
 } // namespace Utils

@@ -169,6 +169,8 @@ public:
 	struct func_s {
 		const char*			func_name_;
 		int					line_;
+		int					start_offset_;
+		int					end_offset_;
 		arg_s*				args_;
 	};
 

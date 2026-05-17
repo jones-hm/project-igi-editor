@@ -31,18 +31,28 @@ static std::string EscapeQscString(const std::string& input) {
 
 static std::string FormatQscDouble(double v) {
     char buf[64];
+
+    // Large coordinates (>=1000): keep 2 decimal places, trim trailing zeros.
+    // Small values: use Real32 precision (7 significant digits) so a value that
+    // was originally a float like 0.95 or 1.54 round-trips cleanly instead of
+    // printing double-precision noise (0.949999988079071, 1.5399999618530273).
     if (std::abs(v) >= 1000.0) {
         snprintf(buf, sizeof(buf), "%.2f", v);
     } else {
-        snprintf(buf, sizeof(buf), "%.10g", v);
+        // Cast through float first to collapse the double-precision noise, then
+        // format with 7 significant digits (max lossless for Real32).
+        float f = static_cast<float>(v);
+        snprintf(buf, sizeof(buf), "%.7g", static_cast<double>(f));
     }
 
     std::string s(buf);
+    // Strip trailing zeros after decimal point.
     if (s.find('.') != std::string::npos) {
         while (!s.empty() && s.back() == '0') s.pop_back();
         if (!s.empty() && s.back() == '.') s.pop_back();
     }
     if (s.empty() || s == "-0") s = "0";
+    // Ensure the value is always recognisable as a float token (has . or e).
     if (s.find('.') == std::string::npos && s.find('e') == std::string::npos && s.find('E') == std::string::npos) {
         s += ".0";
     }
@@ -65,9 +75,18 @@ static std::string ArgTokenFromArg(const QSC::arg_s* a) {
     if (!a) return "";
     switch (a->type_) {
         case QSC::arg_s::type_t::STR:
-            return "\"" + EscapeQscString(a->str_ ? a->str_ : "") + "\"";
-        case QSC::arg_s::type_t::DBL:
-            return FormatQscDouble(a->dbl_);
+            return "\"" + std::string(a->str_ ? a->str_ : "") + "\"";
+        case QSC::arg_s::type_t::DBL: {
+            double v = a->dbl_;
+            // If the value is a whole number, write it as a plain integer token
+            // (matching original QSC style: 0, 1, 128 not 0.0, 1.0, 128.0).
+            double intPart;
+            if (std::modf(v, &intPart) == 0.0 &&
+                v >= -2147483648.0 && v <= 2147483647.0) {
+                return std::to_string((long long)intPart);
+            }
+            return FormatQscDouble(v);
+        }
         case QSC::arg_s::type_t::BOOL:
             return a->bool_ ? "TRUE" : "FALSE";
         case QSC::arg_s::type_t::FUNC:
@@ -134,8 +153,11 @@ void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
         LoadRecursive(qsc_objects, qsc_objects->GetRootFunc(i), -1);
     }
 
+    // Only generate qscLine for objects that didn't get a raw line from the parser
     for (int i = 0; i < (int)objects_.size(); ++i) {
-        objects_[i].qscLine = SerializeObjectRecursive(objects_, i);
+        if (objects_[i].qscLine.empty()) {
+            objects_[i].qscLine = GenerateTaskLine(objects_[i]);
+        }
     }
 
     Logger::Get().Log(LogLevel::INFO, "[LevelObjects] Load complete. Total objects: " + std::to_string(objects_.size()));
@@ -179,22 +201,12 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
 
     int currentObjIdx = -1;
 
-    // Extract raw line from QSC buffer if available
+    // Extract exact raw string from QSC buffer using offsets
     std::string rawLine;
-    if (qsc && func->line_ > 0) {
+    if (qsc && func->start_offset_ >= 0 && func->end_offset_ >= func->start_offset_) {
         const char* scripts = qsc->GetScripts();
         if (scripts) {
-            // Traverse scripts to find the start of the line
-            int currentLine = 1;
-            const char* p = scripts;
-            while (*p && currentLine < func->line_) {
-                if (*p == '\n') currentLine++;
-                p++;
-            }
-            // Now p points to the start of the line
-            const char* lineStart = p;
-            while (*p && *p != '\n') p++;
-            rawLine = std::string(lineStart, p - lineStart);
+            rawLine = std::string(scripts + func->start_offset_, func->end_offset_ - func->start_offset_);
         }
     }
 
@@ -202,6 +214,7 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
     LevelObject obj;
     obj.type = typeStr;
     obj.qscFuncName = funcName;
+    obj.preserveTaskId = (funcName == "Task_New");
     obj.isWire = isWire;
     obj.isSplineContainer = isSplineContainer;
     obj.isBuilding = isBuilding;
@@ -223,6 +236,9 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
     while (cur_a) {
         if (cur_a->type_ != QSC::arg_s::type_t::FUNC) {
             obj.argTokens.push_back(ArgTokenFromArg(cur_a));
+            if (obj.preserveTaskId && arg_idx == 0) {
+                obj.argTokens.back() = FormatQscIntegerToken(TaskIdFromArg(cur_a));
+            }
         }
 
         if (isBuilding || isRigid || isTerminal) {
@@ -348,8 +364,8 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
             obj.taskId = obj.taskId.substr(parenStart + 1, parenEnd - parenStart - 1);
         }
     }
-    // Only assign qscLine to top-level tasks to avoid sharing the same string among nested sub-calls
-    if (parentIdx == -1) {
+    // Assign raw line from parser to all objects for verbatim save of unmodified nodes
+    if (!rawLine.empty()) {
         obj.qscLine = rawLine;
     }
     obj.isNested = (parentIdx != -1);
@@ -458,6 +474,16 @@ std::string LevelObjects::GetModelId(const std::string& modelName) {
     return "";
 }
 
+static bool IsSubtreeModified(const std::vector<LevelObject>& objects, int idx) {
+    if (idx < 0 || idx >= (int)objects.size()) return false;
+    const auto& node = objects[idx];
+    if (node.modified || node.deleted) return true;
+    for (int childIdx : node.childrenIndices) {
+        if (IsSubtreeModified(objects, childIdx)) return true;
+    }
+    return false;
+}
+
 void LevelObjects::SaveToQSC(const std::string& qscPath) {
     std::string lowerPath = qscPath;
     std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
@@ -466,22 +492,32 @@ void LevelObjects::SaveToQSC(const std::string& qscPath) {
         return;
     }
 
+    // Only update coordinates for objects that were actually modified
+    for (auto& obj : objects_) {
+        if (!obj.deleted && obj.modified) {
+            UpdateCoordinatesInLine(obj);
+        }
+    }
+
     std::ofstream outFile(qscPath);
     if (!outFile) {
         Logger::Get().Log(LogLevel::ERR, "[LevelObjects::SaveToQSC] Failed to open QSC file for writing: " + qscPath);
         return;
     }
 
+    std::stringstream ss;
     bool first = true;
     for (int i = 0; i < (int)objects_.size(); ++i) {
         const auto& obj = objects_[i];
         if (obj.parentIndex != -1 || obj.deleted) continue;
 
-        if (!first) outFile << "\r\n";
-        outFile << SerializeObjectRecursive(objects_, i) << ";";
+        if (!first) ss << "\n";
+        ss << SerializeObjectRecursive(objects_, i) << ";";
         first = false;
     }
+    outFile << Utils::Trim(ss.str());
     outFile.close();
+    Utils::TrimFileInPlace(qscPath);
 
     for (auto& obj : objects_) {
         obj.modified = false;
@@ -540,19 +576,10 @@ void LevelObjects::ParseTaskLine(const std::string& line, LevelObject& obj) {
 
     if (obj.qscFuncName == "Task_New" && obj.argTokens.size() >= 3) {
         obj.taskId = FormatQscIntegerToken(obj.argTokens[0]);
-        if (obj.taskId != "-1") {
-            try {
-                int taskId = std::stoi(obj.taskId);
-                if (taskId < 1 || taskId > 4000) {
-                    obj.taskId = "-1";
-                }
-            } catch (...) {
-                obj.taskId = "-1";
-            }
-        }
         obj.argTokens[0] = obj.taskId;
         obj.type = unquote(obj.argTokens[1]);
         obj.name = unquote(obj.argTokens[2]);
+        obj.preserveTaskId = true;
     }
 
     auto readDouble = [&](size_t idx, double& out) {
@@ -633,7 +660,7 @@ void LevelObjects::UpdateCoordinatesInLine(LevelObject& obj) {
             setToken(4, FormatQscDouble(obj.pos.y));
             setToken(5, FormatQscDouble(saveZ));
             setToken(6, FormatQscDouble(obj.rot.z));
-            setStringToken(7, obj.modelId);
+            if (!obj.modelId.empty() || obj.argTokens.size() > 7) setStringToken(7, obj.modelId);
         } else if (obj.type == "Door") {
             setToken(3, FormatQscDouble(obj.pos.x));
             setToken(4, FormatQscDouble(obj.pos.y));
@@ -641,24 +668,34 @@ void LevelObjects::UpdateCoordinatesInLine(LevelObject& obj) {
             setToken(9, FormatQscDouble(obj.rot.x));
             setToken(10, FormatQscDouble(obj.rot.y));
             setToken(11, FormatQscDouble(obj.rot.z));
-            setStringToken(12, obj.modelId);
+            if (!obj.modelId.empty() || obj.argTokens.size() > 12) setStringToken(12, obj.modelId);
         } else if (obj.type == "SCamera") {
             setToken(3, FormatQscDouble(obj.pos.x));
             setToken(4, FormatQscDouble(obj.pos.y));
             setToken(5, FormatQscDouble(saveZ));
-            setStringToken(10, obj.modelId);
+            if (!obj.modelId.empty() || obj.argTokens.size() > 10) setStringToken(10, obj.modelId);
         } else if (obj.type == "Heli" || obj.type == "Car") {
             setToken(3, FormatQscDouble(obj.pos.x));
             setToken(4, FormatQscDouble(obj.pos.y));
             setToken(5, FormatQscDouble(saveZ));
-            setStringToken(19, obj.modelId);
+            if (!obj.modelId.empty() || obj.argTokens.size() > 19) setStringToken(19, obj.modelId);
         } else if (obj.type == "SplineObjWaypoint") {
             setToken(6, FormatQscDouble(obj.pos.x));
             setToken(7, FormatQscDouble(obj.pos.y));
             setToken(8, FormatQscDouble(saveZ));
-            setStringToken(9, obj.modelId);
-            setStringToken(10, obj.segmentModelId);
-        } else if (!obj.isContainer) {
+            if (!obj.modelId.empty() || obj.argTokens.size() > 9) setStringToken(9, obj.modelId);
+            if (!obj.segmentModelId.empty() || obj.argTokens.size() > 10) setStringToken(10, obj.segmentModelId);
+        } else if (obj.type == "Switch") {
+            setToken(12, FormatQscDouble(obj.pos.x));
+            setToken(13, FormatQscDouble(obj.pos.y));
+            setToken(14, FormatQscDouble(saveZ));
+            if (!obj.modelId.empty() || obj.argTokens.size() > 15) setStringToken(15, obj.modelId);
+        } else if (obj.type == "Wire") {
+            setToken(3, FormatQscDouble(obj.pos.x));
+            setToken(4, FormatQscDouble(obj.pos.y));
+            setToken(5, FormatQscDouble(saveZ));
+            if (!obj.modelId.empty() || obj.argTokens.size() > 9) setStringToken(9, obj.modelId);
+        } else if (obj.type == "Building" || obj.type == "EditRigidObj" || obj.type == "Terminal") {
             setToken(3, FormatQscDouble(obj.pos.x));
             setToken(4, FormatQscDouble(obj.pos.y));
             setToken(5, FormatQscDouble(saveZ));
@@ -677,7 +714,7 @@ std::string LevelObjects::GenerateTaskLine(const LevelObject& obj) {
     ss << obj.qscFuncName << "(";
     for (size_t i = 0; i < obj.argTokens.size(); ++i) {
         if (i) ss << ", ";
-        ss << obj.argTokens[i];
+        ss << Utils::Trim(obj.argTokens[i]);
     }
     ss << ")";
     return ss.str();
@@ -686,21 +723,10 @@ std::string LevelObjects::GenerateTaskLine(const LevelObject& obj) {
 std::string LevelObjects::SerializeObjectRecursive(const std::vector<LevelObject>& objects, int idx) {
     if (idx < 0 || idx >= (int)objects.size()) return "";
 
-    const LevelObject& obj = objects[idx];
-    std::function<std::string(int, int)> serialize = [&](int objectIdx, int depth) -> std::string {
+    std::function<std::string(int)> serialize = [&](int objectIdx) -> std::string {
         const LevelObject& node = objects[objectIdx];
-        std::string indent(depth * 2, ' ');
 
-        std::stringstream ss;
-        ss << indent << node.qscFuncName << "(";
-
-        bool first = true;
-        for (size_t i = 0; i < node.argTokens.size(); ++i) {
-            if (!first) ss << ", ";
-            ss << node.argTokens[i];
-            first = false;
-        }
-
+        // Collect live (non-deleted) children
         std::vector<int> liveChildren;
         for (int childIdx : node.childrenIndices) {
             if (childIdx < 0 || childIdx >= (int)objects.size()) continue;
@@ -708,16 +734,71 @@ std::string LevelObjects::SerializeObjectRecursive(const std::vector<LevelObject
             liveChildren.push_back(childIdx);
         }
 
-        if (!liveChildren.empty()) {
-            for (size_t i = 0; i < liveChildren.size(); ++i) {
-                ss << ",\r\n" << serialize(liveChildren[i], depth + 1);
+        // Helper to check if node and all descendants are unmodified and undeleted
+        auto IsTreeUnmodified = [&](auto& self, int idx) -> bool {
+            const auto& obj = objects[idx];
+            if (obj.modified || obj.deleted || obj.qscLine.empty()) return false;
+            // If the number of live children differs from original child count, something was deleted/added
+            int liveCount = 0;
+            for (int childIdx : obj.childrenIndices) {
+                if (childIdx < 0 || childIdx >= (int)objects.size()) continue;
+                if (objects[childIdx].deleted) return false;
+                liveCount++;
+                if (!self(self, childIdx)) return false;
             }
-            ss << "\r\n" << indent;
+            if (liveCount != obj.childrenIndices.size()) return false;
+            return true;
+        };
+
+        // If the entire subtree is unmodified, output its EXACT original qscLine!
+        // This preserves floats, spacing, commas perfectly.
+        if (IsTreeUnmodified(IsTreeUnmodified, objectIdx)) {
+            std::string raw = Utils::Trim(node.qscLine);
+            while (!raw.empty() && (raw.back() == ';' || raw.back() == ',' || raw.back() == '\r' || raw.back() == '\n' || raw.back() == ' ' || raw.back() == '\t')) {
+                raw.pop_back();
+            }
+            return raw;
         }
 
-        ss << ")";
+        // Skip implicitly generated empty Static nodes that aren't in the original text
+        if (node.qscFuncName == "Task_New" && node.type == "Static" && node.argTokens.size() <= 3) {
+            if (!node.qscLine.empty() && node.qscLine.find("Static") == std::string::npos) {
+                return "";
+            }
+        }
+
+        std::stringstream ss;
+        ss << node.qscFuncName << "(";
+
+        bool first = true;
+        for (size_t i = 0; i < node.argTokens.size(); ++i) {
+            if (!first) ss << ", ";
+            ss << Utils::Trim(node.argTokens[i]);
+            first = false;
+        }
+
+        if (!liveChildren.empty()) {
+            std::vector<std::string> childStrs;
+            for (size_t i = 0; i < liveChildren.size(); ++i) {
+                std::string s = serialize(liveChildren[i]);
+                if (!s.empty()) childStrs.push_back(s);
+            }
+            if (!childStrs.empty()) {
+                ss << ", \n";
+                for (size_t i = 0; i < childStrs.size(); ++i) {
+                    ss << childStrs[i];
+                    if (i < childStrs.size() - 1) {
+                        ss << ", \n";
+                    }
+                }
+            }
+            ss << ")";
+        } else {
+            ss << ")";
+        }
+
         return ss.str();
     };
 
-    return serialize(idx, 0);
+    return serialize(idx);
 }

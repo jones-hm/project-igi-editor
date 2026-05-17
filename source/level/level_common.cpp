@@ -8,6 +8,33 @@
 #include "logger.h"
 #include <string>
 
+static void CleanBloatedBackslashesInPlace(char* str) {
+    if (!str) return;
+    char* src = str;
+    char* dst = str;
+    while (*src) {
+        if (*src == '\\') {
+            int count = 0;
+            while (src[count] == '\\') {
+                count++;
+            }
+            if (count >= 4) {
+                *dst++ = '\\';
+                *dst++ = '\\';
+                src += count;
+            } else {
+                for (int i = 0; i < count; ++i) {
+                    *dst++ = '\\';
+                }
+                src += count;
+            }
+        } else {
+            *dst++ = *src++;
+        }
+    }
+    *dst = '\0';
+}
+
 
 /*
 ================================================================================
@@ -380,6 +407,8 @@ void QSC::Load(const char* filename) {
 		return;
 	}
 
+	CleanBloatedBackslashesInPlace(scripts_);
+
 	// Make a pristine copy for raw line extraction because Parse() is destructive
 	size_t len = strlen(scripts_);
 	pristine_scripts_ = (char*)MEM_ALLOC(len + 1);
@@ -537,6 +566,8 @@ QSC::func_s* QSC::AllocFunc() {
 
 		new_func->func_name_ = "";
 		new_func->line_ = 0;
+		new_func->start_offset_ = 0;
+		new_func->end_offset_ = 0;
 		new_func->args_ = nullptr;
 
 		return new_func;
@@ -699,6 +730,8 @@ QSC::func_s* QSC::ParseFunc() {
 
 	new_func->func_name_ = func_name;
 	new_func->line_ = line_;
+	new_func->start_offset_ = (int)(func_name - scripts_);
+	new_func->end_offset_ = new_func->start_offset_;
 	new_func->args_ = nullptr;
 
 	parse_func_stack_[parse_func_stack_size_++] = new_func;
@@ -715,6 +748,7 @@ QSC::func_s* QSC::ParseFunc() {
 
 	pc_++;
 
+	new_func->end_offset_ = (int)(pc_ - scripts_);
 	parse_func_stack_size_--;
 
 	return new_func;

@@ -10,6 +10,7 @@
 #include "logger.h"
 #include "config.h"
 #include <glm/gtc/type_ptr.hpp>
+#include <vector>
 
 
 #include <freeglut.h>
@@ -29,6 +30,32 @@ Renderer::Renderer():
 
 Renderer::~Renderer() {
 	Shutdown();
+}
+
+static bool ExtractJsonStringValue(const std::string& text, const std::vector<std::string>& keys, std::string& value) {
+	for (const auto& key : keys) {
+		size_t keyPos = text.find(key);
+		if (keyPos == std::string::npos) continue;
+		size_t colonPos = text.find(':', keyPos + key.size());
+		if (colonPos == std::string::npos) continue;
+		size_t quoteStart = text.find('"', colonPos + 1);
+		if (quoteStart == std::string::npos) continue;
+		size_t quoteEnd = quoteStart + 1;
+		bool escape = false;
+		while (quoteEnd < text.size()) {
+			char c = text[quoteEnd];
+			if (escape) {
+				escape = false;
+			} else if (c == '\\') {
+				escape = true;
+			} else if (c == '"') {
+				value = text.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
+				return true;
+			}
+			++quoteEnd;
+		}
+	}
+	return false;
 }
 
 void Renderer::LoadBuildingNames() {
@@ -54,81 +81,100 @@ void Renderer::LoadBuildingNames() {
 	std::string content(buf);
 	delete[] buf;
 
+	building_names_.clear();
+	task_ids_.clear();
+
 	// Parse IGIModelsAllLevel.json structure
-	// Format: { "Level 1": { "Objects": [...], "Buildings": [...] }, ... }
 	size_t pos = 0;
 	while ((pos = content.find("\"Level ", pos)) != std::string::npos) {
 		size_t levelEnd = content.find("\"", pos + 7);
 		if (levelEnd == std::string::npos) break;
 		std::string levelStr = content.substr(pos + 7, levelEnd - pos - 7);
-		int levelNum = std::stoi(levelStr);
+		int levelNum = 0;
+		try {
+			levelNum = std::stoi(levelStr);
+		} catch (...) {
+			pos = levelEnd + 1;
+			continue;
+		}
 
-		// Find Objects array for this level
-		size_t objectsPos = content.find("\"Objects\"", levelEnd);
+		size_t levelBlockStart = content.find('{', levelEnd);
+		if (levelBlockStart == std::string::npos) break;
+		int braceDepth = 0;
+		size_t levelBlockEnd = std::string::npos;
+		for (size_t i = levelBlockStart; i < content.size(); ++i) {
+			if (content[i] == '{') braceDepth++;
+			else if (content[i] == '}') {
+				braceDepth--;
+				if (braceDepth == 0) {
+					levelBlockEnd = i;
+					break;
+				}
+			}
+		}
+		if (levelBlockEnd == std::string::npos) break;
+
+		std::string levelBlock = content.substr(levelBlockStart, levelBlockEnd - levelBlockStart + 1);
+
+		size_t objectsPos = levelBlock.find("\"Objects\"");
 		if (objectsPos != std::string::npos) {
-			size_t arrayStart = content.find("[", objectsPos);
-			size_t arrayEnd = content.find("]", arrayStart);
-			if (arrayStart != std::string::npos && arrayEnd != std::string::npos) {
-				std::string objectsArray = content.substr(arrayStart, arrayEnd - arrayStart + 1);
+			size_t arrayStart = levelBlock.find("[", objectsPos);
+			size_t arrayEnd = levelBlock.find("]", arrayStart);
+			if (arrayStart != std::string::npos && arrayEnd != std::string::npos && arrayEnd > arrayStart) {
+				std::string objectsArray = levelBlock.substr(arrayStart, arrayEnd - arrayStart + 1);
 				ParseLevelObjects(objectsArray, levelNum, false);
 			}
 		}
 
-		// Find Buildings array for this level
-		size_t buildingsPos = content.find("\"Buildings\"", levelEnd);
+		size_t buildingsPos = levelBlock.find("\"Buildings\"");
 		if (buildingsPos != std::string::npos) {
-			size_t arrayStart = content.find("[", buildingsPos);
-			size_t arrayEnd = content.find("]", arrayStart);
-			if (arrayStart != std::string::npos && arrayEnd != std::string::npos) {
-				std::string buildingsArray = content.substr(arrayStart, arrayEnd - arrayStart + 1);
+			size_t arrayStart = levelBlock.find("[", buildingsPos);
+			size_t arrayEnd = levelBlock.find("]", arrayStart);
+			if (arrayStart != std::string::npos && arrayEnd != std::string::npos && arrayEnd > arrayStart) {
+				std::string buildingsArray = levelBlock.substr(arrayStart, arrayEnd - arrayStart + 1);
 				ParseLevelObjects(buildingsArray, levelNum, true);
 			}
 		}
 
-		pos = levelEnd + 1;
+		pos = levelBlockEnd + 1;
 	}
 
 	Logger::Get().Log(LogLevel::INFO, "[Renderer] Loaded " + std::to_string(building_names_.size()) + " building names and " + std::to_string(task_ids_.size()) + " task IDs from IGIModelsAllLevel.json");
 }
 
 void Renderer::ParseLevelObjects(const std::string& arrayContent, int levelNum, bool isBuilding) {
+	(void)isBuilding;
 	size_t pos = 0;
-	while ((pos = arrayContent.find("\"ModelID\"", pos)) != std::string::npos) {
-		size_t idStart = arrayContent.find("\"", pos + 10) + 1;
-		size_t idEnd = arrayContent.find("\"", idStart);
-		if (idStart == std::string::npos || idEnd == std::string::npos) break;
-
-		std::string modelId = arrayContent.substr(idStart, idEnd - idStart);
-
-		// Find boundary of current JSON object (next ModelID or end)
-		size_t nextModelIdPos = arrayContent.find("\"ModelID\"", idEnd);
-		size_t objectEnd = (nextModelIdPos != std::string::npos) ? nextModelIdPos : arrayContent.length();
-
-		// Find Name within this object only
-		size_t namePos = arrayContent.find("\"Name\"", idEnd);
-		if (namePos != std::string::npos && namePos < objectEnd) {
-			size_t nameStart = arrayContent.find("\"", namePos + 7) + 1;
-			size_t nameEnd = arrayContent.find("\"", nameStart);
-			if (nameStart != std::string::npos && nameEnd != std::string::npos) {
-				std::string name = arrayContent.substr(nameStart, nameEnd - nameStart);
-				std::string key = std::to_string(levelNum) + "_" + modelId;
-				building_names_[key] = name;
+	while ((pos = arrayContent.find('{', pos)) != std::string::npos) {
+		int braceDepth = 0;
+		size_t objectEnd = std::string::npos;
+		for (size_t i = pos; i < arrayContent.size(); ++i) {
+			if (arrayContent[i] == '{') braceDepth++;
+			else if (arrayContent[i] == '}') {
+				braceDepth--;
+				if (braceDepth == 0) {
+					objectEnd = i;
+					break;
+				}
 			}
 		}
+		if (objectEnd == std::string::npos) break;
 
-		// Find TaskID within this object only
-		size_t taskIdPos = arrayContent.find("\"TaskID\"", idEnd);
-		if (taskIdPos != std::string::npos && taskIdPos < objectEnd) {
-			size_t taskIdStart = arrayContent.find("\"", taskIdPos + 9) + 1;
-			size_t taskIdEnd = arrayContent.find("\"", taskIdStart);
-			if (taskIdStart != std::string::npos && taskIdEnd != std::string::npos) {
-				std::string taskId = arrayContent.substr(taskIdStart, taskIdEnd - taskIdStart);
-				std::string key = std::to_string(levelNum) + "_" + modelId;
-				task_ids_[key] = taskId;
-			}
+		std::string objContent = arrayContent.substr(pos, objectEnd - pos + 1);
+		std::string modelId;
+		std::string name;
+		std::string taskId;
+		ExtractJsonStringValue(objContent, { "\"Model ID\"", "\"ModelID\"", "\"ModelId\"" }, modelId);
+		ExtractJsonStringValue(objContent, { "\"Name\"", "\"ModelName\"" }, name);
+		ExtractJsonStringValue(objContent, { "\"Task ID\"", "\"TaskID\"" }, taskId);
+
+		if (!modelId.empty()) {
+			std::string key = std::to_string(levelNum) + "_" + modelId;
+			if (!name.empty()) building_names_[key] = name;
+			if (!taskId.empty()) task_ids_[key] = taskId;
 		}
 
-		pos = idEnd + 1;
+		pos = objectEnd + 1;
 	}
 }
 
@@ -273,7 +319,7 @@ render_chunk_s* Renderer::GetTerrainRenderChunckBuffer() {
 	return terrain_.GetRenderChunckBuffer();
 }
 
-void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
+void Renderer::Draw(const draw_params_s& params, const task_tree_view_params_s& task_tree_view) {
     static bool logged_params = false;
     if (!logged_params) {
         Logger::Get().Log(LogLevel::INFO, "[Renderer] Draw Params: draw_parts=" + std::to_string(params.draw_parts_) + " level_objects=" + (params.level_objects_ ? "VALID" : "NULL"));
@@ -310,7 +356,7 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
 
 
 
-        if (hud.show_hud_) {
+        if (task_tree_view.show_hud_) {
                 glUseProgram(0); // Disable any active shaders for fixed-function HUD
                 glBindVertexArray(0); // UNBIND VAO to prevent state leak
                 glBindBufferBase(GL_UNIFORM_BUFFER, 0, 0); // UNBIND UBO
@@ -404,14 +450,14 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                 int line_y = 30;
                 
                 // --- TreeView HUD Implementation ---
-                if (hud.level_objects_) {
-                    const auto& objects = hud.level_objects_->GetObjects();
-                    int tree_x = 20;
-                    int tree_y = 30; // Starting Y for tree
+                if (task_tree_view.level_objects_) {
+                    const auto& objects = task_tree_view.level_objects_->GetObjects();
+                    int tree_x = 0;
+                    int tree_y = 0; // Starting Y for tree
                     int row_h = 16;
-                    int start_y = 30;
+                    int start_y = 0;
                     int current_row = 0;
-                    int scroll_offset = hud.tree_scroll_offset;
+                    int scroll_offset = task_tree_view.tree_scroll_offset;
                     int viewport_h = params.view_define_->viewport_height_;
 
                     // Recursive helper to draw tree nodes
@@ -422,12 +468,12 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                         if (obj.deleted) return;
 
                         int x = tree_x + (depth * 18);
-                        int y = start_y + (current_row - hud.tree_scroll_offset) * row_h;
+                        int y = start_y + (current_row - task_tree_view.tree_scroll_offset) * row_h;
                         current_row++;
 
                         if (y >= start_y && y < params.view_define_->viewport_height_ - 50) {
                                 // Highlight if selected or hovered
-                                if (idx == hud.selected_object_index_) {
+                                if (idx == task_tree_view.selected_object_index_) {
                                         glEnable(GL_BLEND);
                                         glColor4f(0.0f, 0.5f, 0.0f, 0.4f);
                                         glBegin(GL_QUADS);
@@ -436,7 +482,7 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                                         glVertex2i(tree_x + 300, params.view_define_->viewport_height_ - (y + row_h - 2));
                                         glVertex2i(tree_x - 5, params.view_define_->viewport_height_ - (y + row_h - 2));
                                         glEnd();
-                                } else if (idx == hud.hover_tree_index_) {
+                                } else if (idx == task_tree_view.hover_tree_index_) {
                                         glEnable(GL_BLEND);
                                         glColor4f(0.3f, 0.3f, 0.3f, 0.3f);
                                         glBegin(GL_QUADS);
@@ -526,8 +572,8 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                             }
 
                             float tr = font_r, tg = font_g, tb = font_b;
-                            if (idx == hud.selected_object_index_) { tr = 1.0f; tg = 1.0f; tb = 0.0f; } // Selected = Yellow
-                            else if (idx == hud.hover_object_index_) { tr = 0.5f; tg = 0.8f; tb = 1.0f; } // Hover = Blue
+                            if (idx == task_tree_view.selected_object_index_) { tr = 1.0f; tg = 1.0f; tb = 0.0f; } // Selected = Yellow
+                            else if (idx == task_tree_view.hover_object_index_) { tr = 0.5f; tg = 0.8f; tb = 1.0f; } // Hover = Blue
                             
                             // Note: We use y + 11 for draw_text so the baseline aligns correctly with the hitbox
                             draw_text(x + 16, y + 11, label.c_str(), tr, tg, tb);
@@ -593,17 +639,17 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                             glVertex2i(vx - 12, viewport_h - (y + 8));
                             glVertex2i(vx - 8, viewport_h - (y + 8));
                             // Draw plus vertical
-                            if (!hud.tree_decl_expanded) {
+                            if (!task_tree_view.tree_decl_expanded) {
                                 glVertex2i(vx - 10, viewport_h - (y + 6));
                                 glVertex2i(vx - 10, viewport_h - (y + 10));
                             }
                             glEnd();
 
                             float dtr = 0.7f, dtg = 0.7f, dtb = 0.7f;
-                            if (hud.hover_object_index_ == -2) { dtr = 0.5f; dtg = 0.8f; dtb = 1.0f; }
+                            if (task_tree_view.hover_object_index_ == -2) { dtr = 0.5f; dtg = 0.8f; dtb = 1.0f; }
                             draw_text(vx + 16, y + 11, "Mission Declarations", dtr, dtg, dtb);
                         }
-                        if (hud.tree_decl_expanded) {
+                        if (task_tree_view.tree_decl_expanded) {
                             for (int idx : root_decls) draw_node(idx, 1);
                         }
                     }
@@ -619,9 +665,19 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                 // Removed live info as requested
 
                 // Display object info at mouse position
-                int info_object_index = hud.hover_object_index_;
-                if (info_object_index >= 0 && hud.level_objects_) {
-                        const auto& objects = hud.level_objects_->GetObjects();
+                int info_object_index = task_tree_view.hover_object_index_;
+                if (!task_tree_view.status_msg_.empty() && task_tree_view.selected_object_index_ >= 0) {
+                    info_object_index = task_tree_view.selected_object_index_;
+                }
+                int tooltip_x = task_tree_view.mouse_x_;
+                int tooltip_y = task_tree_view.mouse_y_ + 25;
+                if (tooltip_x < 0) tooltip_x = 0;
+                if (tooltip_x > params.view_define_->viewport_width_ - 260) tooltip_x = params.view_define_->viewport_width_ - 260;
+                if (tooltip_y < 0) tooltip_y = 0;
+                if (tooltip_y > params.view_define_->viewport_height_ - 100) tooltip_y = params.view_define_->viewport_height_ - 100;
+
+                if (info_object_index >= 0 && task_tree_view.level_objects_) {
+                        const auto& objects = task_tree_view.level_objects_->GetObjects();
                         if (info_object_index < (int)objects.size()) {
                                 const auto& obj = objects[info_object_index];
 
@@ -632,102 +688,34 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                         }
                 }
 
-                if (info_object_index >= 0 && hud.level_objects_) {
-                        const auto& objects = hud.level_objects_->GetObjects();
+                if (info_object_index >= 0 && task_tree_view.level_objects_) {
+                        const auto& objects = task_tree_view.level_objects_->GetObjects();
                         if (info_object_index < (int)objects.size()) {
                                 const auto& obj = objects[info_object_index];
 
                                 char buf[512];
-                                std::string display_name = obj.name;
-                                if (display_name.empty()) {
-                                        display_name = GetBuildingName(obj.modelId);
-                                }
-                                if (display_name.empty()) {
-                                        display_name = obj.modelId;
-                                }
+                                std::string display_name = GetBuildingName(obj.modelId);
+                                if (display_name.empty()) display_name = obj.name;
+                                if (display_name.empty()) display_name = obj.type;
+                                if (display_name.empty()) display_name = obj.modelId;
 
                                 std::string task_id = obj.taskId.empty() ? "-1" : obj.taskId;
 
-                                int text_x = hud.mouse_x_;
-                                int text_y = hud.mouse_y_ + 25;
-                                if (text_x < 0) text_x = 0;
-                                if (text_x > params.view_define_->viewport_width_ - 200) text_x = params.view_define_->viewport_width_ - 200;
-                                if (text_y < 0) text_y = 0;
-                                if (text_y > params.view_define_->viewport_height_ - 50) text_y = params.view_define_->viewport_height_ - 50;
+                                int text_x = tooltip_x;
+                                int text_y = tooltip_y;
 
-                                // Check if this is an AI model (ID starts with 000-019)
-                                bool isAI = false;
-                                if (obj.modelId.size() >= 3) {
-                                        try {
-                                                int prefixNum = std::stoi(obj.modelId.substr(0, 3));
-                                                if (prefixNum >= 0 && prefixNum <= 19) {
-                                                        isAI = true;
-                                                }
-                                        } catch (...) {}
-                                }
+                                snprintf(buf, sizeof(buf), "%s ID: %s", display_name.c_str(), task_id.c_str());
+                                draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
+                                text_y += 15;
 
-                                if (isAI) {
-                                        snprintf(buf, sizeof(buf), "Type: \"%s\"", obj.type.c_str());
-                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
-                                        text_y += 15;
-                                        snprintf(buf, sizeof(buf), "Name: \"%s\"", display_name.c_str());
-                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
+                                snprintf(buf, sizeof(buf), "%s", obj.modelId.c_str());
+                                draw_text(text_x, text_y, buf, obj.isBuilding ? 1.0f : 0.0f, 1.0f, 0.0f);
+                                text_y += 15;
 
-                                        text_y += 20;
-                                        snprintf(buf, sizeof(buf), "Soldier ID: %s", task_id.c_str());
-                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 0.0f);
-                                        text_y += 15;
-                                        snprintf(buf, sizeof(buf), "AI ID: %s", obj.aiId.c_str());
-                                        draw_text(text_x, text_y, buf, 0.0f, 1.0f, 1.0f);
-
-                                        text_y += 20;
-                                        snprintf(buf, sizeof(buf), "Position: X: %.7f Y: %.7f Z: %.7f", obj.pos.x, obj.pos.y, obj.pos.z);
-                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
-
-                                        text_y += 20;
-                                        snprintf(buf, sizeof(buf), "Rotation: %.10f", obj.rot.z);
-                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
-
-                                        text_y += 20;
-                                        snprintf(buf, sizeof(buf), "Model: ID: \"%s\" Name: \"%s\"", obj.modelId.c_str(), obj.type.c_str());
-                                        draw_text(text_x, text_y, buf, 0.0f, 1.0f, 1.0f);
-
-                                        text_y += 20;
-                                        snprintf(buf, sizeof(buf), "Graph: ID: %s Name: \"%s\"", obj.graphId.c_str(), obj.graphName.c_str());
-                                        draw_text(text_x, text_y, buf, 0.0f, 1.0f, 1.0f);
-
-                                        text_y += 20;
-                                        snprintf(buf, sizeof(buf), "Graph Position: X: %.7f Y: %.7f Z: %.7f", obj.graphPos.x, obj.graphPos.y, obj.graphPos.z);
-                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
-
-                                        text_y += 20;
-                                        snprintf(buf, sizeof(buf), "Primary Weapon: Name: \"%s\" Ammo: %s", obj.primaryWeapon.c_str(), obj.primaryAmmo.empty() ? "0" : obj.primaryAmmo.c_str());
-                                        draw_text(text_x, text_y, buf, 1.0f, 0.5f, 0.0f);
-
-                                        text_y += 20;
-                                        snprintf(buf, sizeof(buf), "Secondary Weapon: Name: \"%s\" Ammo: %s", obj.secondaryWeapon.c_str(), obj.secondaryAmmo.empty() ? "0" : obj.secondaryAmmo.c_str());
-                                        draw_text(text_x, text_y, buf, 1.0f, 0.5f, 0.0f);
-
-                                        text_y += 20;
-                                        snprintf(buf, sizeof(buf), "Team: %s", obj.team == 0 ? "Friendly" : "Enemy");
-                                        draw_text(text_x, text_y, buf, obj.team == 0 ? 0.0f : 1.0f, obj.team == 0 ? 1.0f : 0.0f, 0.0f);
-                                } else {
-                                        // Line 1: ModelName ID: Task_New first param
-                                        snprintf(buf, sizeof(buf), "%s ID: %s", display_name.c_str(), task_id.c_str());
-                                        draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
-
-                                        // Line 2: Full ModelID
-                                        text_y += 15;
-                                        snprintf(buf, sizeof(buf), "%s", obj.modelId.c_str());
-                                        draw_text(text_x, text_y, buf, obj.isBuilding ? 1.0f : 0.0f, 1.0f, 0.0f);
+                                if (!task_tree_view.status_msg_.empty() && info_object_index == task_tree_view.selected_object_index_) {
+                                        draw_text(text_x, text_y, task_tree_view.status_msg_.c_str(), 0.85f, 1.0f, 0.6f);
                                 }
                         }
-                }
-
-                if (!hud.status_msg_.empty()) {
-                        int status_x = 20;
-                        int status_y = 18;
-                        draw_text(status_x, status_y, hud.status_msg_.c_str(), 0.85f, 1.0f, 0.6f);
                 }
 
                 // Watermark
@@ -735,10 +723,10 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                 int w_x = (params.view_define_->viewport_width_ - w_width) / 2;
                 draw_text(w_x, params.view_define_->viewport_height_ - 20, "IGI Editor Copyright - JonesHM", 0.7f, 0.7f, 0.7f);
 
-                if (hud.task_editor_open_) {
+                if (task_tree_view.task_editor_open_) {
                         // Render Task Editor Box
-                        int box_w = hud.edit_box_w_;
-                        int box_h = hud.edit_box_h_;
+                        int box_w = task_tree_view.edit_box_w_;
+                        int box_h = task_tree_view.edit_box_h_;
                         int box_x = (params.view_define_->viewport_width_ - box_w) / 2;
                         int box_y = (params.view_define_->viewport_height_ - box_h) / 2;
 
@@ -763,7 +751,7 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                         glLineWidth(1.0f);
 
                         int viewport_h = params.view_define_->viewport_height_;
-                        draw_text(box_x + 10, viewport_h - (box_y + box_h - 20), "Task Editor (ESC: Save, Arrows: Resize)", 1.0f, 1.0f, 1.0f);
+                        draw_text(box_x + 10, viewport_h - (box_y + box_h - 20), "Task Editor (ESC: Discard, Save: Commit)", 1.0f, 1.0f, 1.0f);
                         draw_text(box_x + 10, viewport_h - (box_y + box_h - 40), "Contents:", 0.6f, 0.6f, 0.6f);
                         
                         // Input field bg
@@ -779,14 +767,14 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                         glEnable(GL_SCISSOR_TEST);
                         glScissor(box_x + 10, box_y + 10, box_w - 20, box_h - 60);
 
-                        int scroll_offset_px = hud.edit_scroll_x_ * 9;
+                        int visible_chars = std::max(1, (box_w - 40) / 9);
 
-                        // Selection Highlight
-                        if (hud.edit_selection_start_ != -1 && hud.edit_selection_end_ != -1 && hud.edit_selection_start_ != hud.edit_selection_end_) {
-                                int s = std::min(hud.edit_selection_start_, hud.edit_selection_end_);
-                                int e = std::max(hud.edit_selection_start_, hud.edit_selection_end_);
-                                int sel_x1 = box_x + 20 + (s * 9) - scroll_offset_px;
-                                int sel_x2 = box_x + 20 + (e * 9) - scroll_offset_px;
+                        // Selection Highlight (relative to visible window)
+                        if (task_tree_view.edit_selection_start_ != -1 && task_tree_view.edit_selection_end_ != -1 && task_tree_view.edit_selection_start_ != task_tree_view.edit_selection_end_) {
+                                int s = std::min(task_tree_view.edit_selection_start_, task_tree_view.edit_selection_end_);
+                                int e = std::max(task_tree_view.edit_selection_start_, task_tree_view.edit_selection_end_);
+                                int sel_x1 = box_x + 20 + ((s - task_tree_view.edit_scroll_x_) * 9);
+                                int sel_x2 = box_x + 20 + ((e - task_tree_view.edit_scroll_x_) * 9);
                                 
                                 glEnable(GL_BLEND);
                                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -801,7 +789,7 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                         }
 
                         // Cursor (Scrolled) - 9px width
-                        int cursor_x = box_x + 20 + (hud.edit_cursor_pos_ * 9) - scroll_offset_px;
+                        int cursor_x = box_x + 20 + ((task_tree_view.edit_cursor_pos_ - task_tree_view.edit_scroll_x_) * 9);
                         glColor3f(1.0f, 1.0f, 1.0f); // White cursor
                         glLineWidth(2.0f);
                         glBegin(GL_LINES);
@@ -810,22 +798,52 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                         glEnd();
                         glLineWidth(1.0f);
 
-                        // Draw text (Scrolled)
-                        std::string displayString = hud.edit_string_;
+                        // Draw only visible text window to avoid blank rendering on very long lines
+                        std::string displayString = task_tree_view.edit_string_;
                         displayString.erase(std::remove(displayString.begin(), displayString.end(), '\r'), displayString.end());
                         displayString.erase(std::remove(displayString.begin(), displayString.end(), '\n'), displayString.end());
-
-                        draw_text_mono(box_x + 20 - scroll_offset_px, viewport_h - (box_y + 35), displayString.c_str(), 1.0f, 1.0f, 1.0f);
+                        int start = std::max(0, task_tree_view.edit_scroll_x_);
+                        if (start > (int)displayString.size()) start = (int)displayString.size();
+                        std::string visible = displayString.substr((size_t)start, (size_t)visible_chars + 2);
+                        draw_text_mono(box_x + 20, viewport_h - (box_y + 35), visible.c_str(), 1.0f, 1.0f, 1.0f);
                         
                         glDisable(GL_SCISSOR_TEST);
+
+                        const int save_btn_w = 84;
+                        const int save_btn_h = 26;
+                        const int save_btn_x = box_x + box_w - save_btn_w - 14;
+                        const int save_btn_y = box_y + box_h - 40;
+                        bool save_hovered =
+                                task_tree_view.mouse_x_ >= save_btn_x && task_tree_view.mouse_x_ <= save_btn_x + save_btn_w &&
+                                task_tree_view.mouse_y_ >= save_btn_y && task_tree_view.mouse_y_ <= save_btn_y + save_btn_h;
+
+                        glEnable(GL_BLEND);
+                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                        glColor4f(save_hovered ? 0.10f : 0.05f, save_hovered ? 0.55f : 0.35f, 0.10f, 0.95f);
+                        glBegin(GL_QUADS);
+                        glVertex2i(save_btn_x, save_btn_y);
+                        glVertex2i(save_btn_x + save_btn_w, save_btn_y);
+                        glVertex2i(save_btn_x + save_btn_w, save_btn_y + save_btn_h);
+                        glVertex2i(save_btn_x, save_btn_y + save_btn_h);
+                        glEnd();
+                        glDisable(GL_BLEND);
+
+                        glColor3f(1.0f, 1.0f, 1.0f);
+                        glBegin(GL_LINE_LOOP);
+                        glVertex2i(save_btn_x, save_btn_y);
+                        glVertex2i(save_btn_x + save_btn_w, save_btn_y);
+                        glVertex2i(save_btn_x + save_btn_w, save_btn_y + save_btn_h);
+                        glVertex2i(save_btn_x, save_btn_y + save_btn_h);
+                        glEnd();
+                        draw_text(save_btn_x + (save_btn_w / 2) - 14, viewport_h - (save_btn_y + 18), "Save", 1.0f, 1.0f, 1.0f);
                 }
 
-                if (hud.edit_mode_) {
+                if (task_tree_view.edit_mode_) {
                         // Flip Y because glOrtho has y=0 at bottom, but mouse_y is top-down (GLUT)
-                        float cx = (float)(hud.mouse_x_);
-                        float cy = (float)(params.view_define_->viewport_height_ - hud.mouse_y_);
+                        float cx = (float)(task_tree_view.mouse_x_);
+                        float cy = (float)(params.view_define_->viewport_height_ - task_tree_view.mouse_y_);
 
-                        if (hud.enable_camera_mode_) {
+                        if (task_tree_view.enable_camera_mode_) {
                                 // Draw camera icon at center (since mouse is warped there)
                                 float ccx = (float)(params.view_define_->viewport_width_ / 2);
                                 float ccy = (float)(params.view_define_->viewport_height_ / 2);
@@ -854,7 +872,7 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                                 glVertex2f(ccx - 4, ccy + h/2 + 3);
                                 glEnd();
                                 glLineWidth(1.0f);
-                        } else if (hud.terrain_edit_enabled_) {
+                        } else if (task_tree_view.terrain_edit_enabled_) {
                                 // Terrain edit mode: orange circle brush cursor
                                 float radius = 10.0f;
                                 float th = 2.0f;
@@ -908,7 +926,7 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                         glLineWidth(1.0f);
                 }
 
-                if (hud.pause_mode_) {
+                if (task_tree_view.pause_mode_) {
                         const int menu_w = 380;
                         const int menu_h = 280;
                         const int menu_x = (params.view_define_->viewport_width_  - menu_w) / 2;
@@ -955,8 +973,8 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                                 int screen_btn_y = screen_menu_top + 80 + i * 35;
                                 int gl_btn_y     = viewport_h - screen_btn_y;
 
-                                bool hovered = (hud.mouse_x_ >= menu_x && hud.mouse_x_ <= menu_x + menu_w &&
-                                                hud.mouse_y_ >= screen_btn_y - 15 && hud.mouse_y_ <= screen_btn_y + 15);
+                                bool hovered = (task_tree_view.mouse_x_ >= menu_x && task_tree_view.mouse_x_ <= menu_x + menu_w &&
+                                                task_tree_view.mouse_y_ >= screen_btn_y - 15 && task_tree_view.mouse_y_ <= screen_btn_y + 15);
 
                                 if (hovered) {
                                         glEnable(GL_BLEND);
@@ -978,7 +996,7 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                 }
 
 
-                if (hud.show_debug_) {
+                if (task_tree_view.show_debug_) {
                         const auto& entries = Logger::Get().GetEntries();
                         int debug_w = 600;
                         int debug_h = 280;
@@ -1037,7 +1055,7 @@ void Renderer::Draw(const draw_params_s& params, const hud_params_s& hud) {
                         }
                 }
 
-                if (hud.show_help_) {
+                if (task_tree_view.show_help_) {
                         int menu_w = 500;
                         int menu_h = 450;
                         int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;

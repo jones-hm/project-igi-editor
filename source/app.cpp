@@ -1494,13 +1494,16 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 void App::ResetLevel() {
 	int levelNo = level_.GetLevelNo();
 
-	printf("Resetting Level %d - copy objects.qsc, compile to QVM, copy to IGIPath\n", levelNo);
+	printf("Resetting Level %d - restore objects.qsc and objects.qvm from QFiles\n", levelNo);
 
-	std::string qeditor_path = Config::Get().qEditorPath;
+	std::string baseQFiles = Config::Get().filesPath;
+	if (baseQFiles.empty()) {
+		baseQFiles = Config::Get().qEditorPath + "\\QFiles";
+	}
 
-	// Step 1: Copy objects.qsc from QEditor to exe directory
+	// Step 1: Restore objects.qsc from QFiles to exe directory
 	char srcQsc[1024];
-	Str_SPrintf(srcQsc, 1024, "%s\\QFiles\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", qeditor_path.c_str(), levelNo);
+	Str_SPrintf(srcQsc, 1024, "%s\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", baseQFiles.c_str(), levelNo);
 
 	std::string exeDir = Utils::GetExeDirectory();
 	char dstQsc[1024];
@@ -1515,27 +1518,21 @@ void App::ResetLevel() {
 		}
 		else {
 			printf("Error: Source file %s does not exist.\n", srcQsc);
-			return;
 		}
 	}
 	catch (const std::exception& e) {
 		printf("ResetLevel step 1 error: %s\n", e.what());
-		return;
 	}
 
-	// Step 2: Compile to QVM
-	printf("Step 2: Compiling objects.qsc to objects.qvm\n");
-	level_.CompileCurrentQSC(levelNo);
-
-	// Step 3: Copy QVM to IGIPath
+	// Step 2: Restore objects.qvm from QFiles to IGIPath
 	ConfigData& cfg = Config::Get();
 	char srcQvm[1024];
-	Str_SPrintf(srcQvm, 1024, "%s\\Compile\\output\\objects.qvm", cfg.compilerPath.c_str());
+	Str_SPrintf(srcQvm, 1024, "%s\\IGI_QVM\\missions\\location0\\level%d\\objects.qvm", baseQFiles.c_str(), levelNo);
 
 	char dstQvm[1024];
 	Str_SPrintf(dstQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", cfg.igiPath.c_str(), levelNo);
 
-	printf("Step 3: Copying QVM from %s to %s\n", srcQvm, dstQvm);
+	printf("Step 2: Copying objects.qvm from %s to %s\n", srcQvm, dstQvm);
 
 	try {
 		if (std::filesystem::exists(srcQvm)) {
@@ -1544,11 +1541,11 @@ void App::ResetLevel() {
 			printf("QVM copied successfully to game path.\n");
 		}
 		else {
-			printf("Error: Compiled QVM not found at %s\n", srcQvm);
+			printf("Error: Source QVM not found at %s\n", srcQvm);
 		}
 	}
 	catch (const std::exception& e) {
-		printf("ResetLevel step 3 error: %s\n", e.what());
+		printf("ResetLevel step 2 error: %s\n", e.what());
 	}
 
 	// Reload level after reset
@@ -1560,13 +1557,16 @@ void App::ResetLevel() {
 void App::ResetScript() {
 	int levelNo = level_.GetLevelNo();
 
-	printf("Resetting Script for Level %d - copy objects.qsc from QEditor to exe directory\n", levelNo);
+	printf("Resetting Script for Level %d - copy objects.qsc from QFiles to exe directory\n", levelNo);
 
-	std::string qeditor_path = Config::Get().qEditorPath;
+	std::string baseQFiles = Config::Get().filesPath;
+	if (baseQFiles.empty()) {
+		baseQFiles = Config::Get().qEditorPath + "\\QFiles";
+	}
 
 	// Source: QEditor IGI_QSC
 	char srcQsc[1024];
-	Str_SPrintf(srcQsc, 1024, "%s\\QFiles\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", qeditor_path.c_str(), levelNo);
+	Str_SPrintf(srcQsc, 1024, "%s\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", baseQFiles.c_str(), levelNo);
 
 	// Destination: exe directory
 	std::string exeDir = Utils::GetExeDirectory();
@@ -1661,20 +1661,9 @@ void App::Frame(float delta_seconds) {
 		hover_object_index_ = PickObjectAtScreenPos(mouse_state_.prior_x_, mouse_state_.prior_y_);
 		float ground_z = 0.0f;
 		level_.GetTerrainZ(viewer_.pos_.x, viewer_.pos_.y, ground_z);
-		Renderer::hud_params_s hud = {
+		Renderer::task_tree_view_params_s task_tree_view = {
 			.show_hud_ = true,
 			.status_msg_ = status_message_,
-			.raw_pos_ = viewer_.pos_,
-			.meters_pos_ = viewer_.pos_ / 4096.0f,
-			.ground_offset_ = viewer_.pos_.z - ground_z,
-			.human_addr_ = 0,
-			.game_level_ = level_.GetLevelNo(),
-			.view_h_ = viewer_.yaw_,
-			.view_v_ = viewer_.pitch_,
-			.cam_pitch_ = viewer_.pitch_,
-			.cam_yaw_ = viewer_.yaw_,
-			.cam_roll_ = viewer_.roll_,
-			.cam_fov_ = 60.0f,
 			.pause_mode_ = true,
 			.show_debug_ = show_debug_,
 			.show_help_ = show_help_,
@@ -1695,11 +1684,12 @@ void App::Frame(float delta_seconds) {
 			.edit_selection_end_ = edit_selection_end_,
 			.edit_box_w_ = edit_box_w_,
 			.edit_box_h_ = edit_box_h_,
+			.edit_scroll_x_ = edit_scroll_x_,
 			.enable_camera_mode_ = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera)
 		};
 		draw_params_.level_objects_ = &level_.GetLevelObjects();
 		draw_params_.selected_object_index_ = selected_object_index_;
-		renderer_.Draw(draw_params_, hud);
+		renderer_.Draw(draw_params_, task_tree_view);
 
 		glutSwapBuffers();
 		return;
@@ -1758,19 +1748,9 @@ void App::Frame(float delta_seconds) {
 	IGIBridge::PositionData data = bridge_.GetLatestData();
 	level_.GetTerrainZ(viewer_.pos_.x, viewer_.pos_.y, ground_z);
 
-	Renderer::hud_params_s hud = {
+	Renderer::task_tree_view_params_s task_tree_view = {
 		.show_hud_ = show_hud_,
-		.raw_pos_ = viewer_.pos_,
-		.meters_pos_ = viewer_.pos_ / 4096.0f,
-		.ground_offset_ = viewer_.pos_.z - ground_z,
-		.human_addr_ = 0, // No longer reading memory
-		.game_level_ = level_.GetLevelNo(),
-		.view_h_ = viewer_.yaw_,
-		.view_v_ = viewer_.pitch_,
-		.cam_pitch_ = viewer_.pitch_,
-		.cam_yaw_ = viewer_.yaw_,
-		.cam_roll_ = viewer_.roll_,
-		.cam_fov_ = 60.0f, // Placeholder
+		.status_msg_ = status_message_,
 		.pause_mode_ = pause_mode_,
 		.show_debug_ = show_debug_,
 		.show_help_ = show_help_,
@@ -1796,7 +1776,7 @@ void App::Frame(float delta_seconds) {
 	};
 
 
-	renderer_.Draw(draw_params_, hud);
+	renderer_.Draw(draw_params_, task_tree_view);
 
 
 	glutSwapBuffers();
@@ -2381,6 +2361,28 @@ void App::UpdateMarkerManipulation() {
 	
 	bool changed = (std::abs(deltaPos.x) > 1e-6 || std::abs(deltaPos.y) > 1e-6 || std::abs(deltaPos.z) > 1e-6 ||
 	                std::abs(deltaRot.x) > 1e-6 || std::abs(deltaRot.y) > 1e-6 || std::abs(deltaRot.z) > 1e-6);
+
+	if (changed) {
+		char buf[128];
+		if (marker_manip_.mode_ == ManipulationMode::MoveXY) {
+			snprintf(buf, sizeof(buf), "Moving to XY Plane with X: %.2f Y: %.2f Z: %.2f", obj.pos.x, obj.pos.y, obj.pos.z);
+			status_message_ = buf;
+		} else if (marker_manip_.mode_ == ManipulationMode::MoveXZ) {
+			snprintf(buf, sizeof(buf), "Moving to XZ Plane with X: %.2f Y: %.2f Z: %.2f", obj.pos.x, obj.pos.y, obj.pos.z);
+			status_message_ = buf;
+		} else if (marker_manip_.mode_ == ManipulationMode::RotateAlpha) {
+			snprintf(buf, sizeof(buf), "Rotation Alpha: %.6f", obj.rot.x);
+			status_message_ = buf;
+		} else if (marker_manip_.mode_ == ManipulationMode::RotateBeta) {
+			snprintf(buf, sizeof(buf), "Rotation Beta: %.6f", obj.rot.y);
+			status_message_ = buf;
+		} else if (marker_manip_.mode_ == ManipulationMode::RotateGamma) {
+			snprintf(buf, sizeof(buf), "Rotation Gamma: %.6f", obj.rot.z);
+			status_message_ = buf;
+		}
+	} else if (marker_manip_.mode_ == ManipulationMode::None) {
+		status_message_.clear();
+	}
 
 	if (changed || (input_.keys_ & MK_MANIP_S) || (input_.keys_ & MK_MANIP_O)) {
 		PropagateTransformToChildren(selected_object_index_, deltaPos, deltaRot, oldPos);
@@ -3114,4 +3116,92 @@ void App::CopySelectedModelId() {
 
 void App::LookupHoveredModelName() { LookupSelectedModelName(); }
 void App::LookupHoveredModelId() { LookupSelectedModelId(); }
+
+void App::SearchModelById() {
+	auto prompt = Utils::PromptForText("Search Model by ID", "Enter Model ID (e.g. 1506 or AITYPE_PATROL_AK):", "");
+	if (!prompt.has_value()) return;
+
+	std::string searchId = prompt.value();
+	searchId = Utils::Trim(searchId);
+	if (searchId.empty()) return;
+
+	std::string searchIdLower = searchId;
+	std::transform(searchIdLower.begin(), searchIdLower.end(), searchIdLower.begin(), [](unsigned char c) { return std::tolower(c); });
+
+	auto& objects = level_.GetLevelObjects().GetObjects();
+	int foundIdx = -1;
+	for (int i = 0; i < (int)objects.size(); ++i) {
+		if (objects[i].deleted) continue;
+
+		std::string taskIdLower = objects[i].taskId;
+		std::transform(taskIdLower.begin(), taskIdLower.end(), taskIdLower.begin(), [](unsigned char c) { return std::tolower(c); });
+
+		std::string modelIdLower = objects[i].modelId;
+		std::transform(modelIdLower.begin(), modelIdLower.end(), modelIdLower.begin(), [](unsigned char c) { return std::tolower(c); });
+
+		if (taskIdLower == searchIdLower || modelIdLower == searchIdLower) {
+			foundIdx = i;
+			break;
+		}
+	}
+
+	if (foundIdx != -1) {
+		selected_object_index_ = foundIdx;
+		const auto& obj = objects[foundIdx];
+		viewer_.pos_ = glm::vec3(obj.pos.x, obj.pos.y, obj.pos.z + 1500.0f);
+		viewer_.pitch_ = -45.0f; 
+		SetLookupStatus(status_message_, "[App] Search: Found and selected model ID \"" + obj.modelId + "\" at index " + std::to_string(foundIdx));
+	} else {
+		SetLookupStatus(status_message_, "[App] Search: No object matches ID \"" + searchId + "\"");
+	}
+}
+
+void App::SearchModelByName() {
+	auto prompt = Utils::PromptForText("Search Model by Name", "Enter Model Name/Type (e.g. Heli or Soldier or Fence):", "");
+	if (!prompt.has_value()) return;
+
+	std::string searchName = prompt.value();
+	searchName = Utils::Trim(searchName);
+	if (searchName.empty()) return;
+
+	std::string searchNameLower = searchName;
+	std::transform(searchNameLower.begin(), searchNameLower.end(), searchNameLower.begin(), [](unsigned char c) { return std::tolower(c); });
+
+	auto& objects = level_.GetLevelObjects().GetObjects();
+	int foundIdx = -1;
+	
+	int startIdx = (selected_object_index_ >= 0) ? (selected_object_index_ + 1) % objects.size() : 0;
+	
+	for (size_t step = 0; step < objects.size(); ++step) {
+		int i = (startIdx + step) % objects.size();
+		if (objects[i].deleted) continue;
+
+		std::string friendlyName = level_.GetLevelObjects().GetModelName(objects[i].modelId);
+		if (friendlyName.empty()) {
+			friendlyName = objects[i].name;
+		}
+		std::string typeName = objects[i].type;
+
+		std::transform(friendlyName.begin(), friendlyName.end(), friendlyName.begin(), [](unsigned char c) { return std::tolower(c); });
+		std::transform(typeName.begin(), typeName.end(), typeName.begin(), [](unsigned char c) { return std::tolower(c); });
+
+		if (friendlyName.find(searchNameLower) != std::string::npos || typeName.find(searchNameLower) != std::string::npos) {
+			foundIdx = i;
+			break;
+		}
+	}
+
+	if (foundIdx != -1) {
+		selected_object_index_ = foundIdx;
+		const auto& obj = objects[foundIdx];
+		viewer_.pos_ = glm::vec3(obj.pos.x, obj.pos.y, obj.pos.z + 1500.0f);
+		viewer_.pitch_ = -45.0f;
+		std::string displayName = level_.GetLevelObjects().GetModelName(obj.modelId);
+		if (displayName.empty()) displayName = obj.name;
+		SetLookupStatus(status_message_, "[App] Search: Found \"" + displayName + "\" (Type: " + obj.type + ") at index " + std::to_string(foundIdx));
+	} else {
+		SetLookupStatus(status_message_, "[App] Search: No object matches name \"" + searchName + "\"");
+	}
+}
+
 

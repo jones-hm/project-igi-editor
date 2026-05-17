@@ -31,6 +31,7 @@ public:
 	int						GetLevelNo() const;
 
 	void					Update(update_params_s & params);
+	void					SaveObjectsLocalOnly();
 	void					SaveChanges();
 	void					SaveAndReloadObjects();
 

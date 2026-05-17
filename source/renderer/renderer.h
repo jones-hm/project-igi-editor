@@ -43,17 +43,9 @@ public:
 
 	};
 
-	struct hud_params_s {
+	struct task_tree_view_params_s {
 		bool show_hud_;
 		std::string status_msg_;
-		glm::vec3 raw_pos_;
-		glm::vec3 meters_pos_;
-		glm::vec3 native_pos_;
-		float ground_offset_;
-		uint32_t human_addr_;
-		int game_level_;
-		float view_h_, view_v_;
-		float cam_pitch_, cam_yaw_, cam_roll_, cam_fov_;
 		bool pause_mode_;
 		bool show_debug_;
 		bool show_help_;
@@ -115,7 +107,7 @@ public:
 
 	render_chunk_s*			GetTerrainRenderChunckBuffer();
 
-	void					Draw(const draw_params_s& params, const hud_params_s& hud);
+	void					Draw(const draw_params_s& params, const task_tree_view_params_s& task_tree_view);
 	glm::vec3				GetMeshExtents(const std::string& modelId, bool isBuilding) { return objects_.GetMeshExtents(modelId, isBuilding); }
 	float					GetMeshZOffset(const std::string& modelId, bool isBuilding) { return objects_.GetMeshZOffset(modelId, isBuilding); }
 

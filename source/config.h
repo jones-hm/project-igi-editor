@@ -29,6 +29,7 @@ struct ConfigData {
     char keyRotateBeta;
     char keyRotateGamma;
     char keyResetOri;
+    char keyResetPos;
 
     // [Marker] - Shortcuts
     int teleportToMarker; // Changed to int for VK codes

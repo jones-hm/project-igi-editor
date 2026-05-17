@@ -65,6 +65,7 @@ void Config::CreateDefault() {
     data_.keyRotateBeta = 'B';
     data_.keyRotateGamma = 'G';
     data_.keyResetOri = ' '; // Space
+    data_.keyResetPos = 'P';
     
     data_.teleportToMarker = 0; // F11 is handled specially
     data_.resetMarkerToPlayer = 'H';
@@ -193,6 +194,7 @@ void Config::Load() {
                 else if (key == "ManipulateOrientationBeta") data_.keyRotateBeta = c;
                 else if (key == "ManipulateOrientationGamma") data_.keyRotateGamma = c;
                 else if (key == "ManipulateOrientationReset") data_.keyResetOri = ' ';
+                else if (key == "ManipulatePositionReset") data_.keyResetPos = c;
                 else if (key == "TeleportToMarker") data_.teleportToMarker = c;
                 else if (key == "ResetMarkerToPlayer") data_.resetMarkerToPlayer = c;
             } else if (section == "UI") {
@@ -280,6 +282,7 @@ void Config::Save() {
     file << "ManipulateOrientationBeta=" << data_.keyRotateBeta << std::endl;
     file << "ManipulateOrientationGamma=" << data_.keyRotateGamma << std::endl;
     file << "ManipulateOrientationReset=Space" << std::endl;
+    file << "ManipulatePositionReset=" << data_.keyResetPos << std::endl;
     file << std::endl;
 
     file << "TeleportToMarker=F11" << std::endl;

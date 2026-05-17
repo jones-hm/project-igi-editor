@@ -149,6 +149,10 @@ private:
 	int						edit_box_h_ = 150;
 	int						hover_tree_index_ = -1;
 	int						edit_scroll_x_ = 0;
+	int						last_tree_click_index_ = -1;
+	int						last_tree_click_time_ms_ = 0;
+	std::vector<std::string>	edit_undo_stack_;
+	std::vector<std::string>	edit_redo_stack_;
 
 	bool					sync_from_game_once_;
 	int						last_game_level_;
@@ -197,6 +201,7 @@ private:
 		glm::dvec3			start_pos_;
 		glm::vec3			start_rot_;
 	} marker_manip_;
+	bool                    manipulation_dirty_ = false;
 
 	void					Frame(float delta_seconds);
 
@@ -211,6 +216,12 @@ private:
 	void					EditorProcessClick();
 	void					UpdateMarkerManipulation();
 	void					PropagateTransformToChildren(int parentIdx, const glm::dvec3& deltaPos, const glm::dvec3& deltaRot, const glm::dvec3& pivot);
+	void					PushTaskEditorUndoState();
+	void					UndoTaskEditorChange();
+	void					RedoTaskEditorChange();
+	void					ReplaceTaskEditorSelection(const std::string& text);
+	void					SyncSelectedTaskToLiveQsc(bool keepEditorOpen);
+	void					SaveTaskEditorChanges(bool keepEditorOpen);
 
 public:
 	// QSC/QVM workflow
@@ -229,6 +240,8 @@ public:
 	void					LookupSelectedModelId();
 	void					CopySelectedModelName();
 	void					CopySelectedModelId();
+	void					SearchModelById();
+	void					SearchModelByName();
 	void					LookupHoveredModelName();
 	void					LookupHoveredModelId();
 	void					ClearStatusMessage();

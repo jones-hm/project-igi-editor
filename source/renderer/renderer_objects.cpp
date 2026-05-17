@@ -27,7 +27,7 @@ bool Renderer_Objects::IsSkippedModelId(const std::string& modelId) {
         "373", "615", "252",
 
         // ── Collision / Invisible Objects ──
-        "colbox", "colbox2", "colbox66"
+        "colbox", "colbox2","colbox4" "colbox66"
     };
 
     if (skippedIds.count(modelId) > 0) return true;

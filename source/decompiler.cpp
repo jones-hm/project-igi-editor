@@ -120,6 +120,7 @@ bool Decompiler::Decompile(const std::string& qvm_path, const std::string& qsc_o
         fs::create_directories(fs::path(qsc_output_path).parent_path());
         if (fs::exists(qsc_output_path)) fs::remove(qsc_output_path);
         fs::copy_file(output_qsc, qsc_output_path, fs::copy_options::overwrite_existing);
+        Utils::TrimFileInPlace(qsc_output_path);
         if (output_callback_) output_callback_("[Decompiler] SUCCESS: Decompiled QSC copied to " + qsc_output_path);
         return true;
     } catch (const std::exception& e) {
