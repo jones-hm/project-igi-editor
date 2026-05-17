@@ -1,6 +1,6 @@
 # IGI Editor
 
-**IGI Editor** is a professional 3D world and object manipulation toolkit for Project IGI. Inspired by the original IGI 2 editor, it provides a modern interface for level research, object placement, and terrain modification.
+**IGI Editor** is the definitive C++ 3D Editor for Objects, AI, Terrain, and Graphs in realtime. Replicating the task-based workflow of the IGI 2 Editor with modern OpenGL and DirectX pipelines.
 
 **Current Status: Version 1.0.0 (Official First Public Release)** - Premium 3D modding suite featuring dynamic 3D terrain rendering, spline waypoint layouts, advanced flight camera navigation, full AI behavior customization, and visual task objective management. Supports editing and compiling for all 14 original game levels (with the first 3 levels fully tested and verified).
 
