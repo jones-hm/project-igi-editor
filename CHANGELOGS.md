@@ -1,5 +1,37 @@
 # Changelogs
 
+## BETA 0.0.7 - Live Sync & Task Systems
+### Core Features
+- **Live Editor Real-Time Sync**: Implemented real-sync capabilities allowing the editor to communicate directly with the game for instant feedback.
+- **Task Tree Editor**: Visual editor for mission objectives, enabling complex task logic manipulation.
+- **Spline Train Tracks**: Added support for spline-based train track generation and placement.
+
+### Stability
+- Fixed several edge cases in the live sync pipeline to prevent engine desynchronization.
+
+---
+
+## BETA 0.0.6 - Level 14 & GLB Pipeline
+### Level Support
+- **Full Level 14 Support**: Completed terrain and object support for Level 14 (The Maivon Compound).
+- **Pre-defined Object Library**: Integrated the 3DEditor's pre-defined objects collection for rapid level assembly.
+
+### Asset Management
+- **GLB Model Format**: Migrated to OpenGL-friendly GLB format, combining models and textures into single binary files for faster loading and better compatibility.
+
+---
+
+## BETA 0.0.5 - IGI 2 Controls & Splines
+### User Interface
+- **IGI 2 Controls System**: Fully implemented the IGI 2 style control scheme for object manipulation (drags, keyboard modifiers).
+- **Enhanced Manipulation**: Refined 6-DOF controls for smoother object placement.
+
+### Foundation
+- **Spline System Foundation**: Introduced the foundational logic for spline paths used by tracks and fences.
+- **Level Loading Fixes**: Resolved critical crashes when switching between different game levels.
+
+---
+
 ## BETA 0.0.4 - Clean Persistence & QSC Integrity
 ### Object Serialization Stabilization
 - **Intentional Change Tracking**: Introduced a `modified` flag for all level objects. The editor now only saves changes for objects you've actually interacted with (moved, rotated) or that were updated during an AI synchronization.

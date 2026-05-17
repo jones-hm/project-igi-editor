@@ -2,7 +2,7 @@
 
 **IGI Editor** is a professional 3D world and object manipulation toolkit for Project IGI. Inspired by the original IGI and IGI 2 editors, it provides a modern interface for level research, object placement, and terrain modification.
 
-**Current Status: BETA 0.0.4** - Enhanced stability release with Intentional Change Tracking, QSC data preservation, and robust AI unit identification. Features a safe serialization pipeline that prevents accidental modification of static objects.
+**Current Status: BETA 0.0.7** - Feature-rich release introducing Live Editor Real-Time Sync, Task Tree Editing, and Spline-based Train Tracks. Supports all levels including Level 14 with a modern GLB-based asset pipeline.
 
 This project is built upon the foundational work of the [Project-IGI-Terrain](https://github.com/hjcminus/Project-IGI-Terrain) repository. Special thanks to [hjcminus](https://github.com/hjcminus) for their research and for bringing this codebase to light. It is built using C++17 and OpenGL, and it is cross-platform, but it is mainly tested on Windows.
 
@@ -18,22 +18,31 @@ See the [CHANGELOGS.md](CHANGELOGS.md) for version history and detailed change l
 
 ## 🚀 Features
 
-- **3D Object Placement & Manipulation**: Load and render OBJ models with advanced 6-DOF controls.
+- **Live Editor Real-Time Sync**: Direct communication between the editor and the IGI engine for instant visual feedback.
+- **Task Tree Editor**: A visual workspace for managing mission objectives and complex task logic.
+- **Spline Train Tracks**: Procedural spline system for generating and placing train tracks across levels.
+- **3D Object Placement & Manipulation**: Load and render models with advanced 6-DOF controls.
 - **IGI 2 Style Controls**: Seamless object manipulation using mouse-drags and keyboard modifiers (Shift, Ctrl, A, B, G).
 - **Terrain Height Editing**: Integrated height-map brushes for real-time terrain sculpting.
 - **Advanced Rendering**: OpenGL-based pipeline with full texture support, wireframe overlays, and skydome rendering.
-- **Level Navigation**: Full support for loading and exploring all 13 original IGI levels.
+- **Level Navigation**: Full support for loading and exploring all 14 original IGI levels.
 - **Precision Snapping**: Instant ground-snapping logic to ensure objects sit perfectly on the terrain surface.
 
 ### Current Testing Status
 - **Building Editor**: Working - tested with Building objects
 - **Terrain Editor**: Working - height map editing functional
-- **Model Format**: Currently tested with OBJ format only
-- **Level Tested**: Level 1 (additional levels pending testing)
+- **Model Format**: Currently using **GLB (binary glTF)** format where textures and models are combined for optimal performance in OpenGL.
+- **Object Library**: The `QEditor\3DEditor` directory contains pre-defined 3D objects that the editor loads and allows users to manipulate.
+- **Level Tested**: Full support for all 14 levels.
+
+### ⚠️ Known Issues
+- **Fence Wire**: Rendering and placement of fence wiring is currently not solved.
+- **Complex Splines**: Some complex spline geometries are still work-in-progress and may exhibit artifacts.
 
 ### Future Work
-- **FBX Model Support**: Planned for future releases with full texture integration
-- **Extended Level Testing**: Full testing across all 13 levels
+- **Mef Parser**: Developing a native parser for .mef model files.
+- **AI & Waypoint Editing**: Define complex NPC behaviors and navigation paths.
+- **Weapon & Item Management**: Integrated UI for modifying weapon statistics and battlefield placements.
 
 ---
  
@@ -42,11 +51,20 @@ See the [CHANGELOGS.md](CHANGELOGS.md) for version history and detailed change l
 ![IGI Editor Screenshot](assets/igi-editor.png)
 *The editor in action showing terrain editing capabilities.*
 
+![IGI Editor Task Tree](assets/igi-editor-task-tree.png)
+*Visual Task Tree Editor for mission objective management.*
+
+![IGI Editor Controls](assets/igi-editor-controls.png)
+*IGI 2 style control scheme for precise object manipulation.*
+
+![IGI Editor AI](assets/igi-editor-ai.png)
+*AI Unit identification and management interface.*
+
 ![IGI Editor BETA Screenshot](assets/igi-editor-beta.png)
 *Working BETA version - BETA 0.0.1*
 
 ![IGI Editor Debug Screenshot](assets/igi-editor-debug.png)
-*Debug Console showing IGIPath resolution and QVM compilation pipeline - BETA 0.0.2*
+*Debug Console showing IGIPath resolution and QVM compilation pipeline.*
  
 ---
  
