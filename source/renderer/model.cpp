@@ -28,6 +28,7 @@ struct ParsedGeometry {
     size_t renderBlockCount = 0;
     size_t collisionVertexCount = 0;
     size_t collisionFaceCount = 0;
+    std::string renderLayout;
 };
 
 struct ChunkInfo {
@@ -37,6 +38,16 @@ struct ChunkInfo {
     uint32_t skip = 0;
     size_t start = 0;
     size_t data = 0;
+};
+
+struct D3drInfo {
+    uint32_t numFaces = 0;
+    uint32_t numMeshes = 0;
+    uint32_t verts0 = 0;
+    uint32_t verts1 = 0;
+    uint32_t numVerts = 0;
+    uint32_t rawSize = 0;
+    bool valid = false;
 };
 
 constexpr uint32_t kIlffHeaderSize = 20;
@@ -171,6 +182,46 @@ uint32_t ReadModelType(const std::vector<uint8_t>& bytes, const std::vector<Chun
     return ReadValue<uint32_t>(bytes, hsem->data + 32);
 }
 
+D3drInfo ReadD3drInfo(const std::vector<uint8_t>& bytes, const std::vector<ChunkInfo>& chunks, uint32_t modelType) {
+    D3drInfo info;
+    const ChunkInfo* d3dr = FindChunk(chunks, "D3DR");
+    if (!d3dr) {
+        return info;
+    }
+
+    info.rawSize = d3dr->size;
+    if (d3dr->size < 16) {
+        return info;
+    }
+
+    info.valid = true;
+    if (modelType == 1) {
+        if (d3dr->size < 24) {
+            info.valid = false;
+            return info;
+        }
+        info.numFaces = ReadValue<uint32_t>(bytes, d3dr->data + 4);
+        info.numMeshes = ReadValue<uint32_t>(bytes, d3dr->data + 8);
+        info.verts0 = ReadValue<uint32_t>(bytes, d3dr->data + 12);
+        info.verts1 = ReadValue<uint32_t>(bytes, d3dr->data + 16);
+        info.numVerts = ReadValue<uint32_t>(bytes, d3dr->data + 20);
+    } else if (modelType == 3) {
+        if (d3dr->size < 20) {
+            info.valid = false;
+            return info;
+        }
+        info.numFaces = ReadValue<uint32_t>(bytes, d3dr->data + 8);
+        info.numMeshes = ReadValue<uint32_t>(bytes, d3dr->data + 12);
+        info.numVerts = ReadValue<uint32_t>(bytes, d3dr->data + 16);
+    } else {
+        info.numFaces = ReadValue<uint32_t>(bytes, d3dr->data + 4);
+        info.numMeshes = ReadValue<uint32_t>(bytes, d3dr->data + 8);
+        info.numVerts = ReadValue<uint32_t>(bytes, d3dr->data + 12);
+    }
+
+    return info;
+}
+
 std::vector<RenderVertex> ParseRenderVertices(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk, uint32_t modelType) {
     uint32_t vertexSize = 0;
     switch (modelType) {
@@ -204,7 +255,7 @@ std::vector<RenderVertex> ParseRenderVertices(const std::vector<uint8_t>& bytes,
     return vertices;
 }
 
-std::vector<std::array<uint32_t, 3>> ParseRenderTriangles(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk, uint32_t modelType, size_t& outBlockCount) {
+std::vector<std::array<uint32_t, 3>> ParsePackedRenderTriangles(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk, uint32_t modelType, size_t& outBlockCount) {
     const size_t headerSize = (modelType == 3) ? 32 : 28;
     std::vector<std::array<uint32_t, 3>> triangles;
     size_t cursor = 0;
@@ -270,6 +321,85 @@ std::vector<std::array<uint32_t, 3>> ParseRenderTriangles(const std::vector<uint
     return triangles;
 }
 
+std::vector<std::array<uint32_t, 3>> ParseSplitBoneTriangles(
+    const std::vector<uint8_t>& bytes,
+    const ChunkInfo& dnerChunk,
+    const ChunkInfo& ecafChunk,
+    const D3drInfo& d3drInfo,
+    size_t& outBlockCount) {
+    constexpr size_t kBoneRecordSize = 32;
+    std::vector<std::array<uint32_t, 3>> triangles;
+
+    if (dnerChunk.size < kBoneRecordSize) {
+        return triangles;
+    }
+
+    const size_t blockCount = dnerChunk.size / kBoneRecordSize;
+    const size_t totalIndexCount = ecafChunk.size / sizeof(uint16_t);
+    triangles.reserve(ecafChunk.size / 6);
+
+    for (size_t block = 0; block < blockCount; ++block) {
+        const size_t base = dnerChunk.data + block * kBoneRecordSize;
+        const uint16_t indexOffset = ReadValue<uint16_t>(bytes, base + 16);
+        const uint16_t triangleCount = ReadValue<uint16_t>(bytes, base + 18);
+        const uint16_t vertsOffset = ReadValue<uint16_t>(bytes, base + 20);
+        const uint16_t vertsCount = ReadValue<uint16_t>(bytes, base + 22);
+        const size_t firstIndex = static_cast<size_t>(indexOffset);
+        const size_t neededIndexCount = static_cast<size_t>(triangleCount) * 3;
+
+        if (firstIndex + neededIndexCount > totalIndexCount) {
+            Logger::Get().Log(
+                LogLevel::ERR,
+                "[MEF Binary Native] Bone DNER block=" + std::to_string(block) +
+                " exceeds ECAF bounds indexOffset=" + std::to_string(indexOffset) +
+                " triangleCount=" + std::to_string(triangleCount) +
+                " totalIndexCount=" + std::to_string(totalIndexCount));
+            continue;
+        }
+
+        uint16_t minLocalIndex = std::numeric_limits<uint16_t>::max();
+        uint16_t maxLocalIndex = 0;
+        for (size_t tri = 0; tri < triangleCount; ++tri) {
+            const size_t indexBase = ecafChunk.data + (firstIndex + tri * 3) * sizeof(uint16_t);
+            const uint16_t a = ReadValue<uint16_t>(bytes, indexBase + 0);
+            const uint16_t b = ReadValue<uint16_t>(bytes, indexBase + 2);
+            const uint16_t c = ReadValue<uint16_t>(bytes, indexBase + 4);
+            minLocalIndex = std::min<uint16_t>(minLocalIndex, std::min(a, std::min(b, c)));
+            maxLocalIndex = std::max<uint16_t>(maxLocalIndex, std::max(a, std::max(b, c)));
+            triangles.push_back({
+                static_cast<uint32_t>(a),
+                static_cast<uint32_t>(b),
+                static_cast<uint32_t>(c)
+            });
+        }
+
+        Logger::Get().Log(
+            LogLevel::INFO,
+            "[MEF Binary Native] Bone DNER block=" + std::to_string(block) +
+            " triangleCount=" + std::to_string(triangleCount) +
+            " indexOffset=" + std::to_string(indexOffset) +
+            " vertsOffset=" + std::to_string(vertsOffset) +
+            " vertsCount=" + std::to_string(vertsCount) +
+            " globalIndexMin=" + std::to_string(triangleCount > 0 ? minLocalIndex : 0) +
+            " globalIndexMax=" + std::to_string(triangleCount > 0 ? maxLocalIndex : 0));
+    }
+
+    outBlockCount = blockCount;
+    Logger::Get().Log(
+        LogLevel::INFO,
+        "[MEF Binary Native] Bone split render parsed blocks=" + std::to_string(blockCount) +
+        " triangles=" + std::to_string(triangles.size()) +
+        " d3drFaces=" + std::to_string(d3drInfo.numFaces) +
+        " d3drMeshes=" + std::to_string(d3drInfo.numMeshes) +
+        " d3drVerts0=" + std::to_string(d3drInfo.verts0) +
+        " d3drVerts1=" + std::to_string(d3drInfo.verts1) +
+        " d3drVerts=" + std::to_string(d3drInfo.numVerts) +
+        " dnerChunkSize=" + std::to_string(dnerChunk.size) +
+        " ecafChunkSize=" + std::to_string(ecafChunk.size));
+
+    return triangles;
+}
+
 ParsedGeometry ParseCollisionGeometry(const std::vector<uint8_t>& bytes, const std::vector<ChunkInfo>& chunks) {
     ParsedGeometry geometry;
 
@@ -312,19 +442,39 @@ ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::ve
     ParsedGeometry geometry;
     const uint32_t modelType = ReadModelType(bytes, chunks);
     geometry.modelType = modelType;
+    const D3drInfo d3drInfo = ReadD3drInfo(bytes, chunks, modelType);
 
     const ChunkInfo* xtrv = FindChunk(chunks, "XTRV");
     const ChunkInfo* dner = FindChunk(chunks, "DNER");
+    const ChunkInfo* ecaf = FindChunk(chunks, "ECAF");
 
     if (xtrv && dner) {
         geometry.vertices = ParseRenderVertices(bytes, *xtrv, modelType);
-        geometry.triangles = ParseRenderTriangles(bytes, *dner, modelType, geometry.renderBlockCount);
+        if (modelType == 1 && ecaf && d3drInfo.valid && dner->size >= 32 && d3drInfo.numMeshes > 0 && dner->size % 32 == 0) {
+            geometry.triangles = ParseSplitBoneTriangles(bytes, *dner, *ecaf, d3drInfo, geometry.renderBlockCount);
+            geometry.renderLayout = "type1 split ECAF/DNER";
+        } else {
+            geometry.triangles = ParsePackedRenderTriangles(bytes, *dner, modelType, geometry.renderBlockCount);
+            geometry.renderLayout = (modelType == 1) ? "type1 packed DNER" : "packed DNER";
+        }
         geometry.fromRenderMesh = !geometry.vertices.empty() && !geometry.triangles.empty();
     }
 
     if (!geometry.fromRenderMesh) {
         geometry = ParseCollisionGeometry(bytes, chunks);
+        geometry.renderLayout = "collision fallback";
     }
+
+    Logger::Get().Log(
+        LogLevel::INFO,
+        "[MEF Binary Native] D3DR info modelType=" + std::to_string(modelType) +
+        " rawSize=" + std::to_string(d3drInfo.rawSize) +
+        " valid=" + std::string(d3drInfo.valid ? "true" : "false") +
+        " numFaces=" + std::to_string(d3drInfo.numFaces) +
+        " numMeshes=" + std::to_string(d3drInfo.numMeshes) +
+        " verts0=" + std::to_string(d3drInfo.verts0) +
+        " verts1=" + std::to_string(d3drInfo.verts1) +
+        " numVerts=" + std::to_string(d3drInfo.numVerts));
 
     return geometry;
 }
@@ -445,6 +595,7 @@ Mesh loadObjModel(const std::string& filepath, const std::string& /*unused*/) {
         LogLevel::INFO,
         "[MEF Binary Native] Geometry source=" + std::string(geometry.fromRenderMesh ? "XTRV/DNER" : "XTVC/ECFC fallback") +
         " modelType=" + std::to_string(geometry.modelType) +
+        " renderLayout=" + geometry.renderLayout +
         " vertexCount=" + std::to_string(geometry.vertices.size()) +
         " triangleCount=" + std::to_string(geometry.triangles.size()) +
         " renderBlocks=" + std::to_string(geometry.renderBlockCount) +
