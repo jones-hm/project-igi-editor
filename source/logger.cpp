@@ -1,9 +1,13 @@
 #include "pch.h"
 #include "logger.h"
+#include "config.h"
 #include <ctime>
 
 void Logger::Init(const std::string& logFile) {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (file_.is_open()) {
+        return;
+    }
     file_.open(logFile, std::ios::out | std::ios::app);
     if (!file_.is_open()) {
         std::cerr << "Failed to open log file: " << logFile << std::endl;
@@ -11,6 +15,16 @@ void Logger::Init(const std::string& logFile) {
 }
 
 void Logger::Log(LogLevel level, const std::string& message) {
+    // Check if logging is enabled at all (if Config is ready)
+    if (!Config::Get().enableLogging) {
+        return;
+    }
+
+    // Skip DEBUG logs if debugLogging is disabled
+    if (level == LogLevel::DEBUG && !Config::Get().debugLogging) {
+        return;
+    }
+
     auto now = std::chrono::system_clock::now();
     auto in_time_t = std::chrono::system_clock::to_time_t(now);
 
@@ -20,6 +34,7 @@ void Logger::Log(LogLevel level, const std::string& message) {
 
     std::string levelStr;
     switch (level) {
+        case LogLevel::DEBUG:   levelStr = "[DEBUG]"; break;
         case LogLevel::INFO:    levelStr = "[INFO]"; break;
         case LogLevel::WARNING: levelStr = "[WARN]"; break;
         case LogLevel::ERR:     levelStr = "[ERROR]"; break;
@@ -40,5 +55,9 @@ void Logger::Log(LogLevel level, const std::string& message) {
         }
     }
 
-    std::cout << fullMessage << std::endl;
+    if (level == LogLevel::ERR || level == LogLevel::FATAL) {
+        std::cerr << fullMessage << std::endl;
+    } else {
+        std::cout << fullMessage << std::endl;
+    }
 }

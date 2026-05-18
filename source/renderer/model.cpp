@@ -321,7 +321,7 @@ std::vector<std::array<uint32_t, 3>> ParsePackedRenderTriangles(
         }
 
         Logger::Get().Log(
-            LogLevel::INFO,
+            LogLevel::DEBUG,
             "[MEF Binary Native] DNER block=" + std::to_string(blockCount) +
             " materialSlot=" + std::to_string(materialSlot) +
             " indexCount=" + std::to_string(indexCount) +
@@ -340,7 +340,7 @@ std::vector<std::array<uint32_t, 3>> ParsePackedRenderTriangles(
 
     outBlockCount = blockCount;
     Logger::Get().Log(
-        LogLevel::INFO,
+        LogLevel::DEBUG,
         "[MEF Binary Native] DNER parsed blocks=" + std::to_string(blockCount) +
         " triangles=" + std::to_string(triangles.size()) +
         " headerSize=" + std::to_string(headerSize) +
@@ -421,7 +421,7 @@ std::vector<std::array<uint32_t, 3>> ParseSplitBoneTriangles(
         }
 
         Logger::Get().Log(
-            LogLevel::INFO,
+            LogLevel::DEBUG,
             "[MEF Binary Native] Bone DNER block=" + std::to_string(block) +
             " triangleCount=" + std::to_string(triangleCount) +
             " indexOffset=" + std::to_string(indexOffset) +
@@ -433,7 +433,7 @@ std::vector<std::array<uint32_t, 3>> ParseSplitBoneTriangles(
 
     outBlockCount = blockCount;
     Logger::Get().Log(
-        LogLevel::INFO,
+        LogLevel::DEBUG,
         "[MEF Binary Native] Bone split render parsed blocks=" + std::to_string(blockCount) +
         " triangles=" + std::to_string(triangles.size()) +
         " d3drFaces=" + std::to_string(d3drInfo.numFaces) +
@@ -747,17 +747,17 @@ Mesh loadObjModel(const std::string& filepath, const std::string& /*unused*/) {
     const std::vector<uint8_t> bytes = ReadWholeFile(filepath);
     const std::vector<ChunkInfo> chunks = ParseIlffChunks(bytes, filepath);
     Logger::Get().Log(
-        LogLevel::INFO,
+        LogLevel::DEBUG,
         "[MEF Binary Native] Open file=" + filepath +
         " bytes=" + std::to_string(bytes.size()) +
         " chunks=" + std::to_string(chunks.size()));
     Logger::Get().Log(
-        LogLevel::INFO,
+        LogLevel::DEBUG,
         "[MEF Binary Native] Chunk layout: " + DescribeChunks(chunks));
 
     const ParsedGeometry geometry = ParseMefGeometry(bytes, chunks);
     Logger::Get().Log(
-        LogLevel::INFO,
+        LogLevel::DEBUG,
         "[MEF Binary Native] Geometry source=" + std::string(geometry.fromRenderMesh ? "XTRV/DNER" : "XTVC/ECFC fallback") +
         " modelType=" + std::to_string(geometry.modelType) +
         " renderLayout=" + geometry.renderLayout +

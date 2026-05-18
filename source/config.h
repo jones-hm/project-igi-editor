@@ -81,6 +81,10 @@ struct ConfigData {
     KeyBinding keyUndo;
     KeyBinding keyRedo;
     KeyBinding keyReloadSettings;
+
+    // NEW: Logging
+    bool enableLogging;
+    bool debugLogging;
 };
 
 class Config {
