@@ -93,6 +93,20 @@ With the release of our premium modding features, we have expanded our workspace
 ![IGI Editor Debug Screenshot](assets/igi-editor-debug.png)
 *Debug Console showing IGIPath resolution and QVM compilation pipeline.*
 
+## Headless CLI Tool
+
+The editor includes an integrated command-line testing suite for IGI native file formats. These can be run headlessly (without the graphical interface).
+
+*   `--help`: Displays CLI commands.
+*   `--mef <file.mef>`: Parse and print MEF model details.
+*   `--qsc <file.qsc> --compile <out.qvm>`: Compile QSC script to QVM.
+*   `--qvm <file.qvm> --decompile <out.qsc>`: Decompile QVM back to QSC.
+*   `--qvm <file.qvm>`: Parse QVM bytecode details.
+*   `--res <file.res>`: List RES archive contents.
+*   `--res <file.res> --extract <block_name> <out_file>`: Extract a specific resource from an archive.
+*   `--mtp <file.mtp>`: Parse MTP texture mappings.
+*   `--terrain <file.lmp/.ctr>`: Parse terrain structure.
+
 ---
  
 ## Folder Structure
@@ -146,7 +160,7 @@ With the successful release of **Version 1.0.0**, core features like the **Task 
    ```
 4. Launch the editor:
    ```powershell
-   .\bin\Release\igi-editor.exe -level 1 -draw_parts 49 -stick_to_ground
+   igi1ed.exe -level 1 -draw_parts 49 -stick_to_ground
    ```
 
    #### 🎨 Selective Loading and Drawing (`-draw_parts` Bitmask)
@@ -154,15 +168,15 @@ With the successful release of **Version 1.0.0**, core features like the **Task 
    
    * **Only Buildings with Terrain** (Bitmask: `17` = `1` Terrain + `16` Buildings)
      ```powershell
-     .\bin\Release\igi-editor.exe -level 1 -draw_parts 17 -stick_to_ground
+     igi1ed.exe -level 1 -draw_parts 17 -stick_to_ground
      ```
    * **Only Objects/Props with Terrain** (Bitmask: `33` = `1` Terrain + `32` Objects/Props)
      ```powershell
-     .\bin\Release\igi-editor.exe -level 1 -draw_parts 33 -stick_to_ground
+     igi1ed.exe -level 1 -draw_parts 33 -stick_to_ground
      ```
    * **Only AI Units with Terrain** (Bitmask: `65` = `1` Terrain + `64` AI)
      ```powershell
-     .\bin\Release\igi-editor.exe -level 1 -draw_parts 65 -stick_to_ground
+     igi1ed.exe -level 1 -draw_parts 65 -stick_to_ground
      ```
      *(Note: AI models are stored as non-building objects (props) inside the engine. To visually render the 3D meshes of the AI units, combine with props to get `-draw_parts 97` which is `1` + `32` + `64`)*
 

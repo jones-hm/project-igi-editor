@@ -1635,7 +1635,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 void App::ResetLevel() {
 	int levelNo = level_.GetLevelNo();
 
-	printf("Resetting Level %d - restore objects.qsc and objects.qvm from QFiles\n", levelNo);
+	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Level " + std::to_string(levelNo) + " - restore objects.qsc and objects.qvm from QFiles");
 
 	// Force kill any running game instance to release file locks on objects.qvm
 #ifdef _WIN32
@@ -1651,7 +1651,7 @@ void App::ResetLevel() {
 						if (hProc) {
 							TerminateProcess(hProc, 0);
 							CloseHandle(hProc);
-							printf("[App] Terminated running game instance 'igi.exe' to unlock files.\n");
+							Logger::Get().Log(LogLevel::INFO, "[App] Terminated running game instance 'igi.exe' to unlock files.");
 						}
 					}
 				} while (Process32Next(hSnap, &pe));
@@ -1674,7 +1674,7 @@ void App::ResetLevel() {
 	char dstQsc[1024];
 	Str_SPrintf(dstQsc, 1024, "%s\\objects.qsc", exeDir.c_str());
 
-	printf("Step 1: Copying objects.qsc from %s to %s\n", srcQsc, dstQsc);
+	Logger::Get().Log(LogLevel::INFO, "[App] Step 1: Copying objects.qsc from " + std::string(srcQsc) + " to " + std::string(dstQsc));
 
 	try {
 		if (std::filesystem::exists(srcQsc)) {
@@ -1686,14 +1686,14 @@ void App::ResetLevel() {
 				std::filesystem::remove(dstQsc);
 			}
 			std::filesystem::copy_file(srcQsc, dstQsc, std::filesystem::copy_options::overwrite_existing);
-			printf("Objects.qsc copied successfully.\n");
+			Logger::Get().Log(LogLevel::INFO, "[App] Objects.qsc copied successfully.");
 		}
 		else {
-			printf("Error: Source file %s does not exist.\n", srcQsc);
+			Logger::Get().Log(LogLevel::ERR, "[App] Error: Source file " + std::string(srcQsc) + " does not exist.");
 		}
 	}
 	catch (const std::exception& e) {
-		printf("ResetLevel step 1 error: %s\n", e.what());
+		Logger::Get().Log(LogLevel::ERR, "[App] ResetLevel step 1 error: " + std::string(e.what()));
 	}
 
 	// Step 2: Restore objects.qvm from QFiles to IGIPath
@@ -1704,7 +1704,7 @@ void App::ResetLevel() {
 	char dstQvm[1024];
 	Str_SPrintf(dstQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", Utils::GetIGIRootPath().c_str(), levelNo);
 
-	printf("Step 2: Copying objects.qvm from %s to %s\n", srcQvm, dstQvm);
+	Logger::Get().Log(LogLevel::INFO, "[App] Step 2: Copying objects.qvm from " + std::string(srcQvm) + " to " + std::string(dstQvm));
 
 	try {
 		if (std::filesystem::exists(srcQvm)) {
@@ -1717,14 +1717,14 @@ void App::ResetLevel() {
 				std::filesystem::remove(dstQvm);
 			}
 			std::filesystem::copy_file(srcQvm, dstQvm, std::filesystem::copy_options::overwrite_existing);
-			printf("QVM copied successfully to game path.\n");
+			Logger::Get().Log(LogLevel::INFO, "[App] QVM copied successfully to game path.");
 		}
 		else {
-			printf("Error: Source QVM not found at %s\n", srcQvm);
+			Logger::Get().Log(LogLevel::ERR, "[App] Error: Source QVM not found at " + std::string(srcQvm));
 		}
 	}
 	catch (const std::exception& e) {
-		printf("ResetLevel step 2 error: %s\n", e.what());
+		Logger::Get().Log(LogLevel::ERR, "[App] ResetLevel step 2 error: " + std::string(e.what()));
 	}
 
 	// Reload level after reset
@@ -1736,7 +1736,7 @@ void App::ResetLevel() {
 void App::ResetScript() {
 	int levelNo = level_.GetLevelNo();
 
-	printf("Resetting Script for Level %d - copy objects.qsc from QFiles to exe directory\n", levelNo);
+	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Script for Level " + std::to_string(levelNo) + " - copy objects.qsc from QFiles to exe directory");
 
 	std::string baseQFiles = Config::Get().filesPath;
 	if (baseQFiles.empty()) {
@@ -1752,19 +1752,19 @@ void App::ResetScript() {
 	char dstQsc[1024];
 	Str_SPrintf(dstQsc, 1024, "%s\\objects.qsc", exeDir.c_str());
 
-	printf("Resetting objects.qsc from %s to %s\n", srcQsc, dstQsc);
+	Logger::Get().Log(LogLevel::INFO, "[App] Resetting objects.qsc from " + std::string(srcQsc) + " to " + std::string(dstQsc));
 
 	try {
 		if (std::filesystem::exists(srcQsc)) {
 			std::filesystem::copy_file(srcQsc, dstQsc, std::filesystem::copy_options::overwrite_existing);
-			printf("Script reset successful.\n");
+			Logger::Get().Log(LogLevel::INFO, "[App] Script reset successful.");
 		}
 		else {
-			printf("Error: Source file %s does not exist.\n", srcQsc);
+			Logger::Get().Log(LogLevel::ERR, "[App] Error: Source file " + std::string(srcQsc) + " does not exist.");
 		}
 	}
 	catch (const std::exception& e) {
-		printf("ResetScript error: %s\n", e.what());
+		Logger::Get().Log(LogLevel::ERR, "[App] ResetScript error: " + std::string(e.what()));
 	}
 
 	// Reload the level to apply changes

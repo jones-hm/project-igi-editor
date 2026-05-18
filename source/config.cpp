@@ -10,11 +10,11 @@
 ConfigData Config::data_;
 
 void Config::Init() {
-    std::string path = GetConfigPath();
-    Logger::Get().Log(LogLevel::INFO, "[Config] Config file path: " + path);
-    
     // Always set defaults first so that any missing keys in config.ini get a value
     CreateDefault();
+
+    std::string path = GetConfigPath();
+    Logger::Get().Log(LogLevel::INFO, "[Config] Config file path: " + path);
 
     if (!std::filesystem::exists(path)) {
         Logger::Get().Log(LogLevel::INFO, "[Config] Config file not found, creating default");
@@ -90,6 +90,9 @@ void Config::CreateDefault() {
     data_.keyHelp = {0x48, false, false, false};   // H (0x48 = 'H')
     data_.keyResetScript = {0x52, false, true, false}; // SHIFT+R (0x52 = 'R')
     data_.keyClipMode = {VK_F3, false, false, false}; // F3
+
+    data_.enableLogging = true;
+    data_.debugLogging = false;
 }
 
 static std::string Trim(const std::string& s) {
@@ -140,8 +143,14 @@ static KeyBinding ParseKeyBinding(const std::string& binding) {
 }
 
 void Config::Load() {
-    std::ifstream file(GetConfigPath());
-    if (!file.is_open()) return;
+    std::string configPath = GetConfigPath();
+    std::ifstream file(configPath);
+    if (!file.is_open()) {
+        Logger::Get().Log(LogLevel::WARNING, "[Config] Failed to open config file at: " + configPath + ". Using defaults.");
+        return;
+    }
+
+    Logger::Get().Log(LogLevel::INFO, "[Config] Loading configuration from: " + configPath);
 
     std::string line, section;
     while (std::getline(file, line)) {
@@ -202,6 +211,9 @@ void Config::Load() {
                 else if (key == "FontColorR") data_.fontColorR = std::stoi(val);
                 else if (key == "FontColorG") data_.fontColorG = std::stoi(val);
                 else if (key == "FontColorB") data_.fontColorB = std::stoi(val);
+            } else if (section == "Logging") {
+                if (key == "Enable") data_.enableLogging = (val == "true" || val == "1");
+                else if (key == "Debug") data_.debugLogging = (val == "true" || val == "1");
             } else if (section == "Keybindings") {
                 if (key == "Save") data_.keySave = ParseKeyBinding(val);
                 else if (key == "ResetLevel") data_.keyResetLevel = ParseKeyBinding(val);
@@ -239,6 +251,7 @@ void Config::Load() {
             }
         }
     }
+    Logger::Get().Log(LogLevel::INFO, "[Config] Configuration successfully loaded.");
 }
 
 void Config::Save() {
@@ -295,6 +308,13 @@ void Config::Save() {
     file << "FontColorR=" << data_.fontColorR << std::endl;
     file << "FontColorG=" << data_.fontColorG << std::endl;
     file << "FontColorB=" << data_.fontColorB << std::endl;
+    file << std::endl;
+
+    file << "[Logging]" << std::endl;
+    file << "; Enable or disable overall logging" << std::endl;
+    file << "Enable=" << (data_.enableLogging ? "true" : "false") << std::endl;
+    file << "; Enable or disable verbose debug logging" << std::endl;
+    file << "Debug=" << (data_.debugLogging ? "true" : "false") << std::endl;
     file << std::endl;
 
     file << "[Keybindings]" << std::endl;

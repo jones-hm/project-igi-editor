@@ -7,6 +7,8 @@
 #include <freeglut.h>
 #include "utils.h"
 #include "config.h"
+#include "cli_handler.h"
+#include "logger.h"
 
 /*
 ================================================================================
@@ -557,11 +559,38 @@ int main(int argc, char **argv) {
 # endif
 #endif
 
+	// Initialize logger early (handles both GUI and Headless modes)
+	std::string exeDir = Utils::GetExeDirectory();
+	Logger::Get().Init(exeDir + "\\igi_editor.log");
+
 	// Initialize config first (before Folders_Init which uses Config)
 	Config::Init();
+	Logger::Get().Log(LogLevel::INFO, "[Main] Config initialized. Logging enabled: " + std::string(Config::Get().enableLogging ? "TRUE" : "FALSE") + ", Debug: " + std::string(Config::Get().debugLogging ? "TRUE" : "FALSE"));
 
 	// setup path of res and shaders folders
 	Folders_Init();
+
+	// Intercept headless CLI commands
+	if (CLIHandler::IsCLICommand(argc, argv)) {
+		int result = CLIHandler::Process(argc, argv);
+#if defined(_WIN32) && defined(_DEBUG)
+		system("pause");
+#endif
+		return result;
+	}
+
+#if defined(_WIN32) && !defined(_DEBUG)
+	// If NOT in CLI mode and NOT in Debug, hide the console window for a clean GUI experience
+	// (Since we are using /SUBSYSTEM:CONSOLE to support CLI output)
+	if (GetConsoleWindow() != NULL) {
+		// Only hide if we aren't being run from an existing terminal
+		// (Check if we are the only process attached to this console)
+		DWORD processList[2];
+		if (GetConsoleProcessList(processList, 2) == 1) {
+			ShowWindow(GetConsoleWindow(), SW_HIDE);
+		}
+	}
+#endif
 
 	// read window width & height from command line
 	int wnd_w = Arg_ReadInt(argc, argv, "-w", 800);
@@ -598,12 +627,12 @@ int main(int argc, char **argv) {
 	// Load icon from file and set it
 	char iconPath[MAX_PATH];
 	GetModuleFileNameA(NULL, iconPath, MAX_PATH);
-	std::string exeDir(iconPath);
-	size_t lastSlash = exeDir.find_last_of("\\/");
+	std::string iconExeDir(iconPath);
+	size_t lastSlash = iconExeDir.find_last_of("\\/");
 	if (lastSlash != std::string::npos) {
-		exeDir = exeDir.substr(0, lastSlash);
+		iconExeDir = iconExeDir.substr(0, lastSlash);
 	}
-	std::string iconFilePath = exeDir + "\\..\\..\\assets\\igi-editor-icon.ico";
+	std::string iconFilePath = iconExeDir + "\\..\\..\\assets\\igi-editor-icon.ico";
 
 	HICON hIcon = (HICON)LoadImageA(
 		NULL,

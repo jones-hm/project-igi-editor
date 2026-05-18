@@ -41,7 +41,7 @@ file(GLOB SHADERS_41 "shaders/41/*.*")
 file(GLOB SHADERS_45 "shaders/45/*.*")
 
 # Explicitly add new source files (GLOB might not pick them up immediately)
-list(APPEND SOURCES "source/compiler.cpp" "source/decompiler.cpp" "source/utils.cpp")
+list(APPEND SOURCES "source/compiler.cpp" "source/decompiler.cpp" "source/utils.cpp" "source/cli_handler.cpp")
 
 # Add Windows icon resource file
 if (WIN32)
@@ -80,6 +80,7 @@ set_source_files_properties(
   source/renderer/qvm_parser.cpp
   source/level/res_parser.cpp
   source/level/mtp_parser.cpp
+  source/cli_handler.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
@@ -118,10 +119,15 @@ if (WIN32)
     )
   endif()
 
-  # Use Windows subsystem for Release (no console), Console for Debug
+  # Use Console subsystem for both Debug and Release to support CLI mode
   set_target_properties(igi-editor PROPERTIES
     LINK_FLAGS_DEBUG "/SUBSYSTEM:CONSOLE"
-    LINK_FLAGS_RELEASE "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
+    LINK_FLAGS_RELEASE "/SUBSYSTEM:CONSOLE"
+  )
+  
+  # Ensure Release mode entry point is correct for console app
+  set_target_properties(igi-editor PROPERTIES
+    OUTPUT_NAME "igi1ed"
   )
 else()
   target_link_libraries(igi-editor PRIVATE glut GL GLEW)

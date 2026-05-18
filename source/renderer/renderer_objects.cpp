@@ -476,13 +476,13 @@ glm::vec3 Renderer_Objects::GetMeshExtents(const std::string& modelId, bool isBu
 // ─── GetOrLoadMesh ────────────────────────────────────────────────────────────
 Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding) {
     std::string cacheKey = std::to_string(current_level_) + ":" + (isBuilding ? "building:" : "object:") + modelId;
-    Logger::Get().Log(LogLevel::INFO,
+    Logger::Get().Log(LogLevel::DEBUG,
         "[Renderer_Objects] GetOrLoadMesh request cacheKey=" + cacheKey + " modelId=" + modelId);
 
     // Return cached mesh if already loaded
     auto it = mesh_cache_.find(cacheKey);
     if (it != mesh_cache_.end()) {
-        Logger::Get().Log(LogLevel::INFO,
+        Logger::Get().Log(LogLevel::DEBUG,
             "[Renderer_Objects] Cache hit for " + cacheKey +
             " vertexCount=" + std::to_string(it->second.vertexCount));
         return it->second;
@@ -497,7 +497,7 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
         mesh_cache_[cacheKey] = emptyMesh;
         return mesh_cache_[cacheKey];
     }
-    Logger::Get().Log(LogLevel::INFO,
+    Logger::Get().Log(LogLevel::DEBUG,
         "[Renderer_Objects] Resolved modelId=" + modelId + " to path=" + filepath);
 
 
@@ -506,7 +506,7 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
         Mesh mesh = loadObjModel(filepath, "");
         ApplyTexturesToMesh(mesh, modelId);
         mesh_cache_[cacheKey] = mesh;
-        Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Success: Loaded model '" + modelId + "' from " + filepath + " (" + std::to_string(mesh.vertexCount) + " vertices)");
+        Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Success: Loaded model '" + modelId + "' from " + filepath + " (" + std::to_string(mesh.vertexCount) + " vertices)");
         return mesh;
 
     } catch (const std::exception& e) {
@@ -537,7 +537,7 @@ void Renderer_Objects::EnsureTextureMapLoaded() {
     texture_map_level_ = current_level_;
 
     const std::string datPath = GetLevelTextureDatPath();
-    Logger::Get().Log(LogLevel::INFO, "[TEX Native] Loading DAT map from " + datPath);
+    Logger::Get().Log(LogLevel::DEBUG, "[TEX Native] Loading DAT map from " + datPath);
 
     std::ifstream file(datPath);
     if (!file.is_open()) {
@@ -586,7 +586,7 @@ void Renderer_Objects::EnsureTextureMapLoaded() {
     }
 
     Logger::Get().Log(
-        LogLevel::INFO,
+        LogLevel::DEBUG,
         "[TEX Native] DAT map loaded level=" + std::to_string(current_level_) +
         " models=" + std::to_string(parsedModels) +
         " tokenCount=" + std::to_string(tokens.size()));
@@ -598,13 +598,13 @@ std::vector<std::string> Renderer_Objects::GetTextureIdsForModel(const std::stri
     auto it = model_texture_map_cache_.find(modelId);
     if (it != model_texture_map_cache_.end()) {
         Logger::Get().Log(
-            LogLevel::INFO,
+            LogLevel::DEBUG,
             "[TEX Native] DAT hit modelId=" + modelId +
             " textureCount=" + std::to_string(it->second.size()));
         return it->second;
     }
 
-    Logger::Get().Log(LogLevel::INFO, "[TEX Native] DAT miss for modelId=" + modelId + ", falling back to same-id texture");
+    Logger::Get().Log(LogLevel::DEBUG, "[TEX Native] DAT miss for modelId=" + modelId + ", falling back to same-id texture");
     return { modelId };
 }
 
@@ -646,7 +646,7 @@ GLuint Renderer_Objects::GetOrLoadTexture(const std::string& textureId) {
     const std::string cacheKey = std::to_string(current_level_) + ":" + texturePath;
     auto it = texture_cache_.find(cacheKey);
     if (it != texture_cache_.end()) {
-        Logger::Get().Log(LogLevel::INFO, "[TEX Native] Cache hit textureId=" + textureId + " path=" + texturePath);
+        Logger::Get().Log(LogLevel::DEBUG, "[TEX Native] Cache hit textureId=" + textureId + " path=" + texturePath);
         return it->second;
     }
 
@@ -659,7 +659,7 @@ GLuint Renderer_Objects::GetOrLoadTexture(const std::string& textureId) {
 
     const pic_s* pic = pics.pics_;
     Logger::Get().Log(
-        LogLevel::INFO,
+        LogLevel::DEBUG,
         "[TEX Native] Decoded textureId=" + textureId +
         " path=" + texturePath +
         " width=" + std::to_string(pic->width_) +
@@ -671,7 +671,7 @@ GLuint Renderer_Objects::GetOrLoadTexture(const std::string& textureId) {
     Pic_FreePics(pics);
 
     Logger::Get().Log(
-        LogLevel::INFO,
+        LogLevel::DEBUG,
         "[TEX Native] Uploaded textureId=" + textureId +
         " glId=" + std::to_string(texture));
     return texture;

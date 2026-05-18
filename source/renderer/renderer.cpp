@@ -1155,6 +1155,7 @@ void Renderer::Draw(const draw_params_s& params, const task_tree_view_params_s& 
                                 if (it->level == LogLevel::ERR) { r = 1.0f; g = 0.2f; b = 0.2f; }
                                 else if (it->level == LogLevel::FATAL) { r = 1.0f; g = 0.0f; b = 0.0f; }
                                 else if (it->level == LogLevel::WARNING) { r = 1.0f; g = 1.0f; b = 0.0f; }
+                                else if (it->level == LogLevel::DEBUG) { r = 0.5f; g = 0.7f; b = 1.0f; }
 
                                 // Text truncation based on box width
                                 std::string msg = it->message;
