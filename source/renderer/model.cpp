@@ -9,6 +9,8 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <optional>
+#include <unordered_map>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
@@ -21,8 +23,15 @@ struct RenderVertex {
 };
 
 struct ParsedGeometry {
+    struct RenderBlock {
+        size_t triangleStart = 0;
+        size_t triangleCount = 0;
+        int materialSlot = 0;
+    };
+
     std::vector<RenderVertex> vertices;
     std::vector<std::array<uint32_t, 3>> triangles;
+    std::vector<RenderBlock> renderBlocks;
     bool fromRenderMesh = false;
     uint32_t modelType = 0;
     size_t renderBlockCount = 0;
@@ -224,13 +233,19 @@ D3drInfo ReadD3drInfo(const std::vector<uint8_t>& bytes, const std::vector<Chunk
 
 std::vector<RenderVertex> ParseRenderVertices(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk, uint32_t modelType) {
     uint32_t vertexSize = 0;
+    uint32_t uvOffset = 24; // default for Type 0 and Type 1
     switch (modelType) {
     case 0:
         vertexSize = 32;
+        uvOffset = 24;  // pos(12) + normal(12) + uv(8)
         break;
     case 1:
+        vertexSize = 40;
+        uvOffset = 24;  // pos(12) + normal(12) + uv0(8) + uv1(8)
+        break;
     case 3:
         vertexSize = 40;
+        uvOffset = 12;  // pos(12) + uv0(8) + uv1(8) + ...
         break;
     default:
         throw std::runtime_error("Unsupported MEF modelType in XTRV");
@@ -247,15 +262,20 @@ std::vector<RenderVertex> ParseRenderVertices(const std::vector<uint8_t>& bytes,
             ReadValue<float>(bytes, base + 8)
         ) * kNativeMefImportScale;
         vertices[i].uv = glm::vec2(
-            ReadValue<float>(bytes, base + 24),
-            ReadValue<float>(bytes, base + 28)
+            ReadValue<float>(bytes, base + uvOffset),
+            ReadValue<float>(bytes, base + uvOffset + 4)
         );
     }
 
     return vertices;
 }
 
-std::vector<std::array<uint32_t, 3>> ParsePackedRenderTriangles(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk, uint32_t modelType, size_t& outBlockCount) {
+std::vector<std::array<uint32_t, 3>> ParsePackedRenderTriangles(
+    const std::vector<uint8_t>& bytes,
+    const ChunkInfo& chunk,
+    uint32_t modelType,
+    std::vector<ParsedGeometry::RenderBlock>& outBlocks,
+    size_t& outBlockCount) {
     const size_t headerSize = (modelType == 3) ? 32 : 28;
     std::vector<std::array<uint32_t, 3>> triangles;
     size_t cursor = 0;
@@ -265,6 +285,7 @@ std::vector<std::array<uint32_t, 3>> ParsePackedRenderTriangles(const std::vecto
         const size_t base = chunk.data + cursor;
         const int16_t indexCount = ReadValue<int16_t>(bytes, base + 12);
         const int16_t nextoffs = ReadValue<int16_t>(bytes, base + 14);
+        const int16_t materialSlot = (modelType == 3) ? ReadValue<int16_t>(bytes, base + 16) : static_cast<int16_t>(blockCount);
         const uint16_t vertsOffset = (modelType == 3)
             ? ReadValue<uint16_t>(bytes, base + 20)
             : ReadValue<uint16_t>(bytes, base + 18);
@@ -278,6 +299,7 @@ std::vector<std::array<uint32_t, 3>> ParsePackedRenderTriangles(const std::vecto
         }
 
         const size_t facesBase = base + headerSize;
+        const size_t blockTriangleStart = triangles.size();
         uint16_t minLocalIndex = std::numeric_limits<uint16_t>::max();
         uint16_t maxLocalIndex = 0;
         for (int16_t i = 0; i + 2 < indexCount; i += 3) {
@@ -293,9 +315,15 @@ std::vector<std::array<uint32_t, 3>> ParsePackedRenderTriangles(const std::vecto
             });
         }
 
+        const size_t blockTriangleCount = triangles.size() - blockTriangleStart;
+        if (blockTriangleCount > 0) {
+            outBlocks.push_back({ blockTriangleStart, blockTriangleCount, materialSlot });
+        }
+
         Logger::Get().Log(
             LogLevel::INFO,
             "[MEF Binary Native] DNER block=" + std::to_string(blockCount) +
+            " materialSlot=" + std::to_string(materialSlot) +
             " indexCount=" + std::to_string(indexCount) +
             " nextoffs=" + std::to_string(nextoffs) +
             " vertsOffset=" + std::to_string(vertsOffset) +
@@ -326,8 +354,20 @@ std::vector<std::array<uint32_t, 3>> ParseSplitBoneTriangles(
     const ChunkInfo& dnerChunk,
     const ChunkInfo& ecafChunk,
     const D3drInfo& d3drInfo,
+    std::vector<ParsedGeometry::RenderBlock>& outBlocks,
     size_t& outBlockCount) {
-    constexpr size_t kBoneRecordSize = 32;
+    // Bone DNER records are typically 32 bytes, but some models use 28-byte records
+    size_t kBoneRecordSize = 32;
+    if (dnerChunk.size % 32 == 0) {
+        kBoneRecordSize = 32;
+    } else if (dnerChunk.size % 28 == 0) {
+        kBoneRecordSize = 28;
+    } else {
+        // Neither fits cleanly; return empty to trigger packed fallback
+        outBlockCount = 0;
+        return {};
+    }
+
     std::vector<std::array<uint32_t, 3>> triangles;
 
     if (dnerChunk.size < kBoneRecordSize) {
@@ -344,6 +384,7 @@ std::vector<std::array<uint32_t, 3>> ParseSplitBoneTriangles(
         const uint16_t triangleCount = ReadValue<uint16_t>(bytes, base + 18);
         const uint16_t vertsOffset = ReadValue<uint16_t>(bytes, base + 20);
         const uint16_t vertsCount = ReadValue<uint16_t>(bytes, base + 22);
+        const int materialSlot = static_cast<int>(block);
         const size_t firstIndex = static_cast<size_t>(indexOffset);
         const size_t neededIndexCount = static_cast<size_t>(triangleCount) * 3;
 
@@ -357,6 +398,7 @@ std::vector<std::array<uint32_t, 3>> ParseSplitBoneTriangles(
             continue;
         }
 
+        const size_t blockTriangleStart = triangles.size();
         uint16_t minLocalIndex = std::numeric_limits<uint16_t>::max();
         uint16_t maxLocalIndex = 0;
         for (size_t tri = 0; tri < triangleCount; ++tri) {
@@ -371,6 +413,11 @@ std::vector<std::array<uint32_t, 3>> ParseSplitBoneTriangles(
                 static_cast<uint32_t>(b),
                 static_cast<uint32_t>(c)
             });
+        }
+
+        const size_t blockTriangleCount = triangles.size() - blockTriangleStart;
+        if (blockTriangleCount > 0) {
+            outBlocks.push_back({ blockTriangleStart, blockTriangleCount, materialSlot });
         }
 
         Logger::Get().Log(
@@ -450,11 +497,16 @@ ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::ve
 
     if (xtrv && dner) {
         geometry.vertices = ParseRenderVertices(bytes, *xtrv, modelType);
-        if (modelType == 1 && ecaf && d3drInfo.valid && dner->size >= 32 && d3drInfo.numMeshes > 0 && dner->size % 32 == 0) {
-            geometry.triangles = ParseSplitBoneTriangles(bytes, *dner, *ecaf, d3drInfo, geometry.renderBlockCount);
+        if (modelType == 1 && ecaf && d3drInfo.valid && d3drInfo.numMeshes > 0) {
+            geometry.triangles = ParseSplitBoneTriangles(bytes, *dner, *ecaf, d3drInfo, geometry.renderBlocks, geometry.renderBlockCount);
             geometry.renderLayout = "type1 split ECAF/DNER";
+            if (geometry.triangles.empty()) {
+                // Split path failed, fall back to packed DNER parsing
+                geometry.triangles = ParsePackedRenderTriangles(bytes, *dner, modelType, geometry.renderBlocks, geometry.renderBlockCount);
+                geometry.renderLayout = "type1 packed DNER (split fallback)";
+            }
         } else {
-            geometry.triangles = ParsePackedRenderTriangles(bytes, *dner, modelType, geometry.renderBlockCount);
+            geometry.triangles = ParsePackedRenderTriangles(bytes, *dner, modelType, geometry.renderBlocks, geometry.renderBlockCount);
             geometry.renderLayout = (modelType == 1) ? "type1 packed DNER" : "packed DNER";
         }
         geometry.fromRenderMesh = !geometry.vertices.empty() && !geometry.triangles.empty();
@@ -484,87 +536,200 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
         throw std::runtime_error("MEF file contains no geometry: " + filepath);
     }
 
-    std::vector<float> verts;
-    verts.reserve(geometry.triangles.size() * 3 * 8);
-
     glm::vec3 min_p(std::numeric_limits<float>::max());
     glm::vec3 max_p(std::numeric_limits<float>::lowest());
 
-    for (const auto& tri : geometry.triangles) {
-        if (tri[0] >= geometry.vertices.size() ||
-            tri[1] >= geometry.vertices.size() ||
-            tri[2] >= geometry.vertices.size()) {
-            continue;
+    Mesh mesh;
+
+    auto buildSubMesh = [&](size_t triangleStart, size_t triangleCount) -> std::optional<SubMesh> {
+        std::vector<float> verts;
+        verts.reserve(triangleCount * 3 * 8);
+
+        for (size_t triIndex = triangleStart; triIndex < triangleStart + triangleCount; ++triIndex) {
+            const auto& tri = geometry.triangles[triIndex];
+            if (tri[0] >= geometry.vertices.size() ||
+                tri[1] >= geometry.vertices.size() ||
+                tri[2] >= geometry.vertices.size()) {
+                continue;
+            }
+
+            const glm::vec3 p0 = geometry.vertices[tri[0]].pos;
+            const glm::vec3 p1 = geometry.vertices[tri[1]].pos;
+            const glm::vec3 p2 = geometry.vertices[tri[2]].pos;
+
+            glm::vec3 normal = glm::cross(p1 - p0, p2 - p0);
+            const float len = glm::length(normal);
+            if (len > 1e-6f) {
+                normal /= len;
+            } else {
+                normal = glm::vec3(0.0f, 0.0f, 1.0f);
+            }
+
+            auto addVertex = [&](uint32_t index) {
+                const RenderVertex& src = geometry.vertices[index];
+                verts.push_back(src.pos.x);
+                verts.push_back(src.pos.y);
+                verts.push_back(src.pos.z);
+
+                min_p.x = std::min(min_p.x, src.pos.x);
+                min_p.y = std::min(min_p.y, src.pos.y);
+                min_p.z = std::min(min_p.z, src.pos.z);
+
+                max_p.x = std::max(max_p.x, src.pos.x);
+                max_p.y = std::max(max_p.y, src.pos.y);
+                max_p.z = std::max(max_p.z, src.pos.z);
+
+                verts.push_back(normal.x);
+                verts.push_back(normal.y);
+                verts.push_back(normal.z);
+
+                verts.push_back(src.uv.x);
+                verts.push_back(1.0f - src.uv.y);
+            };
+
+            addVertex(tri[0]);
+            addVertex(tri[1]);
+            addVertex(tri[2]);
         }
 
-        const glm::vec3 p0 = geometry.vertices[tri[0]].pos;
-        const glm::vec3 p1 = geometry.vertices[tri[1]].pos;
-        const glm::vec3 p2 = geometry.vertices[tri[2]].pos;
-
-        glm::vec3 normal = glm::cross(p1 - p0, p2 - p0);
-        const float len = glm::length(normal);
-        if (len > 1e-6f) {
-            normal /= len;
-        } else {
-            normal = glm::vec3(0.0f, 0.0f, 1.0f);
+        if (verts.empty()) {
+            return std::nullopt;
         }
 
-        auto addVertex = [&](uint32_t index) {
-            const RenderVertex& src = geometry.vertices[index];
-            verts.push_back(src.pos.x);
-            verts.push_back(src.pos.y);
-            verts.push_back(src.pos.z);
+        SubMesh sub;
+        sub.textureID = 0;
+        sub.alphaMode = 0;
+        sub.vertexCount = static_cast<int>(verts.size() / 8);
+        sub.baseColorFactor = glm::vec4(1.0f);
 
-            min_p.x = std::min(min_p.x, src.pos.x);
-            min_p.y = std::min(min_p.y, src.pos.y);
-            min_p.z = std::min(min_p.z, src.pos.z);
+        glGenVertexArrays(1, &sub.VAO);
+        glGenBuffers(1, &sub.VBO);
+        glBindVertexArray(sub.VAO);
+        glBindBuffer(GL_ARRAY_BUFFER, sub.VBO);
+        glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(float), verts.data(), GL_STATIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+        glBindVertexArray(0);
 
-            max_p.x = std::max(max_p.x, src.pos.x);
-            max_p.y = std::max(max_p.y, src.pos.y);
-            max_p.z = std::max(max_p.z, src.pos.z);
+        return sub;
+    };
 
-            verts.push_back(normal.x);
-            verts.push_back(normal.y);
-            verts.push_back(normal.z);
+    if (!geometry.renderBlocks.empty()) {
+        std::vector<int> materialOrder;
+        std::unordered_map<int, std::vector<size_t>> groupedBlocks;
+        for (size_t i = 0; i < geometry.renderBlocks.size(); ++i) {
+            const int materialSlot = geometry.renderBlocks[i].materialSlot;
+            if (groupedBlocks.find(materialSlot) == groupedBlocks.end()) {
+                materialOrder.push_back(materialSlot);
+            }
+            groupedBlocks[materialSlot].push_back(i);
+        }
+        std::sort(materialOrder.begin(), materialOrder.end());
 
-            verts.push_back(src.uv.x);
-            verts.push_back(1.0f - src.uv.y);
-        };
+        for (int materialSlot : materialOrder) {
+            const auto& blockIndices = groupedBlocks[materialSlot];
+            std::vector<float> verts;
 
-        addVertex(tri[0]);
-        addVertex(tri[1]);
-        addVertex(tri[2]);
+            for (size_t blockIndex : blockIndices) {
+                const auto& block = geometry.renderBlocks[blockIndex];
+                if (block.triangleCount == 0) {
+                    continue;
+                }
+
+                for (size_t triIndex = block.triangleStart; triIndex < block.triangleStart + block.triangleCount; ++triIndex) {
+                    const auto& tri = geometry.triangles[triIndex];
+                    if (tri[0] >= geometry.vertices.size() ||
+                        tri[1] >= geometry.vertices.size() ||
+                        tri[2] >= geometry.vertices.size()) {
+                        continue;
+                    }
+
+                    const glm::vec3 p0 = geometry.vertices[tri[0]].pos;
+                    const glm::vec3 p1 = geometry.vertices[tri[1]].pos;
+                    const glm::vec3 p2 = geometry.vertices[tri[2]].pos;
+
+                    glm::vec3 normal = glm::cross(p1 - p0, p2 - p0);
+                    const float len = glm::length(normal);
+                    if (len > 1e-6f) {
+                        normal /= len;
+                    } else {
+                        normal = glm::vec3(0.0f, 0.0f, 1.0f);
+                    }
+
+                    auto addVertex = [&](uint32_t index) {
+                        const RenderVertex& src = geometry.vertices[index];
+                        verts.push_back(src.pos.x);
+                        verts.push_back(src.pos.y);
+                        verts.push_back(src.pos.z);
+
+                        min_p.x = std::min(min_p.x, src.pos.x);
+                        min_p.y = std::min(min_p.y, src.pos.y);
+                        min_p.z = std::min(min_p.z, src.pos.z);
+
+                        max_p.x = std::max(max_p.x, src.pos.x);
+                        max_p.y = std::max(max_p.y, src.pos.y);
+                        max_p.z = std::max(max_p.z, src.pos.z);
+
+                        verts.push_back(normal.x);
+                        verts.push_back(normal.y);
+                        verts.push_back(normal.z);
+
+                        verts.push_back(src.uv.x);
+                        verts.push_back(1.0f - src.uv.y);
+                    };
+
+                    addVertex(tri[0]);
+                    addVertex(tri[1]);
+                    addVertex(tri[2]);
+                }
+            }
+
+            if (verts.empty()) {
+                continue;
+            }
+
+            SubMesh sub;
+            sub.textureID = 0;
+            sub.alphaMode = 0;
+            sub.vertexCount = static_cast<int>(verts.size() / 8);
+            sub.baseColorFactor = glm::vec4(1.0f);
+
+            glGenVertexArrays(1, &sub.VAO);
+            glGenBuffers(1, &sub.VBO);
+            glBindVertexArray(sub.VAO);
+            glBindBuffer(GL_ARRAY_BUFFER, sub.VBO);
+            glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(float), verts.data(), GL_STATIC_DRAW);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+            glEnableVertexAttribArray(0);
+            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+            glEnableVertexAttribArray(1);
+            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+            glEnableVertexAttribArray(2);
+            glBindVertexArray(0);
+
+            mesh.vertexCount += sub.vertexCount;
+            mesh.subMeshes.push_back(sub);
+        }
     }
 
-    if (verts.empty()) {
+    if (mesh.subMeshes.empty()) {
+        if (auto sub = buildSubMesh(0, geometry.triangles.size())) {
+            mesh.vertexCount = sub->vertexCount;
+            mesh.subMeshes.push_back(*sub);
+        }
+    }
+
+    if (mesh.subMeshes.empty()) {
         throw std::runtime_error("MEF file resulted in no valid vertices: " + filepath);
     }
 
-    Mesh mesh;
-    SubMesh sub;
-    sub.textureID = 0;
-    sub.alphaMode = 0;
-    sub.vertexCount = static_cast<int>(verts.size() / 8);
-    sub.baseColorFactor = glm::vec4(1.0f);
-
-    glGenVertexArrays(1, &sub.VAO);
-    glGenBuffers(1, &sub.VBO);
-    glBindVertexArray(sub.VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, sub.VBO);
-    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(float), verts.data(), GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-    glBindVertexArray(0);
-
-    mesh.subMeshes.push_back(sub);
-    mesh.VAO = sub.VAO;
-    mesh.VBO = sub.VBO;
+    mesh.VAO = mesh.subMeshes.front().VAO;
+    mesh.VBO = mesh.subMeshes.front().VBO;
     mesh.textureID = 0;
-    mesh.vertexCount = sub.vertexCount;
     mesh.halfExtents = (max_p - min_p) * 0.5f;
     mesh.center = (max_p + min_p) * 0.5f;
     // Native MEF now stays in the game's coordinate space, where Z is up.
@@ -615,6 +780,7 @@ Mesh loadObjModel(const std::string& filepath, const std::string& /*unused*/) {
             std::to_string(mesh.halfExtents.z) + ")" +
         " zOffset=" + std::to_string(mesh.zOffset) +
         " mainZOffset=" + std::to_string(mesh.mainZOffset) +
+        " subMeshes=" + std::to_string(mesh.subMeshes.size()) +
         " gpuVertices=" + std::to_string(mesh.vertexCount));
 
     std::cout << "[MEF Binary Native] Loaded: " << filepath
@@ -645,7 +811,6 @@ void destroyModel(Mesh& mesh) {
     for (auto& sub : mesh.subMeshes) {
         if (sub.VBO) glDeleteBuffers(1, &sub.VBO);
         if (sub.VAO) glDeleteVertexArrays(1, &sub.VAO);
-        if (sub.textureID) glDeleteTextures(1, &sub.textureID);
         sub.VAO = sub.VBO = sub.textureID = 0;
     }
     mesh.subMeshes.clear();
