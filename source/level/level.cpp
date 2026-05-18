@@ -112,10 +112,10 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 	Str_SPrintf(qeditorQsc, 1024, "%s\\QEditor\\QFiles\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", appData, params.level_no_);
 
 	char igiQsc[1024];
-	Str_SPrintf(igiQsc, 1024, "%s\\missions\\location0\\level%d\\objects.qsc", cfg.igiPath.c_str(), params.level_no_);
+	Str_SPrintf(igiQsc, 1024, "%s\\missions\\location0\\level%d\\objects.qsc", Utils::GetIGIRootPath().c_str(), params.level_no_);
 
 	char igiQvm[1024];
-	Str_SPrintf(igiQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", cfg.igiPath.c_str(), params.level_no_);
+	Str_SPrintf(igiQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", Utils::GetIGIRootPath().c_str(), params.level_no_);
 
 	struct file_entry {
 		std::string path;
@@ -218,7 +218,7 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 
 void Level::DecompileObjects(int levelNo) {
 	ConfigData& cfg = Config::Get();
-	std::string igiPath = cfg.igiPath;
+	std::string igiPath = Utils::GetIGIRootPath();
 
 	char qvmPath[1024];
 	Str_SPrintf(qvmPath, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", igiPath.c_str(), levelNo);
@@ -326,7 +326,7 @@ void Level::CompileCurrentQSC(int level_no) {
 		// Deploy compiled QVM to IGI game path
 		ConfigData& cfg = Config::Get();
 		char qvmDest[1024];
-		Str_SPrintf(qvmDest, 1024, "%s\\missions\\location0\\level%d", cfg.igiPath.c_str(), level_no);
+		Str_SPrintf(qvmDest, 1024, "%s\\missions\\location0\\level%d", Utils::GetIGIRootPath().c_str(), level_no);
 
 		if (std::filesystem::exists(outputPath)) {
 			std::filesystem::copy(outputPath, qvmDest,
@@ -347,7 +347,7 @@ void Level::CopyTerrainFromQEditor(int level_no) {
 	// Source is AppData QEditor
 	std::string srcTerrain = std::string(appData) + "\\QEditor\\QFiles\\IGI_QVM\\missions\\location0\\level" + std::to_string(level_no) + "\\terrain";
 	// Fallback source is game path
-	std::string gameTerrain = cfg.igiPath + "\\missions\\location0\\level" + std::to_string(level_no) + "\\terrain";
+	std::string gameTerrain = Utils::GetIGIRootPath() + "\\missions\\location0\\level" + std::to_string(level_no) + "\\terrain";
 
 	// Copy to executable directory terrains\levelX\terrain
 	std::string exeDir = GetExeDirectory();
@@ -423,7 +423,7 @@ void Level::MoveTerrainToGamePath(int level_no) {
 
 	ConfigData& cfg = Config::Get();
 	char dstTerrain[1024];
-	Str_SPrintf(dstTerrain, 1024, "%s\\missions\\location0\\level%d\\terrain", cfg.igiPath.c_str(), level_no);
+	Str_SPrintf(dstTerrain, 1024, "%s\\missions\\location0\\level%d\\terrain", Utils::GetIGIRootPath().c_str(), level_no);
 
 	try {
 		if (std::filesystem::exists(srcTerrain)) {

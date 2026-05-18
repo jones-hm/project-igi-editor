@@ -544,4 +544,32 @@ void TrimFileInPlace(const std::string& filepath) {
 	}
 }
 
+std::string GetIGIRootPath() {
+	std::string path = Config::Get().igiPath;
+	// Trim trailing slashes/spaces
+	while (!path.empty() && (path.back() == '\\' || path.back() == '/' || path.back() == ' ')) {
+		path.pop_back();
+	}
+	// If it contains \missions, strip it
+	size_t pos = path.find("\\missions");
+	if (pos != std::string::npos) {
+		path = path.substr(0, pos);
+	}
+	// Trim trailing slashes/spaces again
+	while (!path.empty() && (path.back() == '\\' || path.back() == '/' || path.back() == ' ')) {
+		path.pop_back();
+	}
+	return path;
+}
+
+std::string GetIGIModelsPath(int level_no) {
+	std::string root = GetIGIRootPath();
+	std::string pathLoc = root + "\\missions\\location0\\level" + std::to_string(level_no) + "\\models";
+	
+	if (std::filesystem::exists(pathLoc)) {
+		return pathLoc;
+	}
+	return "";
+}
+
 } // namespace Utils

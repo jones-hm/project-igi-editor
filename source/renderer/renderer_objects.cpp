@@ -6,6 +6,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include "logger.h"
+#include "utils.h"
 
 
 bool Renderer_Objects::IsSkippedModelId(const std::string& modelId) {
@@ -330,8 +331,9 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         // 3. Scale
         model = glm::scale(model, glm::vec3(total_scale));
 
-        // 4. Convert OBJ Y-up to IGI Z-up (90 degree X rotation)
-        model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f)); 
+        // Native MEF geometry is already authored in the game's coordinate space.
+        // Do not apply the legacy OBJ Y-up -> Z-up correction here or buildings/AI
+        // will stand on the wrong axis.
 
         // Upload model matrix
         glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(model));
@@ -461,11 +463,17 @@ glm::vec3 Renderer_Objects::GetMeshExtents(const std::string& modelId, bool isBu
 // ─── GetOrLoadMesh ────────────────────────────────────────────────────────────
 Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding) {
     std::string cacheKey = std::to_string(current_level_) + ":" + (isBuilding ? "building:" : "object:") + modelId;
+    Logger::Get().Log(LogLevel::INFO,
+        "[Renderer_Objects] GetOrLoadMesh request cacheKey=" + cacheKey + " modelId=" + modelId);
 
     // Return cached mesh if already loaded
     auto it = mesh_cache_.find(cacheKey);
-    if (it != mesh_cache_.end())
+    if (it != mesh_cache_.end()) {
+        Logger::Get().Log(LogLevel::INFO,
+            "[Renderer_Objects] Cache hit for " + cacheKey +
+            " vertexCount=" + std::to_string(it->second.vertexCount));
         return it->second;
+    }
 
     // Find the file on disk
     std::string filepath = FindModelFile(modelId, isBuilding);
@@ -476,6 +484,8 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
         mesh_cache_[cacheKey] = emptyMesh;
         return mesh_cache_[cacheKey];
     }
+    Logger::Get().Log(LogLevel::INFO,
+        "[Renderer_Objects] Resolved modelId=" + modelId + " to path=" + filepath);
 
 
     // Load and cache
@@ -674,137 +684,61 @@ Mesh Renderer_Objects::CreateCubeMesh() {
 }
 
 std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isBuilding) {
-    std::string levelDir = "level" + std::to_string(current_level_);
+    std::string modelsPathStr = Utils::GetIGIModelsPath(current_level_);
+    std::filesystem::path modelsPath(modelsPathStr);
     
-    // Try AI folder first if this might be an AI model (AI models have IDs starting with 000-019)
-    bool isAIModel = false;
-    if (modelId.size() >= 3) {
-        std::string prefix = modelId.substr(0, 3);
-        int prefixNum = 0;
-        try {
-            prefixNum = std::stoi(prefix);
-            if (prefixNum >= 0 && prefixNum <= 19) {
-                isAIModel = true;
-            }
-        } catch (...) {
-            // Not a number, not an AI model
-        }
+    if (!std::filesystem::exists(modelsPath)) {
+        Logger::Get().Log(LogLevel::WARNING, "[Renderer_Objects] Models path does not exist: " + modelsPathStr);
+        return "";
+    }
+
+    // 1. Try exact match first
+    std::filesystem::path exactPath = modelsPath / (modelId + ".mef");
+    if (std::filesystem::exists(exactPath)) {
+        return exactPath.string();
     }
     
-    // Search in AI folder if it's an AI model
-    if (isAIModel) {
-        std::string aiBase = g_folders.ai_folder_;
-        for (char& c : aiBase) {
-            if (c == '/') c = '\\';
+    // 2. Try partial/fuzzy match (wildcard search in models folder)
+    std::string baseId = modelId;
+    if (baseId.size() > 2 && baseId.substr(baseId.size() - 2) == "_1") {
+        baseId = baseId.substr(0, baseId.size() - 2);
+    }
+
+    std::string bestMatch = "";
+    for (const auto& entry : std::filesystem::directory_iterator(modelsPath)) {
+        if (!entry.is_regular_file()) continue;
+        std::string fname = entry.path().filename().string();
+        std::string ext = entry.path().extension().string();
+        if (ext != ".mef") continue;
+
+        // Exact match in filename
+        if (fname.find(modelId) != std::string::npos) {
+            return entry.path().string();
         }
         
-        std::filesystem::path aiBasePath(aiBase);
-        std::filesystem::path aiLevelPath = aiBasePath / levelDir;
-        
-        // Try exact match in AI folder
-        std::vector<std::filesystem::path> aiSearchPaths = { 
-            aiLevelPath / (modelId + ".glb"),
-            aiLevelPath / (modelId + ".obj")
-        };
-        for (const auto& path : aiSearchPaths) {
-            std::string pathStr = path.string();
-            if (std::filesystem::exists(pathStr)) {
-                return pathStr;
+        // Fuzzy match: if specific variation missing, look for variation 01
+        // e.g. 300_03_1 -> 300_01_1
+        size_t firstUnderscore = modelId.find_first_of('_');
+        if (firstUnderscore != std::string::npos) {
+            std::string typeId = modelId.substr(0, firstUnderscore);
+            if (fname.find(typeId + "_01") != std::string::npos) {
+                bestMatch = entry.path().string();
             }
-        }
-        
-        // Try partial match in AI folder
-        if (std::filesystem::exists(aiLevelPath)) {
-            for (const auto& entry : std::filesystem::directory_iterator(aiLevelPath)) {
-                if (!entry.is_regular_file()) continue;
-                std::string fname = entry.path().filename().string();
-                std::string ext = entry.path().extension().string();
-                if (ext != ".glb" && ext != ".obj") continue;
-
-                if (fname.find(modelId) != std::string::npos) {
-                    return entry.path().string();
-                }
-            }
-        }
-    }
-    
-    // Fall back to buildings/objects folder
-    std::string objectsBase = isBuilding ? g_folders.buildings_folder_ : g_folders.objects_folder_;
-    
-    // Convert forward slashes to backslashes for Windows
-    for (char& c : objectsBase) {
-        if (c == '/') c = '\\';
-    }
-    
-    // Use std::filesystem::path for proper path handling
-    std::filesystem::path basePath(objectsBase);
-    std::filesystem::path levelPath = basePath / levelDir;
-    
-    // 1. Try exact match in level-specific folder (.glb first, then .obj fallback)
-    std::vector<std::filesystem::path> searchPaths = { 
-        levelPath / (modelId + ".glb"),
-        levelPath / (modelId + ".obj")
-    };
-    for (const auto& path : searchPaths) {
-        if (std::filesystem::exists(path)) return path.string();
-    }
-    
-    // 1b. Fallback to OTHER folder (buildings <-> objects)
-    std::string otherBase = isBuilding ? g_folders.objects_folder_ : g_folders.buildings_folder_;
-    for (char& c : otherBase) if (c == '/') c = '\\';
-    std::filesystem::path otherLevelPath = std::filesystem::path(otherBase) / levelDir;
-    
-    std::vector<std::filesystem::path> otherSearchPaths = { 
-        otherLevelPath / (modelId + ".glb"),
-        otherLevelPath / (modelId + ".obj")
-    };
-    for (const auto& path : otherSearchPaths) {
-        if (std::filesystem::exists(path)) {
-            Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Found " + modelId + " in ALTERNATE folder: " + path.string());
-            return path.string();
-        }
-    }
-    
-    // 2. Try partial match (wildcard search in level-specific folder)
-    if (std::filesystem::exists(levelPath)) {
-        // Try BaseID (stripped of _1) if applicable
-        std::string baseId = modelId;
-        if (baseId.size() > 2 && baseId.substr(baseId.size() - 2) == "_1") {
-            baseId = baseId.substr(0, baseId.size() - 2);
-        }
-
-        std::string bestMatch = "";
-        for (const auto& entry : std::filesystem::directory_iterator(levelPath)) {
-            if (!entry.is_regular_file()) continue;
-            std::string fname = entry.path().filename().string();
-            std::string ext = entry.path().extension().string();
-            if (ext != ".glb" && ext != ".obj") continue;
-
-            // Exact match in filename
-            if (fname.find(modelId) != std::string::npos) return entry.path().string();
-            
-            // Fuzzy match: if specific variation missing, look for variation 01
-            // e.g. 300_03_1 -> 300_01_1
-            size_t firstUnderscore = modelId.find_first_of('_');
-            if (firstUnderscore != std::string::npos) {
-                std::string typeId = modelId.substr(0, firstUnderscore);
-                if (fname.find(typeId + "_01") != std::string::npos) {
-                    bestMatch = entry.path().string();
-                }
-                if (bestMatch.empty() && fname.rfind(typeId + "_", 0) == 0) {
-                    bestMatch = entry.path().string();
-                }
-            }
-            
-            // Last resort: any file containing the type prefix
-            if (bestMatch.empty() && fname.find(baseId) != std::string::npos) {
+            if (bestMatch.empty() && fname.rfind(typeId + "_", 0) == 0) {
                 bestMatch = entry.path().string();
             }
         }
-        if (!bestMatch.empty()) {
-            return bestMatch;
+        
+        // Last resort: any file containing the type prefix
+        if (bestMatch.empty() && fname.find(baseId) != std::string::npos) {
+            bestMatch = entry.path().string();
         }
     }
+
+    if (!bestMatch.empty()) {
+        return bestMatch;
+    }
+
     return "";
 }
 

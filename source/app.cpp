@@ -384,17 +384,17 @@ void App::LoadAIModelsFromFolder(int level_no) {
 
 	Logger::Get().Log(LogLevel::INFO, "[App] AI folder path: " + aiFolderPath);
 
-	// Get all GLB files in the AI folder if it exists
+	// Get all MEF files in the AI folder if it exists
 	std::vector<std::string> aiModels;
 	if (std::filesystem::exists(aiFolderPath)) {
 		for (const auto& entry : std::filesystem::directory_iterator(aiFolderPath)) {
-			if (entry.path().extension() == ".glb") {
+			if (entry.path().extension() == ".mef") {
 				aiModels.push_back(entry.path().filename().string());
 			}
 		}
-		Logger::Get().Log(LogLevel::INFO, "[App] Found " + std::to_string(aiModels.size()) + " AI GLB files");
+		Logger::Get().Log(LogLevel::INFO, "[App] Found " + std::to_string(aiModels.size()) + " AI MEF files");
 	} else {
-		Logger::Get().Log(LogLevel::WARNING, "[App] AI folder does not exist: " + aiFolderPath + " (skipping GLB loading, but proceeding with JSON)");
+		Logger::Get().Log(LogLevel::WARNING, "[App] AI folder does not exist: " + aiFolderPath + " (skipping MEF loading, but proceeding with JSON)");
 	}
 
 	// Read JSON file to get AI model positions
@@ -1702,7 +1702,7 @@ void App::ResetLevel() {
 	Str_SPrintf(srcQvm, 1024, "%s\\IGI_QVM\\missions\\location0\\level%d\\objects.qvm", baseQFiles.c_str(), levelNo);
 
 	char dstQvm[1024];
-	Str_SPrintf(dstQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", cfg.igiPath.c_str(), levelNo);
+	Str_SPrintf(dstQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", Utils::GetIGIRootPath().c_str(), levelNo);
 
 	printf("Step 2: Copying objects.qvm from %s to %s\n", srcQvm, dstQvm);
 

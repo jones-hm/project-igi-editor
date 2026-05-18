@@ -67,4 +67,9 @@ std::string GetClipboardText();
 // File trim utility
 void TrimFileInPlace(const std::string& filepath);
 
+// Path resolution utilities
+std::string GetIGIRootPath();
+std::string GetIGIModelsPath(int level_no);
+
 } // namespace Utils
+
