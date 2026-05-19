@@ -247,11 +247,13 @@ std::vector<RenderVertex> ParseRenderVertices(const std::vector<uint8_t>& bytes,
     for (size_t i = 0; i < count; ++i) {
         const size_t base = chunk.data + i * vertexSize;
 
-        vertices[i].pos = glm::vec3(
+        glm::vec3 rawPos(
             ReadValue<float>(bytes, base + 0),
             ReadValue<float>(bytes, base + 4),
             ReadValue<float>(bytes, base + 8)
-        ) * kMefNativeScale;
+        );
+        vertices[i].rawPos = rawPos;
+        vertices[i].pos = rawPos * kMefNativeScale;
 
         // Normal is present for all model types at +12..+23
         vertices[i].normal = glm::vec3(
@@ -573,6 +575,102 @@ std::vector<Attachment> ParseAttachments(const std::vector<uint8_t>& bytes, cons
 // Main geometry orchestrator
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// New parsers: XTVC, ECFC, ECAF, DNER records, TAMC
+// ---------------------------------------------------------------------------
+
+std::vector<XtvcVertex> ParseXtvcVerts(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk) {
+    // XTVC type1: 20 bytes per vertex
+    const size_t stride = 20;
+    const size_t count  = chunk.size / stride;
+    std::vector<XtvcVertex> verts(count);
+    for (size_t i = 0; i < count; ++i) {
+        const size_t base = chunk.data + i * stride;
+        verts[i].px        = ReadValue<float>   (bytes, base + 0);
+        verts[i].py        = ReadValue<float>   (bytes, base + 4);
+        verts[i].pz        = ReadValue<float>   (bytes, base + 8);
+        verts[i].boneIndex = ReadValue<uint32_t>(bytes, base + 12);
+        verts[i].reserved  = ReadValue<uint32_t>(bytes, base + 16);
+    }
+    return verts;
+}
+
+std::vector<EcfcFace> ParseEcfcFaces(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk) {
+    // ECFC: 12 bytes per face
+    const size_t stride = 12;
+    const size_t count  = chunk.size / stride;
+    std::vector<EcfcFace> faces(count);
+    for (size_t i = 0; i < count; ++i) {
+        const size_t base = chunk.data + i * stride;
+        faces[i].a   = ReadValue<uint16_t>(bytes, base + 0);
+        faces[i].b   = ReadValue<uint16_t>(bytes, base + 2);
+        faces[i].c   = ReadValue<uint16_t>(bytes, base + 4);
+        faces[i].mat = ReadValue<uint16_t>(bytes, base + 6);
+        faces[i].lmp = ReadValue<uint16_t>(bytes, base + 8);
+        faces[i].vrt = ReadValue<uint16_t>(bytes, base + 10);
+    }
+    return faces;
+}
+
+std::vector<EcafFace> ParseEcafFaces(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk) {
+    // ECAF: 6 bytes per face
+    const size_t stride = 6;
+    const size_t count  = chunk.size / stride;
+    std::vector<EcafFace> faces(count);
+    for (size_t i = 0; i < count; ++i) {
+        const size_t base = chunk.data + i * stride;
+        faces[i].a = ReadValue<uint16_t>(bytes, base + 0);
+        faces[i].b = ReadValue<uint16_t>(bytes, base + 2);
+        faces[i].c = ReadValue<uint16_t>(bytes, base + 4);
+    }
+    return faces;
+}
+
+std::vector<DnerRecord> ParseDnerRecords(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk) {
+    // DNER type0/type1: 32 bytes per record
+    const size_t stride = 32;
+    const size_t count  = chunk.size / stride;
+    std::vector<DnerRecord> recs(count);
+    for (size_t i = 0; i < count; ++i) {
+        const size_t base = chunk.data + i * stride;
+        recs[i].opacity     = ReadValue<uint8_t> (bytes, base + 0);
+        recs[i].mshine      = ReadValue<uint8_t> (bytes, base + 1);
+        recs[i].scolor      = ReadValue<uint8_t> (bytes, base + 2);
+        recs[i].opacitd     = ReadValue<uint8_t> (bytes, base + 3);
+        recs[i].px          = ReadValue<float>   (bytes, base + 4);
+        recs[i].py          = ReadValue<float>   (bytes, base + 8);
+        recs[i].pz          = ReadValue<float>   (bytes, base + 12);
+        recs[i].offsetIndex = ReadValue<uint16_t>(bytes, base + 16);
+        recs[i].numFace     = ReadValue<uint16_t>(bytes, base + 18);
+        recs[i].offVerts    = ReadValue<uint16_t>(bytes, base + 20);
+        recs[i].numVerts    = ReadValue<uint16_t>(bytes, base + 22);
+        recs[i].td          = ReadValue<int16_t> (bytes, base + 24);
+        recs[i].tb          = ReadValue<int16_t> (bytes, base + 26);
+        recs[i].tr          = ReadValue<int16_t> (bytes, base + 28);
+        recs[i].trd         = ReadValue<uint8_t> (bytes, base + 30);
+        recs[i].tbd         = ReadValue<uint8_t> (bytes, base + 31);
+    }
+    return recs;
+}
+
+std::vector<TamcRecord> ParseTamcRecords(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk) {
+    // TAMC: 16 bytes per record
+    const size_t stride = 16;
+    const size_t count  = chunk.size / stride;
+    std::vector<TamcRecord> recs(count);
+    for (size_t i = 0; i < count; ++i) {
+        const size_t base = chunk.data + i * stride;
+        recs[i].opacity  = ReadValue<float>   (bytes, base + 0);
+        recs[i].portal   = ReadValue<uint16_t>(bytes, base + 4);
+        recs[i].diffuse  = ReadValue<int16_t> (bytes, base + 6);
+        recs[i].unknown0 = ReadValue<uint16_t>(bytes, base + 8);
+        recs[i].unknown1 = ReadValue<uint16_t>(bytes, base + 10);
+        recs[i].matId    = ReadValue<int16_t> (bytes, base + 12);
+        recs[i].unknown  = ReadValue<uint16_t>(bytes, base + 14);
+    }
+    return recs;
+}
+
 ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::vector<ChunkInfo>& chunks) {
     ParsedGeometry geometry;
     const uint32_t modelType = ReadModelType(bytes, chunks);
@@ -625,6 +723,32 @@ ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::ve
         geometry = ParseCollisionGeometry(bytes, chunks);
         geometry.renderLayout = "collision fallback";
     }
+
+    // ---- Parse ASCII-export-specific chunks ----
+    // DNER records (32 bytes each, type0/type1 same layout)
+    if (dner) {
+        geometry.dnerRecords = ParseDnerRecords(bytes, *dner);
+    }
+
+    // ECAF render face indices
+    if (ecaf) {
+        geometry.ecafFaces = ParseEcafFaces(bytes, *ecaf);
+    }
+
+    // XTVC0, ECFC0, TAMC0 (set 0), XTVC1, ECFC1, TAMC1 (set 1)
+    const ChunkInfo* xtvc0 = FindChunk(chunks, "XTVC", 0);
+    const ChunkInfo* ecfc0 = FindChunk(chunks, "ECFC", 0);
+    const ChunkInfo* tamc0 = FindChunk(chunks, "TAMC", 0);
+    const ChunkInfo* xtvc1 = FindChunk(chunks, "XTVC", 1);
+    const ChunkInfo* ecfc1 = FindChunk(chunks, "ECFC", 1);
+    const ChunkInfo* tamc1 = FindChunk(chunks, "TAMC", 1);
+
+    if (xtvc0) geometry.xtvcVerts  = ParseXtvcVerts (bytes, *xtvc0);
+    if (ecfc0) geometry.ecfcFaces  = ParseEcfcFaces (bytes, *ecfc0);
+    if (tamc0) geometry.tamcRecords= ParseTamcRecords(bytes, *tamc0);
+    if (xtvc1) geometry.xtvcVerts1 = ParseXtvcVerts (bytes, *xtvc1);
+    if (ecfc1) geometry.ecfcFaces1 = ParseEcfcFaces (bytes, *ecfc1);
+    if (tamc1) geometry.tamcRecords1= ParseTamcRecords(bytes, *tamc1);
 
     return geometry;
 }

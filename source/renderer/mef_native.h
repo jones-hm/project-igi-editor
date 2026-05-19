@@ -11,6 +11,7 @@ constexpr float kMefNativeScale = 1.0f / 40.96f;
 
 struct RenderVertex {
     glm::vec3 pos{0.f};
+    glm::vec3 rawPos{0.f};      // raw XTRV position (NOT scaled, NOT baked) — for ASCII export
     glm::vec3 normal{0.f};      // from XTRV bytes +12..+23
     glm::vec2 uv{0.f};
     uint16_t boneIndex{0};
@@ -31,6 +32,50 @@ struct Attachment {
     int32_t boneId{-1};     // bytes +68..+71 in 72-byte ATTA record
 };
 
+// ---- New structs for ASCII MEF exporter ----
+
+// XTVC type1: 20 bytes per vertex
+struct XtvcVertex {
+    float    px{0.f}, py{0.f}, pz{0.f};
+    uint32_t boneIndex{0};
+    uint32_t reserved{0};
+};
+
+// ECFC: 12 bytes per face
+struct EcfcFace {
+    uint16_t a{0}, b{0}, c{0};
+    uint16_t mat{0};   // material index into TAMC
+    uint16_t lmp{0};   // lightmap (ignored)
+    uint16_t vrt{0};   // deprecated
+};
+
+// ECAF: 6 bytes per face
+struct EcafFace {
+    uint16_t a{0}, b{0}, c{0};
+};
+
+// DNER type0/type1: 32 bytes per record
+struct DnerRecord {
+    uint8_t  opacity{0}, mshine{0}, scolor{0}, opacitd{0};
+    float    px{0.f}, py{0.f}, pz{0.f};
+    uint16_t offsetIndex{0};  // starting uint16 index into ECAF (divide by 3 for face index)
+    uint16_t numFace{0};
+    uint16_t offVerts{0};
+    uint16_t numVerts{0};
+    int16_t  td{-1}, tb{-1}, tr{-1};
+    uint8_t  trd{0}, tbd{0};
+};
+
+// TAMC: 16 bytes per record
+struct TamcRecord {
+    float    opacity{0.f};
+    uint16_t portal{0};
+    int16_t  diffuse{-1};
+    uint16_t unknown0{0}, unknown1{0};
+    int16_t  matId{-1};
+    uint16_t unknown{0};
+};
+
 struct ParsedGeometry {
     struct RenderBlock {
         size_t triangleStart = 0;
@@ -49,6 +94,17 @@ struct ParsedGeometry {
     std::string renderLayout;
     std::vector<BoneInfo> bones;          // populated from REIH+MANB
     std::vector<Attachment> attachments;  // populated from ATTA
+
+    // ---- Collision/material data for ASCII export ----
+    std::vector<XtvcVertex>  xtvcVerts;    // XTVC type1 (set 0)
+    std::vector<EcfcFace>    ecfcFaces;    // ECFC (set 0)
+    std::vector<EcafFace>    ecafFaces;    // ECAF render face indices
+    std::vector<DnerRecord>  dnerRecords;  // DNER (all records)
+    std::vector<TamcRecord>  tamcRecords;  // TAMC (set 0)
+    // Also keep set 1 for the second mesh
+    std::vector<XtvcVertex>  xtvcVerts1;
+    std::vector<EcfcFace>    ecfcFaces1;
+    std::vector<TamcRecord>  tamcRecords1;
 };
 
 // Parse a binary MEF file and return all geometry + bone data.
