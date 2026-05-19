@@ -273,7 +273,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
-    glEnable(GL_CULL_FACE);
+    glDisable(GL_CULL_FACE); // Disable backface culling to fix invisible interior walls
     glDisable(GL_BLEND);
 
     // Wireframe toggle
@@ -430,8 +430,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
             }
             if (mesh.textureID > 0) {
                 glUniform1i(loc_useTex, 1);
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, mesh.textureID);
+                GL_BindTexture2D(0, mesh.textureID);
                 glUniform1i(loc_tex, 0);
             } else {
                 glUniform1i(loc_useTex, 0);
