@@ -245,7 +245,7 @@ std::vector<RenderVertex> ParseRenderVertices(const std::vector<uint8_t>& bytes,
         break;
     case 3:
         vertexSize = 40;
-        uvOffset = 12;  // pos(12) + uv0(8) + uv1(8) + ...
+        uvOffset = 24;  // pos(12) + normal(12) + uv(8) + ...
         break;
     default:
         throw std::runtime_error("Unsupported MEF modelType in XTRV");
