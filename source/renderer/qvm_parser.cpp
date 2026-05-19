@@ -10,16 +10,20 @@ static int QVM_OperandSize(QVMOpType op) {
     case QVMOpType::PUSHB:   return 1;
     case QVMOpType::PUSHW:   return 2;
     case QVMOpType::PUSHF:   return 4;
+    case QVMOpType::PUSHA:   return 4;  // push address (4-byte code offset)
+    case QVMOpType::PUSHS:   return 4;  // push string (4-byte string-pool index)
     case QVMOpType::PUSHSI:  return 4;
     case QVMOpType::PUSHSIB: return 1;
     case QVMOpType::PUSHSIW: return 2;
+    case QVMOpType::PUSHI:   return 4;  // push integer immediate (4-byte value)
     case QVMOpType::PUSHII:  return 4;
     case QVMOpType::PUSHIIB: return 1;
     case QVMOpType::PUSHIIW: return 2;
     case QVMOpType::BRA:     return 4;
     case QVMOpType::BF:      return 4;
     case QVMOpType::BT:      return 4;
-    case QVMOpType::CALL:    return -1; // special
+    case QVMOpType::JSR:     return 4;  // jump to subroutine (4-byte code offset)
+    case QVMOpType::CALL:    return -1; // special: count + targets
     default:                 return 0;
     }
 }

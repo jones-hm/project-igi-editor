@@ -5,6 +5,7 @@
 #include <sstream>
 #include <cstdio>
 #include <iostream>
+#include <fstream>
 
 Decompiler::Decompiler() {}
 
@@ -75,29 +76,32 @@ bool Decompiler::Decompile(const std::string& qvm_path, const std::string& qsc_o
     }
 
     // Run decompile.bat
-    std::string cmd = "cd /d \"" + qcompiler_path + "\" && decompile.bat";
+    std::string log_path = local_temp + "\\decompile.log";
+    std::string cmd = "cd /d \"" + qcompiler_path + "\" && decompile.bat > \"" + log_path + "\" 2>&1";
     if (output_callback_) output_callback_("[Decompiler] Running: " + cmd);
 
-    FILE* pipe = _popen(cmd.c_str(), "r");
-    if (!pipe) {
-        if (output_callback_) output_callback_("[Decompiler] ERROR: Failed to execute decompile.bat");
-        return false;
-    }
+    int result = system(cmd.c_str());
+    if (output_callback_) output_callback_("[Decompiler] Batch exit code: " + std::to_string(result));
 
-    char buffer[128];
+    // Read decompile log
     std::string output;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
+    std::ifstream log_stream(log_path);
+    if (log_stream.is_open()) {
+        std::string line;
+        while (std::getline(log_stream, line)) output += line + "\n";
+        log_stream.close();
+    } else {
+        if (output_callback_) output_callback_("[Decompiler] WARNING: could not read decompile.log at: " + log_path);
     }
-    _pclose(pipe);
-
-    if (output_callback_) output_callback_("[Decompiler] Output: " + output);
+    if (output_callback_) output_callback_("[Decompiler] --- Batch output ---");
+    if (output_callback_) output_callback_(output);
+    if (output_callback_) output_callback_("[Decompiler] --- End output ---");
 
     // Check for success indicators
-    bool success = (output.find("success") != std::string::npos ||
-                    output.find("SUCCESS") != std::string::npos ||
-                    output.find("decompiled") != std::string::npos ||
-                    output.find("error") == std::string::npos);
+    bool hasSuccess    = output.find("success")    != std::string::npos || output.find("SUCCESS")    != std::string::npos;
+    bool hasDecompiled = output.find("decompiled") != std::string::npos || output.find("DECOMPILED") != std::string::npos;
+    bool hasError      = output.find("error")       != std::string::npos || output.find("ERROR")       != std::string::npos;
+    bool success       = hasSuccess || hasDecompiled || !hasError;
 
     if (!success) {
         if (output_callback_) output_callback_("[Decompiler] ERROR: Decompilation appears to have failed");

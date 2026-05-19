@@ -75,20 +75,21 @@ RESFile RES_Parse(const std::string& filepath) {
     std::string pendingName;
     bool haveName = false;
 
-    while (offset + 8 <= fileSize) {
+    while (offset + 16 <= fileSize) {
         uint32_t chunkFourCC = ReadFourCC(data + offset);
         uint32_t chunkSize = ReadU32LE(data + offset + 4);
-        offset += 8;
-
-        if (offset + chunkSize > fileSize) {
+        uint32_t chunkSkip = ReadU32LE(data + offset + 12);
+        
+        size_t dataOffset = offset + 16;
+        if (dataOffset + chunkSize > fileSize) {
             Logger::Get().Log(LogLevel::WARNING, "[RES] Chunk extends beyond file end at offset " +
-                std::to_string(offset - 8));
+                std::to_string(offset));
             break;
         }
 
         if (chunkFourCC == FOURCC_NAME) {
             // Read null-terminated string from chunk data
-            const char* str = reinterpret_cast<const char*>(data + offset);
+            const char* str = reinterpret_cast<const char*>(data + dataOffset);
             size_t maxLen = chunkSize;
             size_t len = 0;
             while (len < maxLen && str[len] != '\0') {
@@ -106,16 +107,12 @@ RESFile RES_Parse(const std::string& filepath) {
             else {
                 entry.name = "<unnamed_" + std::to_string(result.entries.size()) + ">";
             }
-            entry.data.assign(data + offset, data + offset + chunkSize);
+            entry.data.assign(data + dataOffset, data + dataOffset + chunkSize);
             result.entries.push_back(std::move(entry));
         }
 
-        offset += chunkSize;
-
-        // ILFF chunks are typically aligned to 4-byte boundaries
-        if (offset % 4 != 0) {
-            offset += 4 - (offset % 4);
-        }
+        if (chunkSkip == 0) break;
+        offset += chunkSkip;
     }
 
     result.valid = true;

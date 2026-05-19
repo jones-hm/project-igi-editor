@@ -13,10 +13,15 @@ public:
 
 private:
     static int ParseMEF(const std::string& filepath);
+    static int ExportMEFToObj(const std::string& filepath, const std::string& outpath);
+    static int ExportMEFToAscii(const std::string& filepath, const std::string& outpath);
     static int ParseQVM(const std::string& filepath, bool decompile, const std::string& outpath);
     static int CompileQSC(const std::string& inpath, const std::string& outpath);
     static int ParseRES(const std::string& filepath, const std::string& extract_name, const std::string& outpath);
+    static int ExtractAllRES(const std::string& filepath, const std::string& outdir);
     static int ParseMTP(const std::string& filepath);
     static int ParseTerrain(const std::string& filepath);
+    static int ParseTEX(const std::string& filepath, const std::string& exportDir);
+    static int ParseGraph(const std::string& filepath);
     static void PrintHelp();
 };

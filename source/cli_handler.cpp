@@ -4,20 +4,27 @@
 #include "common.h"
 #include "logger.h"
 #include "renderer/mef_parser.h"
+#include "renderer/mef_exporter.h"
+#include "renderer/mef_native.h"
 #include "level/mtp_parser.h"
 #include "renderer/qvm_parser.h"
+#include "renderer/qvm_decompiler.h"
 #include "compiler.h"
 #include "decompiler.h"
 #include "level/res_parser.h"
 #include "level/terrain_files.h"
+#include "level/tex_parser.h"
+#include "level/graph_parser.h"
+#include <filesystem>
 
 #include <iostream>
 
 bool CLIHandler::IsCLICommand(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--help" || arg == "--mef" || arg == "--qsc" || 
-            arg == "--qvm" || arg == "--res" || arg == "--mtp" || arg == "--terrain") {
+        if (arg == "--help" || arg == "--mef" || arg == "--qsc" ||
+            arg == "--qvm" || arg == "--res" || arg == "--mtp" || arg == "--terrain" ||
+            arg == "--tex" || arg == "--graph") {
             return true;
         }
     }
@@ -43,13 +50,19 @@ void CLIHandler::PrintHelp() {
               << "CLI Parsing & Testing Modes (Headless):\n"
               << "  --help                                 Show this message\n"
               << "  --mef <file.mef>                       Parse and print MEF model details\n"
+              << "  --mef <file.mef> --export-obj <out.obj> Export MEF model to OBJ format\n"
+              << "  --mef <file.mef> --export-mef <out.mef> Export MEF model to ASCII MEF format\n"
               << "  --qsc <file.qsc> --compile <out.qvm>   Compile QSC script to QVM\n"
               << "  --qvm <file.qvm> --decompile <out.qsc> Decompile QVM back to QSC\n"
               << "  --qvm <file.qvm>                       Parse QVM bytecode details\n"
               << "  --res <file.res>                       List RES archive contents\n"
               << "  --res <file.res> --extract <name> <out> Extract specific resource\n"
+              << "  --res <file.res> --extract-all <dir>   Extract all resources to directory\n"
               << "  --mtp <file.mtp>                       Parse MTP texture mappings\n"
-              << "  --terrain <file.lmp/.ctr>              Parse terrain structure\n";
+              << "  --terrain <file.lmp/.ctr>              Parse terrain structure\n"
+              << "  --tex <file.tex>                       Parse TEX texture and print info\n"
+              << "  --tex <file.tex> --export-tga <dir>    Export TEX images as TGA files to dir\n"
+              << "  --graph <file.dat>                     Parse navigation graph .dat file\n";
 }
 
 int CLIHandler::Process(int argc, char** argv) {
@@ -60,6 +73,9 @@ int CLIHandler::Process(int argc, char** argv) {
     }
     Logger::Get().Log(LogLevel::INFO, "[CLI] Process called with arguments: " + argsStr);
 
+    // Ensure QEditor environment is ready for compiler/decompiler
+    Utils::ValidateAndSetupQEditor();
+
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help") {
@@ -67,7 +83,13 @@ int CLIHandler::Process(int argc, char** argv) {
             PrintHelp();
             return 0;
         } else if (arg == "--mef" && i + 1 < argc) {
-            return ParseMEF(argv[++i]);
+            std::string filepath = argv[++i];
+            if (i + 1 < argc && std::string(argv[i+1]) == "--export-obj" && i + 2 < argc) {
+                return ExportMEFToObj(filepath, argv[i+2]);
+            } else if (i + 1 < argc && std::string(argv[i+1]) == "--export-mef" && i + 2 < argc) {
+                return ExportMEFToAscii(filepath, argv[i+2]);
+            }
+            return ParseMEF(filepath);
         } else if (arg == "--mtp" && i + 1 < argc) {
             return ParseMTP(argv[++i]);
         } else if (arg == "--qsc" && i + 1 < argc) {
@@ -86,11 +108,21 @@ int CLIHandler::Process(int argc, char** argv) {
             std::string inpath = argv[++i];
             if (i + 1 < argc && std::string(argv[i+1]) == "--extract" && i + 3 < argc) {
                 return ParseRES(inpath, argv[i+2], argv[i+3]);
+            } else if (i + 1 < argc && std::string(argv[i+1]) == "--extract-all" && i + 2 < argc) {
+                return ExtractAllRES(inpath, argv[i+2]);
             } else {
                 return ParseRES(inpath, "", "");
             }
         } else if (arg == "--terrain" && i + 1 < argc) {
             return ParseTerrain(argv[++i]);
+        } else if (arg == "--tex" && i + 1 < argc) {
+            std::string inpath = argv[++i];
+            if (i + 1 < argc && std::string(argv[i+1]) == "--export-tga" && i + 2 < argc) {
+                return ParseTEX(inpath, argv[i+2]);
+            }
+            return ParseTEX(inpath, "");
+        } else if (arg == "--graph" && i + 1 < argc) {
+            return ParseGraph(argv[++i]);
         }
     }
     Logger::Get().Log(LogLevel::WARNING, "[CLI] Unknown or invalid arguments processed.");
@@ -100,32 +132,66 @@ int CLIHandler::Process(int argc, char** argv) {
 
 int CLIHandler::ParseMEF(const std::string& filepath) {
     Logger::Get().Log(LogLevel::INFO, "[CLI] Parsing MEF file: " + filepath);
-    MEFParser parser;
-    auto objects = parser.parse_file(filepath);
-    if (!objects.empty()) {
-        Logger::Get().Log(LogLevel::INFO, "[CLI] Successfully parsed MEF. Found " + std::to_string(objects.size()) + " objects.");
-        for (const auto& obj : objects) {
-            Logger::Get().Log(LogLevel::INFO, "[CLI] Object: " + obj.name);
-            Logger::Get().Log(LogLevel::INFO, "[CLI]   Vertices: " + std::to_string(obj.vertices.size()));
-            Logger::Get().Log(LogLevel::INFO, "[CLI]   Faces: " + std::to_string(obj.faces.size()));
-            Logger::Get().Log(LogLevel::INFO, "[CLI]   Materials: " + std::to_string(obj.materials.size()));
-        }
+    try {
+        ParsedGeometry geometry = ParseMefFile(filepath);
+        Logger::Get().Log(LogLevel::INFO, "[CLI] Successfully parsed MEF: " + filepath);
+        Logger::Get().Log(LogLevel::INFO, "[CLI]   Layout: " + geometry.renderLayout);
+        Logger::Get().Log(LogLevel::INFO, "[CLI]   Type: " + std::to_string(geometry.modelType));
+        Logger::Get().Log(LogLevel::INFO, "[CLI]   Vertices: " + std::to_string(geometry.vertices.size()));
+        Logger::Get().Log(LogLevel::INFO, "[CLI]   Triangles: " + std::to_string(geometry.triangles.size()));
+        Logger::Get().Log(LogLevel::INFO, "[CLI]   Bones: " + std::to_string(geometry.bones.size()));
+        Logger::Get().Log(LogLevel::INFO, "[CLI]   Attachments: " + std::to_string(geometry.attachments.size()));
         return 0;
-    } else {
-        Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to parse MEF or file is empty: " + filepath);
+    } catch (const std::exception& e) {
+        Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to parse MEF: " + std::string(e.what()));
+        return 1;
+    }
+}
+
+int CLIHandler::ExportMEFToObj(const std::string& filepath, const std::string& outpath) {
+    Logger::Get().Log(LogLevel::INFO, "[CLI] Exporting MEF to OBJ: " + filepath + " -> " + outpath);
+    try {
+        ParsedGeometry geometry = ParseMefFile(filepath);
+        if (MefExporter::ExportToObj(geometry, outpath)) {
+            std::cout << "[CLI] Successfully exported MEF to OBJ: " << outpath << "\n";
+            return 0;
+        }
+        return 1;
+    } catch (const std::exception& e) {
+        Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to export MEF: " + std::string(e.what()));
+        return 1;
+    }
+}
+
+int CLIHandler::ExportMEFToAscii(const std::string& filepath, const std::string& outpath) {
+    Logger::Get().Log(LogLevel::INFO, "[CLI] Exporting MEF to ASCII: " + filepath + " -> " + outpath);
+    try {
+        ParsedGeometry geometry = ParseMefFile(filepath);
+        if (MefExporter::ExportToMefAscii(geometry, outpath)) {
+            std::cout << "[CLI] Successfully exported MEF to ASCII: " << outpath << "\n";
+            return 0;
+        }
+        return 1;
+    } catch (const std::exception& e) {
+        Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to export MEF: " + std::string(e.what()));
         return 1;
     }
 }
 
 int CLIHandler::ParseQVM(const std::string& filepath, bool decompile, const std::string& outpath) {
     if (decompile) {
-        Logger::Get().Log(LogLevel::INFO, "[CLI] Decompiling QVM: " + filepath + " -> " + outpath);
-        Decompiler d;
-        if (d.Decompile(filepath, outpath)) {
+        Logger::Get().Log(LogLevel::INFO, "[CLI] Decompiling QVM (native): " + filepath + " -> " + outpath);
+        QVMFile qvm = QVM_Parse(filepath);
+        if (!qvm.valid) {
+            Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to parse QVM: " + qvm.error);
+            return 1;
+        }
+        if (QVM_Decompile(qvm, outpath)) {
             Logger::Get().Log(LogLevel::INFO, "[CLI] Successfully decompiled QVM to: " + outpath);
+            std::cout << "[CLI] Successfully decompiled QVM to: " << outpath << "\n";
             return 0;
         }
-        Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to decompile QVM: " + filepath);
+        Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to write decompiled QSC: " + outpath);
         return 1;
     } else {
         Logger::Get().Log(LogLevel::INFO, "[CLI] Parsing QVM: " + filepath);
@@ -145,6 +211,11 @@ int CLIHandler::ParseQVM(const std::string& filepath, bool decompile, const std:
 int CLIHandler::CompileQSC(const std::string& inpath, const std::string& outpath) {
     Logger::Get().Log(LogLevel::INFO, "[CLI] Compiling QSC: " + inpath + " -> " + outpath);
     Compiler c;
+    c.SetOutputCallback([](const std::string& msg) {
+        Logger::Get().Log(LogLevel::INFO, "[Compiler] " + msg);
+        std::cout << "[Compiler] " << msg << "\n";
+    });
+
     if (c.Compile(inpath, outpath)) {
         Logger::Get().Log(LogLevel::INFO, "[CLI] Successfully compiled QSC to: " + outpath);
         return 0;
@@ -175,10 +246,53 @@ int CLIHandler::ParseRES(const std::string& filepath, const std::string& extract
             Logger::Get().Log(LogLevel::INFO, "[CLI] Successfully parsed RES archive. Found " + std::to_string(res.entries.size()) + " entries.");
             for (const auto& entry : res.entries) {
                 Logger::Get().Log(LogLevel::INFO, "[CLI]   - " + entry.name + " (" + std::to_string(entry.data.size()) + " bytes)");
+                std::cout << "  - " << entry.name << " (" << entry.data.size() << " bytes)\n";
             }
             return 0;
         }
         Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to parse RES archive: " + res.error);
+        return 1;
+    }
+}
+
+int CLIHandler::ExtractAllRES(const std::string& filepath, const std::string& outdir) {
+    Logger::Get().Log(LogLevel::INFO, "[CLI] Extracting ALL from " + filepath + " to " + outdir);
+    RESFile res = RES_Parse(filepath);
+    if (!res.valid) {
+        Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to parse RES archive: " + res.error);
+        return 1;
+    }
+
+    namespace fs = std::filesystem;
+    try {
+        fs::create_directories(outdir);
+        int successCount = 0;
+        for (const auto& entry : res.entries) {
+            // Sanitize name: replace colons and other invalid chars
+            std::string safeName = entry.name;
+            for (char& c : safeName) {
+                if (c == ':' || c == '*' || c == '?' || c == '\"' || c == '<' || c == '>' || c == '|') {
+                    c = '_';
+                }
+            }
+
+            std::string outpath = outdir + "\\" + safeName;
+            // Ensure subdirectories in entry name exist (but only if they are not from sanitized colons)
+            // Actually, IGI names like "models\001_01_1.mef" should be preserved as paths
+            // but "LOCAL:models" should become "LOCAL_models"
+            
+            // Fix: only sanitize chars that are NOT path separators
+            fs::create_directories(fs::path(outpath).parent_path());
+            
+            if (File_SaveBinary(outpath.c_str(), entry.data.data(), entry.data.size())) {
+                successCount++;
+            }
+        }
+        Logger::Get().Log(LogLevel::INFO, "[CLI] Successfully extracted " + std::to_string(successCount) + " / " + std::to_string(res.entries.size()) + " resources.");
+        std::cout << "[CLI] Successfully extracted " << successCount << " resources to " << outdir << "\n";
+        return 0;
+    } catch (const std::exception& e) {
+        Logger::Get().Log(LogLevel::ERR, "[CLI] Exception during RES extraction: " + std::string(e.what()));
         return 1;
     }
 }
@@ -198,6 +312,54 @@ int CLIHandler::ParseMTP(const std::string& filepath) {
         Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to parse MTP: " + mtp.error);
         return 1;
     }
+}
+
+int CLIHandler::ParseTEX(const std::string& filepath, const std::string& exportDir) {
+    Logger::Get().Log(LogLevel::INFO, "[CLI] Parsing TEX file: " + filepath);
+    TEXFile tex = TEX_Parse(filepath);
+    if (!tex.valid) {
+        Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to parse TEX: " + tex.error);
+        return 1;
+    }
+    Logger::Get().Log(LogLevel::INFO, "[CLI] TEX version: " + std::to_string(tex.version)
+        + "  Images: " + std::to_string(tex.images.size()));
+    std::cout << "[CLI] TEX v" << tex.version << "  Images: " << tex.images.size() << "\n";
+    for (size_t i = 0; i < tex.images.size(); ++i) {
+        const auto& img = tex.images[i];
+        std::string info = "  [" + std::to_string(i) + "] "
+            + std::to_string(img.width) + "x" + std::to_string(img.height)
+            + " mode=" + std::to_string(img.mode);
+        Logger::Get().Log(LogLevel::INFO, "[CLI]" + info);
+        std::cout << info << "\n";
+    }
+    if (!exportDir.empty()) {
+        int written = TEX_ExportTGA(tex, filepath, exportDir);
+        Logger::Get().Log(LogLevel::INFO, "[CLI] Exported " + std::to_string(written) + " TGA file(s) to: " + exportDir);
+        std::cout << "[CLI] Exported " << written << " TGA file(s) to: " << exportDir << "\n";
+    }
+    return 0;
+}
+
+int CLIHandler::ParseGraph(const std::string& filepath) {
+    Logger::Get().Log(LogLevel::INFO, "[CLI] Parsing Graph file: " + filepath);
+    GraphFile graph = GRAPH_Parse(filepath);
+    if (!graph.valid) {
+        Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to parse Graph: " + graph.error);
+        return 1;
+    }
+    Logger::Get().Log(LogLevel::INFO, "[CLI] Graph nodes: " + std::to_string(graph.nodes.size())
+        + "  edges: " + std::to_string(graph.edges.size()));
+    std::cout << "[CLI] Graph nodes: " << graph.nodes.size()
+              << "  edges: " << graph.edges.size() << "\n";
+    const size_t preview = std::min(graph.nodes.size(), size_t(10));
+    for (size_t i = 0; i < preview; ++i) {
+        const auto& n = graph.nodes[i];
+        std::cout << "  Node " << n.id
+                  << "  pos=(" << n.x << ", " << n.y << ", " << n.z << ")"
+                  << "  mat=" << n.material
+                  << "  links=[" << n.link1 << ", " << n.link2 << "]\n";
+    }
+    return 0;
 }
 
 int CLIHandler::ParseTerrain(const std::string& filepath) {
