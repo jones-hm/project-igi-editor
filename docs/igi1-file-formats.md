@@ -226,20 +226,49 @@ The linked iteration terminates when `nextoffs == -1`.
 
 When a Type 1 model has both DNER and ECAF chunks, the DNER chunk contains fixed-size bone records (32 or 28 bytes each), and the ECAF chunk contains the actual triangle indices.
 
-**DNER bone record (32 bytes, or 28 bytes for some models):**
+**DNER bone record (28-byte and 32-byte variants):**
 
-| Offset | Size | Type   | Field          |
-|--------|------|--------|----------------|
-| 0x00   | 16   | -      | Unknown/bone data |
-| 0x10   | 2    | uint16 | indexOffset    | Start index in ECAF |
-| 0x12   | 2    | uint16 | triangleCount  | Number of triangles |
-| 0x14   | 2    | uint16 | vertsOffset    | Base vertex offset  |
-| 0x16   | 2    | uint16 | vertsCount     | Vertex count        |
-| 0x18   | 8    | -      | Padding (32-byte variant only) |
+| Offset (28-byte) | Offset (32-byte) | Size | Type    | Field        | Description                                  |
+|------------------|------------------|------|---------|--------------|----------------------------------------------|
+| 0x00             | 0x00             | 12   | float32 | `px, py, pz` | Joint rest-pose local position translation  |
+| 0x0C             | 0x0C             | 2    | uint16  | `numFace`    | Index count (in bytes: `numFace * 2` index)   |
+| 0x0E             | 0x0E             | 2    | int16   | `skip`       | Offset index                                 |
+| -                | 0x10             | 2    | int16   | `td`         | Texture descriptor index                     |
+| 0x10             | 0x12             | 2    | uint16  | `offVerts`   | Base vertex offset                           |
+| 0x12             | 0x14             | 2    | uint16  | `numVerts`   | Vertex count in this bone submesh            |
+| 0x14             | 0x16             | 2    | uint16  | `rawOpacity` | Base material opacity index                  |
+| 0x16             | 0x18             | 1    | uint8   | `eflame`     | Emissive flame multiplier                    |
+| 0x17             | 0x19             | 1    | uint8   | `mshine`     | Material shininess factor                    |
+| 0x18             | 0x1A             | 1    | uint8   | `scolor`     | Specular color (or diffuse color index)      |
+| 0x19             | 0x1B             | 1    | uint8   | `opacitd`    | Opacity detail                               |
+| -                | 0x1C             | 4    | uint32  | `_0`         | Padding/alignment zero bytes                 |
 
-The record size is auto-detected: if `DNER.size % 32 == 0` use 32-byte records; else if `DNER.size % 28 == 0` use 28-byte records; otherwise fall back to packed DNER parsing.
+* **Record stride detection:** The record size is auto-detected: if `DNER.size % 32 == 0` use 32-byte records; else if `DNER.size % 28 == 0` use 28-byte records; otherwise fall back to packed DNER parsing.
 
-**ECAF index buffer:** A flat array of uint16 values. For each bone record, read `triangleCount * 3` indices starting at `ECAF.data + indexOffset * 2`. Indices in ECAF are **global** vertex indices (no vertsOffset addition needed).
+* **ECAF index buffer:** A flat array of uint16 values. For each bone record, read `numFace` indices starting at `ECAF.data + offsetIndex * 2`. Indices in ECAF are **global** vertex indices (no vertsOffset addition needed).
+
+#### 2.5.3 Skeletal Archetypes & The "Missing Skeleton" Problem
+
+A major limitation of the original binary `.mef` file format for skeletal models (`modelType == 1`) is that it **completely lacks skeletal tree hierarchy definitions**. The binary files only contain vertex blending weight tables (mapping which vertex is influenced by which raw bone index). They do not store:
+1. **Bone Names** (e.g. `"head"`, `"left hand"`, `"shoulders"`).
+2. **Parent-Child Linkages** (which joints are connected to which, which is necessary for forward kinematics and joint rotations).
+3. **Rest-Pose Bone Lengths/Offsets** (`px, py, pz`).
+
+To solve this, the game engine originally compiled the default character skeletons directly into the executable binary (`igi.exe`/`loop.dll`). The Level Editor restores these missing hierarchies at runtime by matching model filenames or the maximum bone counts to hardcoded **Skeletal Archetypes** via the `BoneRigType` enum:
+
+```cpp
+enum class BoneRigType {
+    JonesCinematic = 0,    // Type 0: David Jones and key cinematic actors
+    StandardSoldier = 1,   // Type 1: Default soldiers and player model
+    HeavySoldier = 6,      // Type 6: Heavy/special soldier models
+    AdvancedFingerRig = 48 // Type 48: Character models with advanced hand rig
+};
+```
+
+* **JonesCinematic (Type 0):** A 32-bone skeletal rig with custom bone proportions tailored for David Jones (`000_01_1`), `009_02_1`, and `008_01_1` models.
+* **StandardSoldier (Type 1):** The default 32-bone rig used by the player model (`001_01_1`) and standard combat NPC AI soldiers.
+* **HeavySoldier (Type 6):** An adjusted 32-bone rig with wider shoulder and elbow structures designed to prevent heavy armor plates from clipping on special guards (`012_01_1`, `015_01_1`, `028_01_1`).
+* **AdvancedFingerRig (Type 48):** Selected automatically when `maxBoneIdx` matches `48`, mapping a highly articulate 48-bone hand and attachment skeleton.
 
 ### 2.6 ECAF Chunk -- Face Index Buffer
 
