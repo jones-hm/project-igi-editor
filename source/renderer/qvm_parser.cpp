@@ -56,7 +56,10 @@ static uint16_t ReadU16(const uint8_t* p) {
     return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
 }
 
-// Helper: split a buffer of null-terminated strings into a vector
+// Helper: split a buffer of null-terminated strings into a vector.
+// Preserves empty strings (adjacent null bytes) to keep index alignment with
+// the QVM itable/stable which reference strings by position, matching Python's
+// svalue.split(b'\x00')[:-1] behaviour.
 static std::vector<std::string> SplitNullTerminated(const uint8_t* data, uint32_t size) {
     std::vector<std::string> result;
     if (!data || size == 0)
@@ -65,13 +68,11 @@ static std::vector<std::string> SplitNullTerminated(const uint8_t* data, uint32_
     uint32_t start = 0;
     for (uint32_t i = 0; i < size; ++i) {
         if (data[i] == '\0') {
-            if (i > start) {
-                result.emplace_back(reinterpret_cast<const char*>(data + start), i - start);
-            }
+            result.emplace_back(reinterpret_cast<const char*>(data + start), i - start);
             start = i + 1;
         }
     }
-    // Handle trailing string without null terminator
+    // Trailing content without null terminator (unusual but safe)
     if (start < size) {
         result.emplace_back(reinterpret_cast<const char*>(data + start), size - start);
     }

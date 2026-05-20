@@ -147,3 +147,36 @@ else()
   target_link_libraries(igi-editor PRIVATE glut GL GLEW)
 endif()
 
+# QVM verify tool (standalone test executable)
+add_executable(verify_compiler
+    scratch/verify_compiler.cpp
+    source/renderer/qvm_parser.cpp
+    source/renderer/qvm_decompiler.cpp
+    source/logger.cpp
+    source/config.cpp
+)
+target_include_directories(verify_compiler PRIVATE ${PROJECT_SOURCE_DIR}/source)
+target_include_directories(verify_compiler PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
+target_include_directories(verify_compiler PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
+target_include_directories(verify_compiler PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
+set_source_files_properties(
+    scratch/verify_compiler.cpp
+    source/renderer/qvm_parser.cpp
+    source/renderer/qvm_decompiler.cpp
+    source/logger.cpp
+    source/config.cpp
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON
+)
+if (WIN32)
+    target_link_directories(verify_compiler PRIVATE ${GL_LIB_DIR})
+    target_link_libraries(verify_compiler PRIVATE freeglut glew32 OpenGL32)
+    set_target_properties(verify_compiler PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}/bin/Release"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${PROJECT_SOURCE_DIR}/bin/Debug"
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+    )
+    if (MSVC)
+        target_compile_options(verify_compiler PRIVATE "/bigobj")
+    endif()
+endif()
+

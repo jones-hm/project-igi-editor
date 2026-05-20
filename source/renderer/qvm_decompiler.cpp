@@ -1,10 +1,8 @@
 #include "qvm_decompiler.h"
 #include "../logger.h"
-#include "../config.h"
 
 #include <fstream>
-#include <sstream>
-#include <iomanip>
+#include <charconv>
 #include <map>
 #include <vector>
 #include <string>
@@ -12,11 +10,20 @@
 #include <cstdint>
 #include <memory>
 
-// Float formatting helper
+// Float formatting helper — matches Python's str(float) behaviour:
+// shortest round-trip decimal for the float64 value, always with a decimal point.
 static std::string FloatStr(float v) {
-    std::ostringstream ss;
-    ss << std::fixed << std::setprecision(6) << v;
-    return ss.str();
+    double d = (double)v;
+    char buf[64];
+    auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), d);
+    std::string s(buf, ptr);
+    // Python always includes a decimal point to distinguish floats from ints
+    if (s.find('.') == std::string::npos &&
+        s.find('e') == std::string::npos &&
+        s.find('E') == std::string::npos) {
+        s += ".0";
+    }
+    return s;
 }
 
 // String escaping helper matching Python string replacement exactly
@@ -263,8 +270,12 @@ static std::vector<std::shared_ptr<ASTNode>> walk(
             break;
         }
 
-        if (op.type == QVMOpType::BRK || op.type == QVMOpType::BRA) {
+        if (op.type == QVMOpType::BRK || op.type == QVMOpType::BRA || op.type == QVMOpType::RET) {
             break;
+        }
+
+        else if (op.type == QVMOpType::NOP) {
+            address = op.address + op.size;
         }
 
         else if (op.type == QVMOpType::POP) {
