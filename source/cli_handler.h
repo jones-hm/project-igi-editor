@@ -23,5 +23,6 @@ private:
     static int ParseTerrain(const std::string& filepath);
     static int ParseTEX(const std::string& filepath, const std::string& exportDir);
     static int ParseGraph(const std::string& filepath);
+    static int ExtractLevelResources(int levelNo, const std::string& outDir);
     static void PrintHelp();
 };

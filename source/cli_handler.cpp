@@ -15,6 +15,7 @@
 #include "level/terrain_files.h"
 #include "level/tex_parser.h"
 #include "level/graph_parser.h"
+#include "cli_tests.h"
 #include <filesystem>
 
 #include <iostream>
@@ -24,7 +25,8 @@ bool CLIHandler::IsCLICommand(int argc, char** argv) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "--mef" || arg == "--qsc" ||
             arg == "--qvm" || arg == "--res" || arg == "--mtp" || arg == "--terrain" ||
-            arg == "--tex" || arg == "--graph") {
+            arg == "--tex" || arg == "--graph" || arg == "--run-tests" ||
+            arg == "--extract-level") {
             return true;
         }
     }
@@ -49,6 +51,7 @@ void CLIHandler::PrintHelp() {
               << "  Left/Right    : Change roll\n\n"
               << "CLI Parsing & Testing Modes (Headless):\n"
               << "  --help                                 Show this message\n"
+              << "  --run-tests                            Run all native C++ parser unit tests\n"
               << "  --mef <file.mef>                       Parse and print MEF model details\n"
               << "  --mef <file.mef> --export-obj <out.obj> Export MEF model to OBJ format\n"
               << "  --mef <file.mef> --export-mef <out.mef> Export MEF model to ASCII MEF format\n"
@@ -73,15 +76,15 @@ int CLIHandler::Process(int argc, char** argv) {
     }
     Logger::Get().Log(LogLevel::INFO, "[CLI] Process called with arguments: " + argsStr);
 
-    // Ensure QEditor environment is ready for compiler/decompiler
-    Utils::ValidateAndSetupQEditor();
-
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help") {
             Logger::Get().Log(LogLevel::INFO, "[CLI] Help command requested.");
             PrintHelp();
             return 0;
+        } else if (arg == "--run-tests") {
+            Logger::Get().Log(LogLevel::INFO, "[CLI] Run tests command requested.");
+            return RunAllTests();
         } else if (arg == "--mef" && i + 1 < argc) {
             std::string filepath = argv[++i];
             if (i + 1 < argc && std::string(argv[i+1]) == "--export-obj" && i + 2 < argc) {
@@ -123,6 +126,10 @@ int CLIHandler::Process(int argc, char** argv) {
             return ParseTEX(inpath, "");
         } else if (arg == "--graph" && i + 1 < argc) {
             return ParseGraph(argv[++i]);
+        } else if (arg == "--extract-level" && i + 1 < argc) {
+            int levelNo = std::stoi(argv[++i]);
+            std::string outDir = (i + 1 < argc) ? argv[++i] : Utils::GetExeDirectory() + "\\levels\\level" + std::to_string(levelNo);
+            return ExtractLevelResources(levelNo, outDir);
         }
     }
     Logger::Get().Log(LogLevel::WARNING, "[CLI] Unknown or invalid arguments processed.");
@@ -143,6 +150,39 @@ int CLIHandler::ParseMEF(const std::string& filepath) {
         Logger::Get().Log(LogLevel::INFO, "[CLI]   Attachments: " + std::to_string(geometry.attachments.size()));
         return 0;
     } catch (const std::exception& e) {
+        // Fallback: try parsing as ASCII MEF using MEFParser
+        Logger::Get().Log(LogLevel::INFO, "[CLI] Binary MEF parse failed (" + std::string(e.what()) + "). Trying ASCII MEF Parser...");
+        MEFParser parser;
+        auto objects = parser.parse_file(filepath);
+        if (!objects.empty()) {
+            size_t totalErrors = 0;
+            for (const auto& obj : objects) {
+                totalErrors += obj.parse_errors.size();
+            }
+            if (totalErrors > 0) {
+                Logger::Get().Log(LogLevel::ERR, "[CLI] ASCII MEF parser found " + std::to_string(totalErrors) + " errors.");
+                for (const auto& obj : objects) {
+                    for (const auto& err : obj.parse_errors) {
+                        Logger::Get().Log(LogLevel::ERR, "[CLI]   " + err);
+                    }
+                }
+                return 1;
+            }
+            Logger::Get().Log(LogLevel::INFO, "[CLI] Successfully parsed ASCII MEF: " + filepath);
+            for (const auto& obj : objects) {
+                Logger::Get().Log(LogLevel::INFO, "[CLI]   Object: " + obj.name);
+                Logger::Get().Log(LogLevel::INFO, "[CLI]     Vertices: " + std::to_string(obj.vertices.size()));
+                Logger::Get().Log(LogLevel::INFO, "[CLI]     Normals: " + std::to_string(obj.normals.size()));
+                Logger::Get().Log(LogLevel::INFO, "[CLI]     Faces: " + std::to_string(obj.faces.size()));
+                Logger::Get().Log(LogLevel::INFO, "[CLI]     Materials: " + std::to_string(obj.materials.size()));
+                std::cout << "[CLI] Successfully parsed ASCII MEF Object: " << obj.name << "\n"
+                          << "  Vertices: " << obj.vertices.size() << "\n"
+                          << "  Normals: " << obj.normals.size() << "\n"
+                          << "  Faces: " << obj.faces.size() << "\n"
+                          << "  Materials: " << obj.materials.size() << "\n";
+            }
+            return 0;
+        }
         Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to parse MEF: " + std::string(e.what()));
         return 1;
     }
@@ -200,6 +240,9 @@ int CLIHandler::ParseQVM(const std::string& filepath, bool decompile, const std:
             Logger::Get().Log(LogLevel::INFO, "[CLI] Successfully parsed QVM header and strings.");
             Logger::Get().Log(LogLevel::INFO, "[CLI]   Instructions: " + std::to_string(qvm.totalInstructions()));
             Logger::Get().Log(LogLevel::INFO, "[CLI]   Identifiers: " + std::to_string(qvm.identifierCount()));
+            for (size_t i = 0; i < qvm.identifiers.size(); ++i) {
+                Logger::Get().Log(LogLevel::INFO, "    [" + std::to_string(i) + "]: " + qvm.identifiers[i]);
+            }
             Logger::Get().Log(LogLevel::INFO, "[CLI]   Strings: " + std::to_string(qvm.stringCount()));
             return 0;
         }
@@ -390,4 +433,92 @@ int CLIHandler::ParseTerrain(const std::string& filepath) {
     
     Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to parse Terrain file: " + filepath);
     return 1;
+}
+
+int CLIHandler::ExtractLevelResources(int levelNo, const std::string& outDir) {
+    std::string igiPath = Utils::GetIGIRootPath();
+    std::string levelPath = igiPath + "\\missions\\location0\\level" + std::to_string(levelNo);
+
+    Logger::Get().Log(LogLevel::INFO, "[CLI] Extracting level " + std::to_string(levelNo) + " resources");
+    Logger::Get().Log(LogLevel::INFO, "[CLI] IGI level path: " + levelPath);
+    Logger::Get().Log(LogLevel::INFO, "[CLI] Output dir:     " + outDir);
+
+    namespace fs = std::filesystem;
+    try {
+        fs::create_directories(outDir + "\\models");
+        fs::create_directories(outDir + "\\textures");
+        fs::create_directories(outDir + "\\terrain");
+    } catch (const std::exception& e) {
+        Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to create output dirs: " + std::string(e.what()));
+        return 1;
+    }
+
+    int totalExtracted = 0;
+
+    // --- Extract models from level1.res (or loose .mef files) ---
+    std::string resFile = levelPath + "\\models\\level" + std::to_string(levelNo) + ".res";
+    if (fs::exists(resFile)) {
+        Logger::Get().Log(LogLevel::INFO, "[CLI] Extracting models from: " + resFile);
+        RESFile res = RES_Parse(resFile);
+        if (res.valid) {
+            for (const auto& entry : res.entries) {
+                std::string name = entry.name;
+                // Strip path prefix (e.g. "LOCAL:models/xxx.mef" -> "xxx.mef")
+                size_t slash = name.find_last_of("/\\");
+                std::string filename = (slash != std::string::npos) ? name.substr(slash + 1) : name;
+                std::string destPath = outDir + "\\models\\" + filename;
+                std::ofstream f(destPath, std::ios::binary);
+                if (f) {
+                    f.write(reinterpret_cast<const char*>(entry.data.data()), entry.data.size());
+                    totalExtracted++;
+                }
+            }
+            Logger::Get().Log(LogLevel::INFO, "[CLI] Extracted " + std::to_string(totalExtracted) + " models from RES");
+        } else {
+            Logger::Get().Log(LogLevel::WARNING, "[CLI] Could not parse RES: " + res.error);
+        }
+    } else {
+        // Fallback: copy loose .mef files
+        std::string modelsDir = levelPath + "\\models";
+        if (fs::exists(modelsDir)) {
+            for (const auto& entry : fs::directory_iterator(modelsDir)) {
+                if (entry.path().extension() == ".mef") {
+                    std::string dest = outDir + "\\models\\" + entry.path().filename().string();
+                    fs::copy_file(entry.path(), dest, fs::copy_options::overwrite_existing);
+                    totalExtracted++;
+                }
+            }
+            Logger::Get().Log(LogLevel::INFO, "[CLI] Copied " + std::to_string(totalExtracted) + " loose MEF files");
+        }
+    }
+
+    // --- Copy loose .tex files from textures folder ---
+    int texCount = 0;
+    std::string texDir = levelPath + "\\textures";
+    if (fs::exists(texDir)) {
+        for (const auto& entry : fs::directory_iterator(texDir)) {
+            if (entry.path().extension() == ".tex") {
+                std::string dest = outDir + "\\textures\\" + entry.path().filename().string();
+                fs::copy_file(entry.path(), dest, fs::copy_options::overwrite_existing);
+                texCount++;
+            }
+        }
+        Logger::Get().Log(LogLevel::INFO, "[CLI] Copied " + std::to_string(texCount) + " TEX files");
+    }
+
+    // --- Copy terrain files ---
+    int terrainCount = 0;
+    std::string terrainDir = levelPath + "\\terrain";
+    if (fs::exists(terrainDir)) {
+        for (const auto& entry : fs::directory_iterator(terrainDir)) {
+            std::string dest = outDir + "\\terrain\\" + entry.path().filename().string();
+            fs::copy_file(entry.path(), dest, fs::copy_options::overwrite_existing);
+            terrainCount++;
+        }
+        Logger::Get().Log(LogLevel::INFO, "[CLI] Copied " + std::to_string(terrainCount) + " terrain files");
+    }
+
+    std::cout << "[ExtractLevel] Level " << levelNo << ": models=" << totalExtracted
+              << " textures=" << texCount << " terrain=" << terrainCount << "\n";
+    return (totalExtracted + texCount + terrainCount > 0) ? 0 : 1;
 }

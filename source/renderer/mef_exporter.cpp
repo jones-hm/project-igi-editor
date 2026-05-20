@@ -55,35 +55,36 @@ bool ExportToMefAscii(const ParsedGeometry& geometry, const std::string& outpath
     f << "// IGI Editor MEF -> MEF ASCII Export\n";
     f << "NewObject(\"model_mesh\");\n\n";
 
-    // Collect all material slots actually referenced by render blocks
-    std::set<int> usedSlots;
-    if (!geometry.renderBlocks.empty()) {
-        for (const auto& block : geometry.renderBlocks)
-            usedSlots.insert(block.materialSlot);
+    // Emit one Material() + MaterialShininess() per entry in geometry.tamcRecords (or slot 0 if empty)
+    if (!geometry.tamcRecords.empty()) {
+        for (size_t i = 0; i < geometry.tamcRecords.size(); ++i) {
+            float opacity = geometry.tamcRecords[i].opacity;
+            f << std::fixed << std::setprecision(4);
+            f << "Material(" << i << ", \"mat_" << i << "\", "
+              << opacity << ", 0.0, 0.0, 0.1, 0.1, 0.1, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0, 1);\n";
+            f << "MaterialShininess(" << i << ", 0.0);\n";
+        }
     } else {
-        usedSlots.insert(0);
-    }
-
-    // Emit one Material() per used slot, using TAMC opacity if available
-    for (int slot : usedSlots) {
-        float opacity = 1.0f;
-        if (slot >= 0 && slot < static_cast<int>(geometry.tamcRecords.size()))
-            opacity = geometry.tamcRecords[slot].opacity;
-        f << std::fixed << std::setprecision(4);
-        f << "Material(" << slot << ", \"mat_" << slot
-          << "\", 0.8, 0.8, 0.8, 0.1, 0.1, 0.1, 0.9, 0.9, 0.9, 0, 0, 0, 1);\n";
-        f << "MaterialShininess(" << slot << ", 0.0);\n";
+        f << "Material(0, \"mat_0\", 1.0, 0.0, 0.0, 0.1, 0.1, 0.1, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0, 1);\n";
+        f << "MaterialShininess(0, 0.0);\n";
     }
     f << "\n";
 
     const size_t numVerts = geometry.vertices.size();
 
-    // Vertices (rawPos keeps original game-unit coordinates)
+    // Check if rawPos is populated (i.e. at least one vertex has a non-zero rawPos)
+    bool hasRawPos = false;
+    for (const auto& v : geometry.vertices) {
+        if (v.rawPos.x != 0.f || v.rawPos.y != 0.f || v.rawPos.z != 0.f) {
+            hasRawPos = true;
+            break;
+        }
+    }
+
+    // Vertices (rawPos keeps original game-unit coordinates if available)
     for (size_t i = 0; i < numVerts; ++i) {
         const auto& v = geometry.vertices[i];
-        // rawPos is always populated from XTRV bytes; fall back to scaled pos if somehow zero
-        glm::vec3 p = (v.rawPos.x != 0.f || v.rawPos.y != 0.f || v.rawPos.z != 0.f)
-            ? v.rawPos : (v.pos * 40.96f);
+        glm::vec3 p = hasRawPos ? v.rawPos : (v.pos * 40.96f);
         f << "Vertex(" << i << ", " << p.x << ", " << p.y << ", " << p.z << ");\n";
     }
 

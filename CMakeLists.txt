@@ -41,7 +41,7 @@ file(GLOB SHADERS_41 "shaders/41/*.*")
 file(GLOB SHADERS_45 "shaders/45/*.*")
 
 # Explicitly add new source files (GLOB might not pick them up immediately)
-list(APPEND SOURCES "source/compiler.cpp" "source/decompiler.cpp" "source/utils.cpp" "source/cli_handler.cpp" "source/renderer/mef_exporter.cpp")
+list(APPEND SOURCES "source/compiler.cpp" "source/decompiler.cpp" "source/utils.cpp" "source/cli_handler.cpp" "source/renderer/mef_exporter.cpp" "source/cli_tests.cpp")
 list(APPEND SOURCES_RENDERER "source/renderer/qvm_decompiler.cpp")
 list(APPEND SOURCES_LEVEL "source/level/tex_parser.cpp" "source/level/graph_parser.cpp")
 
@@ -86,6 +86,7 @@ set_source_files_properties(
   source/level/graph_parser.cpp
   source/renderer/qvm_decompiler.cpp
   source/cli_handler.cpp
+  source/cli_tests.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
@@ -97,7 +98,15 @@ target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/
 
 
 if (WIN32)
-  target_link_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/lib/x64)
+  # Dynamically select GL library path based on target architecture
+  if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(GL_LIB_DIR "${PROJECT_SOURCE_DIR}/third_party/GL/lib/x64")
+  else()
+    set(GL_LIB_DIR "${PROJECT_SOURCE_DIR}/third_party/GL/lib/x86")
+  endif()
+  message("Selected GL library path: ${GL_LIB_DIR}")
+  
+  target_link_directories(igi-editor PRIVATE ${GL_LIB_DIR})
   target_link_libraries(igi-editor PRIVATE freeglut glew32 OpenGL32)
 
   # Increase PCH memory limit to fix compiler heap errors
@@ -120,7 +129,7 @@ if (WIN32)
   set(MANIFEST_FILE "${PROJECT_SOURCE_DIR}/igi-editor.exe.manifest")
   if(EXISTS ${MANIFEST_FILE})
     set_target_properties(igi-editor PROPERTIES
-      LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${MANIFEST_FILE} /MANIFESTUAC:\"level='requireAdministrator' uiAccess='false'\""
+      LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${MANIFEST_FILE} /MANIFESTUAC:\"level='asInvoker' uiAccess='false'\""
     )
   endif()
 

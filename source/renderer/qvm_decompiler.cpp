@@ -1,5 +1,6 @@
 #include "qvm_decompiler.h"
 #include "../logger.h"
+#include "../config.h"
 
 #include <fstream>
 #include <sstream>
@@ -9,46 +10,495 @@
 #include <string>
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
+// Float formatting helper
 static std::string FloatStr(float v) {
     std::ostringstream ss;
     ss << std::fixed << std::setprecision(6) << v;
     return ss.str();
 }
 
-static std::string SafePop(std::vector<std::string>& stack) {
-    if (stack.empty()) return "?";
-    std::string top = stack.back();
-    stack.pop_back();
-    return top;
+// String escaping helper matching Python string replacement exactly
+static std::string EscapeQSCString(const std::string& s) {
+    std::string result;
+    for (char c : s) {
+        if (c == '\n') result += "\\n";
+        else if (c == '"') result += "\\\"";
+        else result += c;
+    }
+    return result;
 }
 
-static void EmitLine(std::ofstream& out, int indent, const std::string& line) {
-    for (int i = 0; i < indent; ++i) out << "    ";
-    out << line << "\n";
+// Priority mapping matching Python dict priority exactly
+static int GetPriority(const std::string& op) {
+    if (op == "+") return 2;
+    if (op == "-") return 2;
+    if (op == "*") return 3;
+    if (op == "/") return 3;
+    if (op == "<<") return 5;
+    if (op == ">>") return 5;
+    if (op == "&") return 8;
+    if (op == "|") return 10;
+    if (op == "^") return 9;
+    if (op == "&&") return 11;
+    if (op == "||") return 12;
+    if (op == "==") return 7;
+    if (op == "!=") return 7;
+    if (op == "<") return 6;
+    if (op == "<=") return 6;
+    if (op == ">") return 6;
+    if (op == ">=") return 6;
+    if (op == "=") return 14;
+    if (op == "~") return 2;
+    if (op == "!") return 2;
+    return 0;
 }
 
-// Return a safe identifier string for index idx.
-static std::string SafeIdentifier(const QVMFile& qvm, int32_t idx) {
-    if (idx >= 0 && static_cast<size_t>(idx) < qvm.identifiers.size())
-        return qvm.identifiers[static_cast<size_t>(idx)];
-    return "id_" + std::to_string(idx);
-}
+enum class ASTNodeType {
+    LiteralNumber,
+    LiteralConst,
+    LiteralString,
+    LiteralIdentifier,
+    ExpressionUnary,
+    ExpressionBinary,
+    ExpressionCall,
+    StatementParenthese,
+    StatementWhile,
+    StatementIf
+};
 
-// Return a safe quoted string for index idx.
-static std::string SafeString(const QVMFile& qvm, uint32_t idx) {
-    if (static_cast<size_t>(idx) < qvm.strings.size())
-        return "\"" + qvm.strings[static_cast<size_t>(idx)] + "\"";
-    return "\"\"";
-}
+struct ASTNode {
+    ASTNodeType type;
+    explicit ASTNode(ASTNodeType t) : type(t) {}
+    virtual ~ASTNode() = default;
+    virtual std::string strepr(int tabs) const = 0;
+};
 
-// ---------------------------------------------------------------------------
-// Decompile
-// ---------------------------------------------------------------------------
+struct LiteralNumberNode : public ASTNode {
+    std::string value;
+    explicit LiteralNumberNode(std::string val) : ASTNode(ASTNodeType::LiteralNumber), value(std::move(val)) {}
+    std::string strepr(int tabs) const override {
+        return value;
+    }
+};
+
+struct LiteralConstNode : public ASTNode {
+    std::string value;
+    explicit LiteralConstNode(std::string val) : ASTNode(ASTNodeType::LiteralConst), value(std::move(val)) {}
+    std::string strepr(int tabs) const override {
+        return value;
+    }
+};
+
+struct LiteralStringNode : public ASTNode {
+    std::string value;
+    explicit LiteralStringNode(std::string val) : ASTNode(ASTNodeType::LiteralString), value(std::move(val)) {}
+    std::string strepr(int tabs) const override {
+        return value;
+    }
+};
+
+struct LiteralIdentifierNode : public ASTNode {
+    std::string value;
+    explicit LiteralIdentifierNode(std::string val) : ASTNode(ASTNodeType::LiteralIdentifier), value(std::move(val)) {}
+    std::string strepr(int tabs) const override {
+        return value;
+    }
+};
+
+struct ExpressionUnaryNode : public ASTNode {
+    std::string op;
+    std::shared_ptr<ASTNode> argument;
+    ExpressionUnaryNode(std::string o, std::shared_ptr<ASTNode> arg)
+        : ASTNode(ASTNodeType::ExpressionUnary), op(std::move(o)), argument(std::move(arg)) {}
+    std::string strepr(int tabs) const override {
+        return op + argument->strepr(tabs);
+    }
+};
+
+struct ExpressionBinaryNode : public ASTNode {
+    std::string op;
+    std::shared_ptr<ASTNode> left;
+    std::shared_ptr<ASTNode> right;
+    ExpressionBinaryNode(std::string o, std::shared_ptr<ASTNode> l, std::shared_ptr<ASTNode> r)
+        : ASTNode(ASTNodeType::ExpressionBinary), op(std::move(o)), left(std::move(l)), right(std::move(r)) {}
+    std::string strepr(int tabs) const override {
+        return left->strepr(tabs) + " " + op + " " + right->strepr(tabs);
+    }
+};
+
+struct StatementParentheseNode : public ASTNode {
+    std::shared_ptr<ASTNode> body;
+    explicit StatementParentheseNode(std::shared_ptr<ASTNode> b)
+        : ASTNode(ASTNodeType::StatementParenthese), body(std::move(b)) {}
+    std::string strepr(int tabs) const override {
+        return "(" + body->strepr(tabs) + ")";
+    }
+};
+
+struct ExpressionCallNode : public ASTNode {
+    std::shared_ptr<ASTNode> callee;
+    std::vector<std::vector<std::shared_ptr<ASTNode>>> arguments;
+    ExpressionCallNode(std::shared_ptr<ASTNode> c, std::vector<std::vector<std::shared_ptr<ASTNode>>> args)
+        : ASTNode(ASTNodeType::ExpressionCall), callee(std::move(c)), arguments(std::move(args)) {}
+    std::string strepr(int tabs) const override {
+        std::string c = callee->strepr(tabs);
+        size_t l = c.length();
+        std::vector<std::string> a;
+        for (const auto& arg : arguments) {
+            if (arg.empty()) continue;
+            std::string s = arg[0]->strepr(tabs + 1);
+            if (arg[0]->type == ASTNodeType::ExpressionCall) {
+                std::string tabsStr(tabs + 1, '\t');
+                s = "\n" + tabsStr + s;
+                l = s.length() + 2;
+            } else {
+                if (l + s.length() > 300) {
+                    s = "\n" + s;
+                    l = s.length() + 2;
+                } else {
+                    l += s.length() + 2;
+                }
+            }
+            a.push_back(s);
+        }
+        
+        std::string argsJoined;
+        for (size_t i = 0; i < a.size(); ++i) {
+            if (i > 0) argsJoined += ", ";
+            argsJoined += a[i];
+        }
+        return c + "(" + argsJoined + ")";
+    }
+};
+
+struct StatementWhileNode : public ASTNode {
+    std::shared_ptr<ASTNode> test;
+    std::vector<std::shared_ptr<ASTNode>> body;
+    StatementWhileNode(std::shared_ptr<ASTNode> t, std::vector<std::shared_ptr<ASTNode>> b)
+        : ASTNode(ASTNodeType::StatementWhile), test(std::move(t)), body(std::move(b)) {}
+    std::string strepr(int tabs) const override {
+        std::string tabsStr(tabs, '\t');
+        std::string text;
+        text += tabsStr + "while(" + test->strepr(tabs + 1) + ")\n";
+        text += tabsStr + "{\n";
+        
+        for (const auto& sst : body) {
+            if (sst->type == ASTNodeType::StatementIf || sst->type == ASTNodeType::StatementWhile) {
+                text += sst->strepr(tabs + 1) + "\n";
+            } else {
+                std::string tabsPlus(tabs + 1, '\t');
+                text += tabsPlus + sst->strepr(tabs + 1) + ";\n";
+            }
+        }
+        text += tabsStr + "}\n";
+        return text;
+    }
+};
+
+struct StatementIfNode : public ASTNode {
+    std::shared_ptr<ASTNode> test;
+    std::vector<std::shared_ptr<ASTNode>> trueBranch;
+    std::vector<std::shared_ptr<ASTNode>> falseBranch;
+    bool hasFalse;
+    
+    StatementIfNode(std::shared_ptr<ASTNode> t, std::vector<std::shared_ptr<ASTNode>> tr)
+        : ASTNode(ASTNodeType::StatementIf), test(std::move(t)), trueBranch(std::move(tr)), hasFalse(false) {}
+    
+    StatementIfNode(std::shared_ptr<ASTNode> t, std::vector<std::shared_ptr<ASTNode>> tr, std::vector<std::shared_ptr<ASTNode>> fa)
+        : ASTNode(ASTNodeType::StatementIf), test(std::move(t)), trueBranch(std::move(tr)), falseBranch(std::move(fa)), hasFalse(true) {}
+        
+    std::string strepr(int tabs) const override {
+        std::string tabsStr(tabs, '\t');
+        std::string text;
+        text += tabsStr + "if(" + test->strepr(tabs + 1) + ")\n";
+        text += tabsStr + "{\n";
+        
+        for (const auto& sst : trueBranch) {
+            if (sst->type == ASTNodeType::StatementIf || sst->type == ASTNodeType::StatementWhile) {
+                text += sst->strepr(tabs + 1);
+            } else {
+                std::string tabsPlus(tabs + 1, '\t');
+                text += tabsPlus + sst->strepr(tabs + 1) + ";\n";
+            }
+        }
+        text += tabsStr + "}\n";
+        
+        if (hasFalse) {
+            text += tabsStr + "else\n";
+            text += tabsStr + "{\n";
+            for (const auto& sst : falseBranch) {
+                if (sst->type == ASTNodeType::StatementIf || sst->type == ASTNodeType::StatementWhile) {
+                    text += sst->strepr(tabs + 1) + "\n";
+                } else {
+                    std::string tabsPlus(tabs + 1, '\t');
+                    text += tabsPlus + sst->strepr(tabs + 1) + ";\n";
+                }
+            }
+            text += tabsStr + "}\n";
+        }
+        return text;
+    }
+};
+
+static std::vector<std::shared_ptr<ASTNode>> walk(
+    const QVMFile& qvm,
+    const std::map<uint32_t, size_t>& addrToInstrIndex,
+    uint32_t& address,
+    bool& success,
+    uint32_t until = 0xFFFFFFFF
+) {
+    std::vector<std::shared_ptr<ASTNode>> statements;
+
+    while (true) {
+        auto it = addrToInstrIndex.find(address);
+        if (it == addrToInstrIndex.end()) {
+            break;
+        }
+
+        const QVMInstruction& op = qvm.instructions[it->second];
+
+        if (until != 0xFFFFFFFF && op.address == until) {
+            break;
+        }
+
+        if (op.type == QVMOpType::BRK || op.type == QVMOpType::BRA) {
+            break;
+        }
+
+        else if (op.type == QVMOpType::POP) {
+            address = op.address + op.size;
+        }
+
+        else if (op.type == QVMOpType::PUSH || op.type == QVMOpType::PUSHB ||
+                 op.type == QVMOpType::PUSHW || op.type == QVMOpType::PUSHF) {
+            std::string val;
+            if (op.type == QVMOpType::PUSHF) {
+                val = FloatStr(op.operand_float);
+            } else {
+                val = std::to_string(op.operand);
+            }
+            statements.push_back(std::make_shared<LiteralNumberNode>(val));
+            address = op.address + op.size;
+        }
+
+        else if (op.type == QVMOpType::PUSH0) {
+            statements.push_back(std::make_shared<LiteralConstNode>("0"));
+            address = op.address + op.size;
+        }
+        else if (op.type == QVMOpType::PUSH1) {
+            statements.push_back(std::make_shared<LiteralConstNode>("1"));
+            address = op.address + op.size;
+        }
+        else if (op.type == QVMOpType::PUSHM) {
+            statements.push_back(std::make_shared<LiteralConstNode>("4294967295"));
+            address = op.address + op.size;
+        }
+
+        else if (op.type == QVMOpType::PUSHSI || op.type == QVMOpType::PUSHSIB || op.type == QVMOpType::PUSHSIW) {
+            std::string val = "\"\"";
+            if (op.operand < qvm.strings.size()) {
+                val = "\"" + EscapeQSCString(qvm.strings[op.operand]) + "\"";
+            }
+            statements.push_back(std::make_shared<LiteralStringNode>(val));
+            address = op.address + op.size;
+        }
+
+        else if (op.type == QVMOpType::PUSHII || op.type == QVMOpType::PUSHIIB || op.type == QVMOpType::PUSHIIW) {
+            std::string val = "id_unknown";
+            if (op.operand < qvm.identifiers.size()) {
+                val = EscapeQSCString(qvm.identifiers[op.operand]);
+            }
+            statements.push_back(std::make_shared<LiteralIdentifierNode>(val));
+            address = op.address + op.size;
+        }
+
+        else if (op.type == QVMOpType::PLUS || op.type == QVMOpType::MINUS ||
+                 op.type == QVMOpType::INV || op.type == QVMOpType::NOT) {
+            std::string opStr;
+            if (op.type == QVMOpType::PLUS) opStr = "+";
+            else if (op.type == QVMOpType::MINUS) opStr = "-";
+            else if (op.type == QVMOpType::INV) opStr = "~";
+            else if (op.type == QVMOpType::NOT) opStr = "!";
+
+            if (statements.empty()) {
+                Logger::Get().Log(LogLevel::ERR, "[QVM_Decompile] Error: unary expression lacks argument");
+                success = false;
+                return {};
+            }
+            std::shared_ptr<ASTNode> argument = statements.back();
+            statements.pop_back();
+
+            if (argument->type == ASTNodeType::ExpressionUnary || argument->type == ASTNodeType::ExpressionBinary) {
+                argument = std::make_shared<StatementParentheseNode>(argument);
+            }
+
+            statements.push_back(std::make_shared<ExpressionUnaryNode>(opStr, argument));
+            address = op.address + op.size;
+        }
+
+        else if (op.type == QVMOpType::ADD || op.type == QVMOpType::SUB || op.type == QVMOpType::MUL ||
+                 op.type == QVMOpType::DIV || op.type == QVMOpType::SHL || op.type == QVMOpType::SHR ||
+                 op.type == QVMOpType::AND || op.type == QVMOpType::OR || op.type == QVMOpType::XOR ||
+                 op.type == QVMOpType::LAND || op.type == QVMOpType::LOR || op.type == QVMOpType::EQ ||
+                 op.type == QVMOpType::NE || op.type == QVMOpType::LT || op.type == QVMOpType::LE ||
+                 op.type == QVMOpType::GT || op.type == QVMOpType::GE || op.type == QVMOpType::ASSIGN) {
+            
+            std::string opStr;
+            if (op.type == QVMOpType::ADD) opStr = "+";
+            else if (op.type == QVMOpType::SUB) opStr = "-";
+            else if (op.type == QVMOpType::MUL) opStr = "*";
+            else if (op.type == QVMOpType::DIV) opStr = "/";
+            else if (op.type == QVMOpType::SHL) opStr = "<<";
+            else if (op.type == QVMOpType::SHR) opStr = ">>";
+            else if (op.type == QVMOpType::AND) opStr = "&";
+            else if (op.type == QVMOpType::OR) opStr = "|";
+            else if (op.type == QVMOpType::XOR) opStr = "^";
+            else if (op.type == QVMOpType::LAND) opStr = "&&";
+            else if (op.type == QVMOpType::LOR) opStr = "||";
+            else if (op.type == QVMOpType::EQ) opStr = "==";
+            else if (op.type == QVMOpType::NE) opStr = "!=";
+            else if (op.type == QVMOpType::LT) opStr = "<";
+            else if (op.type == QVMOpType::LE) opStr = "<=";
+            else if (op.type == QVMOpType::GT) opStr = ">";
+            else if (op.type == QVMOpType::GE) opStr = ">=";
+            else if (op.type == QVMOpType::ASSIGN) opStr = "=";
+
+            if (statements.size() < 2) {
+                Logger::Get().Log(LogLevel::ERR, "[QVM_Decompile] Error: binary expression lacks arguments");
+                success = false;
+                return {};
+            }
+
+            std::shared_ptr<ASTNode> right = statements.back();
+            statements.pop_back();
+            std::shared_ptr<ASTNode> left = statements.back();
+            statements.pop_back();
+
+            if (right->type == ASTNodeType::ExpressionBinary) {
+                auto rightBin = std::static_pointer_cast<ExpressionBinaryNode>(right);
+                if (GetPriority(opStr) < GetPriority(rightBin->op)) {
+                    right = std::make_shared<StatementParentheseNode>(right);
+                }
+            }
+
+            if (left->type == ASTNodeType::ExpressionBinary) {
+                auto leftBin = std::static_pointer_cast<ExpressionBinaryNode>(left);
+                if (GetPriority(opStr) < GetPriority(leftBin->op)) {
+                    left = std::make_shared<StatementParentheseNode>(left);
+                }
+            }
+
+            statements.push_back(std::make_shared<ExpressionBinaryNode>(opStr, left, right));
+            address = op.address + op.size;
+        }
+
+        else if (op.type == QVMOpType::CALL) {
+            if (statements.empty()) {
+                Logger::Get().Log(LogLevel::ERR, "[QVM_Decompile] Error: call expression lacks callee");
+                success = false;
+                return {};
+            }
+            std::shared_ptr<ASTNode> callee = statements.back();
+            statements.pop_back();
+
+            std::vector<std::vector<std::shared_ptr<ASTNode>>> arguments;
+            for (int32_t jump : op.call_targets) {
+                uint32_t argAddr = static_cast<uint32_t>(jump);
+                auto argStmts = walk(qvm, addrToInstrIndex, argAddr, success);
+                if (!success) {
+                    return {};
+                }
+                arguments.push_back(argStmts);
+            }
+
+            statements.push_back(std::make_shared<ExpressionCallNode>(callee, arguments));
+
+            uint32_t exAddr = op.address + op.size;
+            auto itEx = addrToInstrIndex.find(exAddr);
+            if (itEx != addrToInstrIndex.end()) {
+                const QVMInstruction& ex = qvm.instructions[itEx->second];
+                address = ex.address + ex.size + static_cast<int32_t>(ex.operand);
+            } else {
+                address = exAddr;
+            }
+        }
+
+        else if (op.type == QVMOpType::BF) {
+            if (statements.empty()) {
+                Logger::Get().Log(LogLevel::ERR, "[QVM_Decompile] Error: conditional branch lacks test expression");
+                success = false;
+                return {};
+            }
+            std::shared_ptr<ASTNode> test = statements.back();
+            statements.pop_back();
+
+            bool isWhile = false;
+            bool isIfElse = false;
+            int32_t exData = 0;
+            uint32_t exAddr = 0;
+            uint32_t exSize = 0;
+
+            uint32_t targetAddr = op.address + op.size + static_cast<int32_t>(op.operand);
+            if (targetAddr >= 5) {
+                uint32_t prevAddr = targetAddr - 5;
+                auto itPrev = addrToInstrIndex.find(prevAddr);
+                if (itPrev != addrToInstrIndex.end()) {
+                    const QVMInstruction& ex = qvm.instructions[itPrev->second];
+                    if (ex.type == QVMOpType::BRA) {
+                        exData = static_cast<int32_t>(ex.operand);
+                        exAddr = ex.address;
+                        exSize = ex.size;
+                        if (exData < 0) {
+                            isWhile = true;
+                        } else if (exData > 0) {
+                            isIfElse = true;
+                        }
+                    }
+                }
+            }
+
+            if (isWhile) {
+                uint32_t bodyAddr = op.address + op.size;
+                auto body = walk(qvm, addrToInstrIndex, bodyAddr, success);
+                if (!success) {
+                    return {};
+                }
+                statements.push_back(std::make_shared<StatementWhileNode>(test, body));
+                address = targetAddr;
+            } else {
+                uint32_t trueAddr = op.address + op.size;
+                auto trueBranch = walk(qvm, addrToInstrIndex, trueAddr, success);
+                if (!success) {
+                    return {};
+                }
+                address = targetAddr;
+
+                if (isIfElse) {
+                    uint32_t falseAddr = targetAddr;
+                    uint32_t untilAddr = exAddr + exSize + exData;
+                    auto falseBranch = walk(qvm, addrToInstrIndex, falseAddr, success, untilAddr);
+                    if (!success) {
+                        return {};
+                    }
+                    statements.push_back(std::make_shared<StatementIfNode>(test, trueBranch, falseBranch));
+                    address = untilAddr;
+                } else {
+                    statements.push_back(std::make_shared<StatementIfNode>(test, trueBranch));
+                }
+            }
+        }
+
+        else {
+            Logger::Get().Log(LogLevel::ERR, "[QVM_Decompile] Error: Unhandled opcode: " + std::to_string(static_cast<int>(op.type)));
+            success = false;
+            return {};
+        }
+    }
+
+    return statements;
+}
 
 bool QVM_Decompile(const QVMFile& qvm, const std::string& outpath) {
     if (!qvm.valid) {
@@ -56,482 +506,44 @@ bool QVM_Decompile(const QVMFile& qvm, const std::string& outpath) {
         return false;
     }
 
-    std::ofstream out(outpath);
+    std::ofstream out(outpath, std::ios::binary);
     if (!out.is_open()) {
         Logger::Get().Log(LogLevel::ERR, "[QVM_Decompile] Cannot open output file: " + outpath);
         return false;
     }
-
-    // -----------------------------------------------------------------------
-    // Emit file header comment
-    // -----------------------------------------------------------------------
-    out << "// Decompiled by IGI Editor (QVM v0.5)\n";
-    out << "// Identifiers: " << qvm.identifiers.size()
-        << "  Strings: "      << qvm.strings.size()
-        << "  Instructions: " << qvm.instructions.size()
-        << "\n\n";
 
     if (qvm.instructions.empty()) {
         Logger::Get().Log(LogLevel::INFO, "[QVM_Decompile] No instructions to decompile.");
         return true;
     }
 
-    // -----------------------------------------------------------------------
-    // Build address -> instruction index map for branch-target resolution
-    // -----------------------------------------------------------------------
-    std::map<uint32_t, size_t> addrToIndex;
+    std::map<uint32_t, size_t> addrToInstrIndex;
     for (size_t i = 0; i < qvm.instructions.size(); ++i) {
-        addrToIndex[qvm.instructions[i].address] = i;
+        addrToInstrIndex[qvm.instructions[i].address] = i;
     }
 
-    // -----------------------------------------------------------------------
-    // Pass 1 — collect pending closures keyed by instruction address.
-    //
-    // Each entry is a pair<int, string>: the indent delta to apply BEFORE
-    // emitting the text (negative = dedent), then the text to emit.
-    // We store multiple actions per address in order.
-    // -----------------------------------------------------------------------
-    struct PendingAction {
-        int indentDelta; // applied to 'indent' before emitting
-        std::string text;
-    };
+    uint32_t address = 0;
+    bool success = true;
+    auto qvmtree = walk(qvm, addrToInstrIndex, address, success);
+    if (!success) {
+        Logger::Get().Log(LogLevel::ERR, "[QVM_Decompile] Decompilation failed during AST reconstruction.");
+        out.close();
+        return false;
+    }
 
-    std::map<uint32_t, std::vector<PendingAction>> pendingAt;
-
-    // We need a running indent to pre-compute what will be stored.
-    // We track it separately here just for Pass-1 annotation; Pass-2
-    // maintains the real value.
-    // Actually the simplest correct approach: only record brace-close
-    // actions at branch targets.  Pass 2 will apply them.
-
-    for (const auto& instr : qvm.instructions) {
-        uint32_t cur = instr.address;
-
-        switch (instr.type) {
-
-        case QVMOpType::BF: {
-            // BF: branch if false (condition is false → skip body).
-            // Emit "if (cond) {" and schedule close at target.
-            uint32_t target = instr.operand;
-            // Close the if-body when execution reaches target.
-            pendingAt[target].push_back({-1, "}"});
-            break;
-        }
-
-        case QVMOpType::BT: {
-            // BT: branch if true — used for while loops.
-            // The while body ends before this instruction and jumps back;
-            // the BT at the top of the loop jumps past the body when false.
-            // Schedule close at target (past body).
-            uint32_t target = instr.operand;
-            pendingAt[target].push_back({-1, "}"});
-            break;
-        }
-
-        case QVMOpType::BRA: {
-            uint32_t target = instr.operand;
-            if (target > cur) {
-                // Forward BRA: marks the end of an if-body (or else-body).
-                //
-                // The preceding BF placed {-1, "}"} at `fallthrough`
-                // (the address of the instruction right after this BRA),
-                // which is the start of the else-clause or the post-if code.
-                //
-                // Case A — plain if (no else):
-                //   BF already covers the close; BRA just skips forward.
-                //   Nothing extra to do here.
-                //
-                // Case B — if/else:
-                //   The BF target is this BRA's fall-through address.
-                //   We upgrade the BF-scheduled {-1,"}"} at fallthrough to
-                //   {-1,"} else {"} (dedent, emit "} else {", re-indent),
-                //   and add {-1,"}"} at the BRA target to close the else body.
-                //
-                // Distinguish the two cases: if there is already a pending
-                // entry at `fallthrough` that was placed by a BF (text == "}"),
-                // then this is an else branch.
-
-                uint32_t fallthrough = cur + instr.size;
-                auto& vec = pendingAt[fallthrough];
-
-                bool upgradedToElse = false;
-                for (auto& a : vec) {
-                    if (a.indentDelta == -1 && a.text == "}") {
-                        // Upgrade: dedent, emit "} else {", re-indent.
-                        // We encode this as a single action with delta -1 and
-                        // special text "} else {".  The Pass-2 emitter will
-                        // re-indent after detecting the trailing '{'.
-                        a.text = "} else {";
-                        upgradedToElse = true;
-                        break;
-                    }
-                }
-
-                if (upgradedToElse) {
-                    // Close the else-body at the BRA jump target.
-                    pendingAt[target].push_back({-1, "}"});
-                }
-                // If no upgrade happened this is a lone forward BRA (e.g. an
-                // unconditional jump with no preceding BF), which we leave as-is.
-            }
-            // Backward BRA: closing a while loop body.  The BT at the loop
-            // head already scheduled {-1,"}"} past the body via its own target.
-            // Nothing extra needed here; Pass 2 handles it via BRA opcode below.
-            break;
-        }
-
-        default:
-            break;
+    std::string qvmtext;
+    for (const auto& st : qvmtree) {
+        if (st->type == ASTNodeType::StatementIf || st->type == ASTNodeType::StatementWhile) {
+            qvmtext += st->strepr(0);
+        } else {
+            qvmtext += st->strepr(0) + ";\n";
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Pass 2 — linear walk: process instructions and emit QSC
-    // -----------------------------------------------------------------------
-    std::vector<std::string> stack; // expression stack
-    int indent = 0;
-
-    // Flush any call-expression results sitting on the stack as standalone
-    // statements.  Call results end with ')'; anything else is a literal or
-    // partial expression that we silently discard (it will be rebuilt).
-    auto FlushCalls = [&]() {
-        while (!stack.empty() && !stack.back().empty() &&
-               stack.back().back() == ')') {
-            EmitLine(out, indent, stack.back() + ";");
-            stack.pop_back();
-        }
-    };
-
-    for (size_t i = 0; i < qvm.instructions.size(); ++i) {
-        const QVMInstruction& instr = qvm.instructions[i];
-        uint32_t cur = instr.address;
-
-        // Apply any pending actions scheduled for this address.
-        auto it = pendingAt.find(cur);
-        if (it != pendingAt.end()) {
-            // Before closing a block, flush any orphaned call results.
-            FlushCalls();
-            for (auto& action : it->second) {
-                // Apply the indent delta first (e.g. -1 to dedent before "}" or
-                // "} else {").
-                indent += action.indentDelta;
-                if (indent < 0) indent = 0;
-
-                if (!action.text.empty()) {
-                    EmitLine(out, indent, action.text);
-                    // If the action opens a new block (text ends with '{'),
-                    // increment indent for the body that follows.
-                    if (action.text.back() == '{') {
-                        indent++;
-                    }
-                }
-            }
-        }
-
-        // ------------------------------------------------------------------
-        // Process the instruction
-        // ------------------------------------------------------------------
-        switch (instr.type) {
-
-        // --- No-ops / meta ---
-        case QVMOpType::BRK:
-            FlushCalls();
-            EmitLine(out, indent, "// BRK");
-            break;
-
-        case QVMOpType::NOP:
-            break;
-
-        case QVMOpType::BLK:
-            out << "\n";
-            break;
-
-        case QVMOpType::JSR:
-            // Internal subroutine linkage — skip.
-            break;
-
-        case QVMOpType::ILLEGAL:
-            EmitLine(out, indent, "// ILLEGAL");
-            break;
-
-        // --- Push immediates ---
-        case QVMOpType::PUSH:
-            stack.push_back(std::to_string(instr.operand));
-            break;
-
-        case QVMOpType::PUSHB:
-            stack.push_back(std::to_string(instr.operand));
-            break;
-
-        case QVMOpType::PUSHW:
-            stack.push_back(std::to_string(instr.operand));
-            break;
-
-        case QVMOpType::PUSHF:
-            stack.push_back(FloatStr(instr.operand_float));
-            break;
-
-        case QVMOpType::PUSH0:
-            stack.push_back("0");
-            break;
-
-        case QVMOpType::PUSH1:
-            stack.push_back("1");
-            break;
-
-        case QVMOpType::PUSHM:
-            stack.push_back("-1");
-            break;
-
-        case QVMOpType::PUSHA:
-            stack.push_back("@" + std::to_string(instr.operand));
-            break;
-
-        // --- Push string ---
-        case QVMOpType::PUSHS:
-        case QVMOpType::PUSHSI:
-        case QVMOpType::PUSHSIB:
-        case QVMOpType::PUSHSIW:
-            stack.push_back(SafeString(qvm, instr.operand));
-            break;
-
-        // --- Push identifier ---
-        case QVMOpType::PUSHI:
-        case QVMOpType::PUSHII:
-        case QVMOpType::PUSHIIB:
-        case QVMOpType::PUSHIIW:
-            stack.push_back(SafeIdentifier(qvm, static_cast<int32_t>(instr.operand)));
-            break;
-
-        // --- Binary arithmetic / logical / relational ---
-        case QVMOpType::ADD: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " + " + b + ")");
-            break;
-        }
-        case QVMOpType::SUB: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " - " + b + ")");
-            break;
-        }
-        case QVMOpType::MUL: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " * " + b + ")");
-            break;
-        }
-        case QVMOpType::DIV: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " / " + b + ")");
-            break;
-        }
-        case QVMOpType::SHL: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " << " + b + ")");
-            break;
-        }
-        case QVMOpType::SHR: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " >> " + b + ")");
-            break;
-        }
-        case QVMOpType::AND: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " & " + b + ")");
-            break;
-        }
-        case QVMOpType::OR: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " | " + b + ")");
-            break;
-        }
-        case QVMOpType::XOR: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " ^ " + b + ")");
-            break;
-        }
-        case QVMOpType::LAND: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " && " + b + ")");
-            break;
-        }
-        case QVMOpType::LOR: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " || " + b + ")");
-            break;
-        }
-        case QVMOpType::EQ: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " == " + b + ")");
-            break;
-        }
-        case QVMOpType::NE: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " != " + b + ")");
-            break;
-        }
-        case QVMOpType::LT: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " < " + b + ")");
-            break;
-        }
-        case QVMOpType::LE: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " <= " + b + ")");
-            break;
-        }
-        case QVMOpType::GT: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " > " + b + ")");
-            break;
-        }
-        case QVMOpType::GE: {
-            std::string b = SafePop(stack), a = SafePop(stack);
-            stack.push_back("(" + a + " >= " + b + ")");
-            break;
-        }
-
-        // --- Unary ---
-        case QVMOpType::PLUS: {
-            std::string a = SafePop(stack);
-            stack.push_back("+" + a);
-            break;
-        }
-        case QVMOpType::MINUS: {
-            std::string a = SafePop(stack);
-            stack.push_back("-" + a);
-            break;
-        }
-        case QVMOpType::INV: {
-            std::string a = SafePop(stack);
-            stack.push_back("~" + a);
-            break;
-        }
-        case QVMOpType::NOT: {
-            std::string a = SafePop(stack);
-            stack.push_back("!" + a);
-            break;
-        }
-
-        // --- Assignment ---
-        case QVMOpType::ASSIGN: {
-            // Stack: [..., lhs, rhs]  — rhs on top
-            std::string rhs = SafePop(stack);
-            std::string lhs = SafePop(stack);
-            EmitLine(out, indent, lhs + " = " + rhs + ";");
-            break;
-        }
-
-        // --- POP: flush call result as a statement or silently discard ---
-        case QVMOpType::POP: {
-            if (!stack.empty()) {
-                std::string expr = SafePop(stack);
-                if (!expr.empty() && expr.back() == ')') {
-                    EmitLine(out, indent, expr + ";");
-                }
-            }
-            break;
-        }
-
-        // --- Return ---
-        case QVMOpType::RET: {
-            FlushCalls();
-            if (!stack.empty()) {
-                std::string val = SafePop(stack);
-                EmitLine(out, indent, "return " + val + ";");
-            } else {
-                EmitLine(out, indent, "return;");
-            }
-            break;
-        }
-
-        // --- Function call ---
-        case QVMOpType::CALL: {
-            // QVM v0.5 calling convention:
-            //   Stack layout (bottom → top): arg0, arg1, …, argN-1, funcName
-            //   funcName is pushed LAST via PUSHI (at stack top).
-            //   call_targets = dispatch selector IDs (NOT identifier indices).
-            //   numArgs = call_targets.size() - 1.
-            //   totalPop = numArgs + 1 (args + funcName slot).
-
-            size_t numArgs = instr.call_targets.size() > 1
-                ? instr.call_targets.size() - 1 : 0;
-            size_t totalPop = 1 + numArgs;
-            size_t safePop  = std::min(totalPop, stack.size());
-            size_t base     = stack.size() - safePop;
-
-            // funcName is the topmost item (pushed last).
-            std::string funcName = (safePop >= 1)
-                ? stack[base + safePop - 1] : "func_unknown";
-
-            // args are the items below funcName in push order.
-            std::vector<std::string> args;
-            args.reserve(safePop > 1 ? safePop - 1 : 0);
-            for (size_t k = 0; k + 1 < safePop; ++k)
-                args.push_back(stack[base + k]);
-            stack.resize(base);
-
-            std::string callExpr = funcName + "(";
-            for (size_t k = 0; k < args.size(); ++k) {
-                if (k > 0) callExpr += ", ";
-                callExpr += args[k];
-            }
-            callExpr += ")";
-
-            // Push result — consumed by a comparison/binary op that follows,
-            // or flushed as a statement at the next BRK/BRA/RET/block-close.
-            stack.push_back(callExpr);
-            break;
-        }
-
-        // --- Control flow ---
-
-        case QVMOpType::BF: {
-            // Branch if FALSE: skip body when condition is false.
-            // → emit  if (cond) {
-            std::string cond = SafePop(stack);
-            EmitLine(out, indent, "if (" + cond + ") {");
-            indent++;
-            break;
-        }
-
-        case QVMOpType::BT: {
-            // Branch if TRUE: used for while — branch past body when false.
-            // Actually in QVM v0.5 BT branches when true; a while loop is
-            // typically:
-            //   evaluate condition
-            //   BF  → past body
-            //   body
-            //   BRA → back to condition
-            // BT on its own signals "while (cond)".
-            std::string cond = SafePop(stack);
-            EmitLine(out, indent, "while (" + cond + ") {");
-            indent++;
-            break;
-        }
-
-        case QVMOpType::BRA: {
-            FlushCalls();
-            uint32_t target = instr.operand;
-            if (target <= cur) {
-                indent--;
-                if (indent < 0) indent = 0;
-                EmitLine(out, indent, "}");
-            }
-            break;
-        }
-
-        default:
-            break;
-        }
-    }
-
-    // Flush any remaining unclosed braces (safety net for malformed bytecode).
-    while (indent > 0) {
-        indent--;
-        EmitLine(out, indent, "}");
-    }
-
+    out << qvmtext;
     out.flush();
+    out.close();
+
     Logger::Get().Log(LogLevel::INFO,
         "[QVM_Decompile] Written " + std::to_string(qvm.instructions.size()) +
         " instructions to " + outpath);

@@ -19,6 +19,7 @@ static const uint32_t FOURCC_ILFF = 0x46464C49; // "ILFF" little-endian
 static const uint32_t FOURCC_IRES = 0x53455249; // "IRES" little-endian
 static const uint32_t FOURCC_NAME = 0x454D414E; // "NAME" little-endian
 static const uint32_t FOURCC_BODY = 0x59444F42; // "BODY" little-endian
+static const uint32_t FOURCC_CSTR = 0x52545343; // "CSTR" little-endian
 
 static uint32_t ReadU32LE(const uint8_t* p) {
     return (uint32_t)p[0]
@@ -98,7 +99,7 @@ RESFile RES_Parse(const std::string& filepath) {
             pendingName = std::string(str, len);
             haveName = true;
         }
-        else if (chunkFourCC == FOURCC_BODY) {
+        else if (chunkFourCC == FOURCC_BODY || chunkFourCC == FOURCC_CSTR) {
             RESEntry entry;
             if (haveName) {
                 entry.name = pendingName;

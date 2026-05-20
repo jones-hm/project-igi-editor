@@ -69,7 +69,7 @@ private:
 	void					LoadFlatSkyLayersInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loader);
 	void					DecompileObjects(int levelNo);
 	bool					FilesDiffer(const std::string& file1, const std::string& file2);
-	void					CopyTerrainFromQEditor(int level_no);
+	void					CopyTerrainFromIGI(int level_no);
 	void					MoveTerrainToGamePath(int level_no);
 
 	// pos range: [-2^30, 2^30]

@@ -118,3 +118,10 @@ docs/
 !assets/*.png
 !bin/
 !build/
+
+# Caches
+__pycache__/
+*.pyc
+*.qsc
+*.qas
+*qvm
