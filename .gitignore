@@ -66,6 +66,7 @@ Debug/
 Release/
 x64/
 x86/
+build/
 vcbuild/
 bin/Debug/
 bin/Release/
@@ -118,7 +119,6 @@ models/
 !assets/*.png
 !assets/screenshots
 !bin/
-!build/
 
 # Caches
 __pycache__/

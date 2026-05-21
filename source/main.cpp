@@ -9,6 +9,7 @@
 #include "pch.h"
 #include "utils.h"
 #include <freeglut.h>
+#include <filesystem>
 
 /*
 ================================================================================
@@ -613,6 +614,20 @@ int main(int argc, char **argv) {
     system("pause");
 #endif
     return result;
+  }
+
+  // Check if the game executable (igi.exe) exists in the configured game path
+  std::string igiRoot = Utils::GetIGIRootPath();
+  std::string igiExePath = igiRoot + "\\igi.exe";
+  if (!std::filesystem::exists(igiExePath)) {
+    std::string errorMsg = "Fatal Error: 'igi.exe' not found in game directory:\n" + igiRoot +
+                           "\n\nPlease configure a valid IGIPath in config.ini";
+#if defined(_WIN32)
+    Utils::LogAndShowError(errorMsg, "IGI Editor - Launch Error");
+#else
+    fprintf(stderr, "%s\n", errorMsg.c_str());
+#endif
+    return 1;
   }
 
   // setup path of res and shaders folders (GUI mode only — creates QEditor dirs)

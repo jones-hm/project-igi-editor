@@ -228,6 +228,10 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
     bool isSwitch = (typeStr == "Switch");
     bool isSplineContainer = (typeStr == "SplineObj");
     bool isWire = (typeStr == "Wire");
+    bool isAlarm = (typeStr == "AlarmControl");
+    bool isSCameraCtrl = (typeStr == "SCameraControl");
+    bool isExplode = (typeStr == "ExplodeObject");
+    bool isAmbient = (typeStr == "AmbientArea");
 
     bool isDecl = (typeStr == "Task_DeclareParameters");
     bool isGrouping = (typeStr == "Container" || typeStr == "Static" || typeStr == "Game" || typeStr == "Level" || typeStr == "Flow" || typeStr == "Task" || typeStr == "Folder" ||
@@ -272,6 +276,14 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
             obj.argTokens.push_back(ArgTokenFromArg(cur_a));
             if (obj.preserveTaskId && arg_idx == 0) {
                 obj.argTokens.back() = FormatQscIntegerToken(TaskIdFromArg(cur_a));
+            }
+        }
+
+        if (obj.qscFuncName == "Task_New" && arg_idx == 2) {
+            if (cur_a->type_ == QSC::arg_s::type_t::STR) {
+                obj.name = cur_a->str_;
+                obj.original_name = cur_a->str_;
+                obj.has_original_name = true;
             }
         }
 
@@ -377,10 +389,36 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
             switch (arg_idx) {
                 case 0: obj.taskId = TaskIdFromArg(cur_a); break;
                 case 2: if (cur_a->type_ == QSC::arg_s::type_t::STR) { obj.name = cur_a->str_; obj.original_name = cur_a->str_; obj.has_original_name = true; } break;
-                case 12: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.x = cur_a->dbl_; obj.original_pos.x = cur_a->dbl_; } break;
-                case 13: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.y = cur_a->dbl_; obj.original_pos.y = cur_a->dbl_; } break;
-                case 14: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.z = cur_a->dbl_; obj.original_pos.z = cur_a->dbl_; } break;
+                case 3: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.x = cur_a->dbl_; obj.original_pos.x = cur_a->dbl_; } break;
+                case 4: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.y = cur_a->dbl_; obj.original_pos.y = cur_a->dbl_; } break;
+                case 5: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.z = cur_a->dbl_; obj.original_pos.z = cur_a->dbl_; } break;
+                case 6: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.x = cur_a->dbl_; obj.original_rot.x = cur_a->dbl_; } break;
+                case 7: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.y = cur_a->dbl_; obj.original_rot.y = cur_a->dbl_; } break;
+                case 8: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.z = cur_a->dbl_; obj.original_rot.z = cur_a->dbl_; } break;
+                case 17: if (cur_a->type_ == QSC::arg_s::type_t::STR) obj.modelId = cur_a->str_; break;
+            }
+        } else if (isAlarm || isSCameraCtrl || isExplode) {
+            switch (arg_idx) {
+                case 0: obj.taskId = TaskIdFromArg(cur_a); break;
+                case 2: if (cur_a->type_ == QSC::arg_s::type_t::STR) { obj.name = cur_a->str_; obj.original_name = cur_a->str_; obj.has_original_name = true; } break;
+                case 3: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.x = cur_a->dbl_; obj.original_pos.x = cur_a->dbl_; } break;
+                case 4: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.y = cur_a->dbl_; obj.original_pos.y = cur_a->dbl_; } break;
+                case 5: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.z = cur_a->dbl_; obj.original_pos.z = cur_a->dbl_; } break;
+                case 6: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.x = cur_a->dbl_; obj.original_rot.x = cur_a->dbl_; } break;
+                case 7: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.y = cur_a->dbl_; obj.original_rot.y = cur_a->dbl_; } break;
+                case 8: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.z = cur_a->dbl_; obj.original_rot.z = cur_a->dbl_; } break;
                 case 15: if (cur_a->type_ == QSC::arg_s::type_t::STR) obj.modelId = cur_a->str_; break;
+            }
+        } else if (isAmbient) {
+            switch (arg_idx) {
+                case 0: obj.taskId = TaskIdFromArg(cur_a); break;
+                case 2: if (cur_a->type_ == QSC::arg_s::type_t::STR) { obj.name = cur_a->str_; obj.original_name = cur_a->str_; obj.has_original_name = true; } break;
+                case 3: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.x = cur_a->dbl_; obj.original_pos.x = cur_a->dbl_; } break;
+                case 4: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.y = cur_a->dbl_; obj.original_pos.y = cur_a->dbl_; } break;
+                case 5: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.z = cur_a->dbl_; obj.original_pos.z = cur_a->dbl_; } break;
+                case 6: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.x = cur_a->dbl_; obj.original_rot.x = cur_a->dbl_; } break;
+                case 7: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.y = cur_a->dbl_; obj.original_rot.y = cur_a->dbl_; } break;
+                case 8: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.z = cur_a->dbl_; obj.original_rot.z = cur_a->dbl_; } break;
             }
         } else {
             // Default: just try to get taskId from first arg
@@ -559,8 +597,11 @@ void LevelObjects::SaveToQSC(const std::string& qscPath) {
         const auto& obj = objects_[i];
         if (obj.parentIndex != -1 || obj.deleted) continue;
 
+        std::string serialized = SerializeObjectRecursive(objects_, i);
+        if (serialized.empty()) continue;
+
         if (!first) ss << "\n";
-        ss << SerializeObjectRecursive(objects_, i) << ";";
+        ss << serialized << ";";
         first = false;
     }
     outFile << Utils::Trim(ss.str());
@@ -675,6 +716,29 @@ void LevelObjects::ParseTaskLine(const std::string& line, LevelObject& obj) {
             readDouble(8, obj.pos.z);
             if (obj.argTokens.size() > 9) obj.modelId = unquote(obj.argTokens[9]);
             if (obj.argTokens.size() > 10) obj.segmentModelId = unquote(obj.argTokens[10]);
+        } else if (obj.type == "Switch") {
+            readDouble(3, obj.pos.x);
+            readDouble(4, obj.pos.y);
+            readDouble(5, obj.pos.z);
+            readDouble(6, obj.rot.x);
+            readDouble(7, obj.rot.y);
+            readDouble(8, obj.rot.z);
+            if (obj.argTokens.size() > 17) obj.modelId = unquote(obj.argTokens[17]);
+        } else if (obj.type == "AlarmControl" || obj.type == "SCameraControl" || obj.type == "ExplodeObject") {
+            readDouble(3, obj.pos.x);
+            readDouble(4, obj.pos.y);
+            readDouble(5, obj.pos.z);
+            readDouble(6, obj.rot.x);
+            readDouble(7, obj.rot.y);
+            readDouble(8, obj.rot.z);
+            if (obj.argTokens.size() > 15) obj.modelId = unquote(obj.argTokens[15]);
+        } else if (obj.type == "AmbientArea") {
+            readDouble(3, obj.pos.x);
+            readDouble(4, obj.pos.y);
+            readDouble(5, obj.pos.z);
+            readDouble(6, obj.rot.x);
+            readDouble(7, obj.rot.y);
+            readDouble(8, obj.rot.z);
         } else if (obj.argTokens.size() > 8) {
             readDouble(3, obj.pos.x);
             readDouble(4, obj.pos.y);
@@ -736,16 +800,39 @@ void LevelObjects::UpdateCoordinatesInLine(LevelObject& obj) {
             if (!obj.modelId.empty() || obj.argTokens.size() > 9) setStringToken(9, obj.modelId);
             if (!obj.segmentModelId.empty() || obj.argTokens.size() > 10) setStringToken(10, obj.segmentModelId);
         } else if (obj.type == "Switch") {
-            setToken(12, FormatQscDouble(obj.pos.x));
-            setToken(13, FormatQscDouble(obj.pos.y));
-            setToken(14, FormatQscDouble(saveZ));
+            setToken(3, FormatQscDouble(obj.pos.x));
+            setToken(4, FormatQscDouble(obj.pos.y));
+            setToken(5, FormatQscDouble(saveZ));
+            if (!obj.modelId.empty() || obj.argTokens.size() > 17) setStringToken(17, obj.modelId);
+        } else if (obj.type == "AlarmControl" || obj.type == "SCameraControl" || obj.type == "ExplodeObject") {
+            setToken(3, FormatQscDouble(obj.pos.x));
+            setToken(4, FormatQscDouble(obj.pos.y));
+            setToken(5, FormatQscDouble(saveZ));
+            setToken(6, FormatQscDouble(obj.rot.x));
+            setToken(7, FormatQscDouble(obj.rot.y));
+            setToken(8, FormatQscDouble(obj.rot.z));
             if (!obj.modelId.empty() || obj.argTokens.size() > 15) setStringToken(15, obj.modelId);
+        } else if (obj.type == "AmbientArea") {
+            setToken(3, FormatQscDouble(obj.pos.x));
+            setToken(4, FormatQscDouble(obj.pos.y));
+            setToken(5, FormatQscDouble(saveZ));
+            setToken(6, FormatQscDouble(obj.rot.x));
+            setToken(7, FormatQscDouble(obj.rot.y));
+            setToken(8, FormatQscDouble(obj.rot.z));
         } else if (obj.type == "Wire") {
             setToken(3, FormatQscDouble(obj.pos.x));
             setToken(4, FormatQscDouble(obj.pos.y));
             setToken(5, FormatQscDouble(saveZ));
             if (!obj.modelId.empty() || obj.argTokens.size() > 9) setStringToken(9, obj.modelId);
         } else if (obj.type == "Building" || obj.type == "EditRigidObj" || obj.type == "Terminal") {
+            setToken(3, FormatQscDouble(obj.pos.x));
+            setToken(4, FormatQscDouble(obj.pos.y));
+            setToken(5, FormatQscDouble(saveZ));
+            setToken(6, FormatQscDouble(obj.rot.x));
+            setToken(7, FormatQscDouble(obj.rot.y));
+            setToken(8, FormatQscDouble(obj.rot.z));
+            if (!obj.modelId.empty() || obj.argTokens.size() > 9) setStringToken(9, obj.modelId);
+        } else if (obj.argTokens.size() > 8) {
             setToken(3, FormatQscDouble(obj.pos.x));
             setToken(4, FormatQscDouble(obj.pos.y));
             setToken(5, FormatQscDouble(saveZ));

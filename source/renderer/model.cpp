@@ -180,6 +180,7 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
             sub.alphaMode = 0;
             sub.vertexCount = static_cast<int>(verts.size() / 8);
             sub.baseColorFactor = glm::vec4(1.0f);
+            sub.materialSlot = materialSlot;
 
             glGenVertexArrays(1, &sub.VAO);
             glGenBuffers(1, &sub.VBO);

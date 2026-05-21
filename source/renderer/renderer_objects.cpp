@@ -643,12 +643,30 @@ std::string Renderer_Objects::FindTextureFile(const std::string& textureId) cons
     result = searchDir(std::filesystem::path(igiTexDir));
     if (!result.empty()) {
         Logger::Get().Log(LogLevel::DEBUG,
-            "[TEX Native] Found texture in IGI root: " + result);
+            "[TEX Native] Found texture in IGI root level textures: " + result);
+        return result;
+    }
+
+    // 3. Game common/shared textures folder (shared across all levels)
+    const std::string igiCommonTexDir = Utils::GetIGIRootPath() + "\\textures";
+    result = searchDir(std::filesystem::path(igiCommonTexDir));
+    if (!result.empty()) {
+        Logger::Get().Log(LogLevel::DEBUG,
+            "[TEX Native] Found texture in IGI common folder: " + result);
+        return result;
+    }
+
+    // 4. Game location0 common folder (shared across all location0 levels)
+    const std::string igiLoc0CommonTexDir = Utils::GetIGIRootPath() + "\\missions\\location0\\common\\textures";
+    result = searchDir(std::filesystem::path(igiLoc0CommonTexDir));
+    if (!result.empty()) {
+        Logger::Get().Log(LogLevel::DEBUG,
+            "[TEX Native] Found texture in IGI location0 common folder: " + result);
         return result;
     }
 
     Logger::Get().Log(LogLevel::WARNING,
-        "[TEX Native] Texture not found in local or IGI root for id=" + textureId);
+        "[TEX Native] Texture not found in all 4 search paths for id=" + textureId);
     return "";
 }
 
@@ -722,16 +740,27 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
 
         for (size_t i = 0; i < mesh.subMeshes.size(); ++i) {
             GLuint texture = 0;
+            const int matSlot = mesh.subMeshes[i].materialSlot;
+
             if (textures.size() == 1) {
                 // Single-texture model: apply the same texture to every submesh
                 // (covers building floors, bone model parts, etc.)
                 texture = textures[0];
+            } else if (matSlot >= 0 && static_cast<size_t>(matSlot) < textures.size()) {
+                // Defer to materialSlot lookup from MEF render block data
+                texture = textures[matSlot];
             } else if (i < textures.size()) {
+                // Fallback to sequential index if materialSlot is invalid/not-assigned (-1)
                 texture = textures[i];
             } else {
-                // More submeshes than DAT entries: use the last valid texture
-                // (avoids untextured floor/wall submeshes)
+                // More submeshes than DAT entries: use the last valid texture as fallback, but warn loudly!
                 texture = fallbackTexture;
+                Logger::Get().Log(
+                    LogLevel::WARNING,
+                    "[TEX Native] SubMesh/texture count mismatch (materialSlot fallback used) for modelId=" + modelId +
+                    " submeshIndex=" + std::to_string(i) +
+                    " materialSlot=" + std::to_string(matSlot) +
+                    " textureCount=" + std::to_string(textures.size()));
             }
 
             mesh.subMeshes[i].textureID = texture;
@@ -753,8 +782,8 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
 
         if (textureIds.size() != mesh.subMeshes.size()) {
             Logger::Get().Log(
-                LogLevel::INFO,
-                "[TEX Native] Texture/submesh count mismatch modelId=" + modelId +
+                LogLevel::WARNING,
+                "[TEX Native] WARNING: Texture/submesh count mismatch for modelId=" + modelId +
                 " subMeshes=" + std::to_string(mesh.subMeshes.size()) +
                 " datTextures=" + std::to_string(textureIds.size()));
         }

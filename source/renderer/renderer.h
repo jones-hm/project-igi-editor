@@ -67,6 +67,10 @@ public:
 		int edit_box_w_;
 		int edit_box_h_;
 		int edit_scroll_x_;
+		bool task_picker_open_;
+		int task_picker_selected_idx_;
+		int task_picker_scroll_offset_;
+		std::string task_picker_search_;
 		bool enable_camera_mode_;
 	};
 

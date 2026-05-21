@@ -334,7 +334,7 @@ bool Terrain::Save(int level_no) {
 			if (existingSize == total_file_size && memcmp(existingBuf, hmp_, total_file_size) == 0) {
 				Logger::Get().Log(LogLevel::INFO, "[Terrain::Save] No changes detected in terrain, skipping save to: " + std::string(filename));
 				File_FreeBuf(existingBuf);
-				return true;
+				return false;
 			}
 			File_FreeBuf(existingBuf);
 		}

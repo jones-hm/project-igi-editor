@@ -137,6 +137,10 @@ private:
 	std::string				status_message_;
 
 	bool					task_editor_open_ = false;
+	bool					task_picker_open_ = false;
+	int						task_picker_selected_idx_ = 0;
+	int						task_picker_scroll_offset_ = 0;
+	std::string				task_picker_search_ = "";
 	std::string				edit_string_;
 	int						edit_cursor_pos_ = 0;
 	int						edit_selection_start_ = -1;
@@ -219,6 +223,10 @@ private:
 	void					ReplaceTaskEditorSelection(const std::string& text);
 	void					SyncSelectedTaskToLiveQsc(bool keepEditorOpen);
 	void					SaveTaskEditorChanges(bool keepEditorOpen);
+
+	bool					IsComputer(const LevelObject& obj);
+	bool					IsWaterTower(const LevelObject& obj);
+	bool					ValidateParentChildCompatibility(const LevelObject& parent, const std::vector<LevelObject>& addedSubtree);
 
 public:
 	// QSC/QVM workflow

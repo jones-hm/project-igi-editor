@@ -25,6 +25,17 @@ void Config::Init() {
         Load();
         Logger::Get().Log(LogLevel::INFO, "[Config] Config loaded - IGIPath: " + data_.igiPath);
     }
+
+    // Always force igiPath to match the directory where the executable is located
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    std::string exeDir(exePath);
+    size_t lastSlash = exeDir.find_last_of("\\/");
+    if (lastSlash != std::string::npos) {
+        exeDir = exeDir.substr(0, lastSlash);
+    }
+    data_.igiPath = exeDir;
+    Logger::Get().Log(LogLevel::INFO, "[Config] Forced igiPath to ExeDirectory: " + data_.igiPath);
 }
 
 ConfigData& Config::Get() {
@@ -262,7 +273,6 @@ void Config::Save() {
     file << std::endl;
 
     file << "[GamePath]" << std::endl;
-    file << "IGIPath=" << data_.igiPath << std::endl;
     file << "Level=" << data_.level << std::endl;
     file << "EditorPath=" << data_.editorPath << std::endl;
     file << "QEditorPath=" << data_.qEditorPath << std::endl;

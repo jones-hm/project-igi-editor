@@ -896,8 +896,257 @@ void Renderer::Draw(const draw_params_s &params,
         GLUT_BITMAP_HELVETICA_12,
         (const unsigned char *)"IGI Editor Copyright - HeavenHM");
     int w_x = (params.view_define_->viewport_width_ - w_width) / 2;
-    draw_text(w_x, params.view_define_->viewport_height_ - 20,
-              "IGI Editor - HeavenHM", 0.7f, 0.7f, 0.7f);
+    draw_text(w_x, params.view_define_->viewport_height_ - 20, "IGI Editor - HeavenHM", 0.7f, 0.7f, 0.7f);
+
+    if (task_tree_view.task_picker_open_ && task_tree_view.level_objects_) {
+      int picker_x = 350;
+      int picker_w = 400;
+      int viewport_h = params.view_define_->viewport_height_;
+
+      // Proportional card layout:
+      // Header: top-down 20 to 50 (bottom-up viewport_h - 50 to viewport_h -
+      // 20) Items List: top-down 50 to viewport_h - 50 (bottom-up 50 to
+      // viewport_h - 50) Footer: top-down viewport_h - 50 to viewport_h - 20
+      // (bottom-up 20 to 50)
+      int card_top_y = viewport_h - 20; // bottom-up
+      int card_bottom_y = 20;           // bottom-up
+      int picker_h = viewport_h - 100;  // items list area height
+
+      // Translucent white & yellow background (white and yellow transparent)
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glColor4f(0.95f, 0.95f, 0.90f,
+                0.25f); // Semi-transparent warm white/yellow
+      glBegin(GL_QUADS);
+      glVertex2i(picker_x, card_bottom_y);
+      glVertex2i(picker_x + picker_w, card_bottom_y);
+      glVertex2i(picker_x + picker_w, card_top_y);
+      glVertex2i(picker_x, card_top_y);
+      glEnd();
+
+      // Warm Yellow/Gold transparent border
+      glColor4f(1.0f, 0.85f, 0.0f, 0.7f); // Transparent yellow/gold
+      glLineWidth(2.0f);
+      glBegin(GL_LINE_LOOP);
+      glVertex2i(picker_x, card_bottom_y);
+      glVertex2i(picker_x + picker_w, card_bottom_y);
+      glVertex2i(picker_x + picker_w, card_top_y);
+      glVertex2i(picker_x, card_top_y);
+      glEnd();
+      glLineWidth(1.0f);
+
+      // Header separator line (at bottom-up viewport_h - 50)
+      glColor4f(1.0f, 0.85f, 0.0f, 0.7f);
+      glBegin(GL_LINES);
+      glVertex2i(picker_x, viewport_h - 50);
+      glVertex2i(picker_x + picker_w, viewport_h - 50);
+      glEnd();
+
+      // Footer separator line (at bottom-up 50)
+      glColor4f(1.0f, 0.85f, 0.0f, 0.7f);
+      glBegin(GL_LINES);
+      glVertex2i(picker_x, 50);
+      glVertex2i(picker_x + picker_w, 50);
+      glEnd();
+
+      // Title
+      draw_text(picker_x + 15, 38, "SELECT SUBTREE TO CLONE", 1.0f, 0.9f, 0.1f); // Vibrant yellow/gold
+
+      // Search box at top right
+      int box_left = picker_x + picker_w - 180;
+      int box_right = picker_x + picker_w - 15;
+
+      // Draw Search Box background (semi-transparent warm white)
+      glColor4f(1.0f, 1.0f, 1.0f, 0.2f);
+      glBegin(GL_QUADS);
+      glVertex2i(box_left, viewport_h - 44);
+      glVertex2i(box_right, viewport_h - 44);
+      glVertex2i(box_right, viewport_h - 26);
+      glVertex2i(box_left, viewport_h - 26);
+      glEnd();
+
+      // Draw Search Box border (transparent yellow/gold)
+      glColor4f(1.0f, 0.85f, 0.0f, 0.7f);
+      glBegin(GL_LINE_LOOP);
+      glVertex2i(box_left, viewport_h - 44);
+      glVertex2i(box_right, viewport_h - 44);
+      glVertex2i(box_right, viewport_h - 26);
+      glVertex2i(box_left, viewport_h - 26);
+      glEnd();
+
+      // Draw Search query or placeholder
+      if (task_tree_view.task_picker_search_.empty()) {
+        draw_text(box_left + 8, 38, "Search...", 0.5f, 0.5f, 0.5f);
+      } else {
+        draw_text(box_left + 8, 38, task_tree_view.task_picker_search_.c_str(),
+                  1.0f, 1.0f, 1.0f);
+      }
+
+      // Footer guidelines
+      draw_text(picker_x + 15, viewport_h - 38,
+                "[Enter] Clone  [ESC] Cancel  [Type] Search", 0.7f, 0.7f, 0.7f);
+
+      // Build task list mapping exactly like app.cpp
+      const auto &objects = task_tree_view.level_objects_->GetObjects();
+      std::vector<int> picker_to_objects;
+
+      std::string search_lower = task_tree_view.task_picker_search_;
+      std::transform(search_lower.begin(), search_lower.end(),
+                     search_lower.begin(),
+                     [](unsigned char c) { return std::tolower(c); });
+
+      for (int i = 0; i < (int)objects.size(); ++i) {
+        if (!objects[i].deleted) {
+          const auto &obj = objects[i];
+          std::string label = obj.type;
+          if (!obj.taskId.empty() && obj.taskId != "-1") {
+            label += " (" + obj.taskId;
+            if (!obj.name.empty())
+              label += ", \"" + obj.name + "\"";
+            label += ")";
+          } else if (!obj.name.empty()) {
+            label += " (\"" + obj.name + "\")";
+          }
+
+          std::string label_lower = label;
+          std::transform(label_lower.begin(), label_lower.end(),
+                         label_lower.begin(),
+                         [](unsigned char c) { return std::tolower(c); });
+
+          if (search_lower.empty() ||
+              label_lower.find(search_lower) != std::string::npos) {
+            picker_to_objects.push_back(i);
+          }
+        }
+      }
+
+      int row_h = 16;
+      int count = (int)picker_to_objects.size();
+      int max_visible = std::max(1, picker_h / row_h);
+
+      int start_idx = task_tree_view.task_picker_scroll_offset_;
+      int end_idx = std::min(count, start_idx + max_visible);
+
+      if (count == 0) {
+        draw_text(picker_x + 22, 70, "No matching tasks found.", 0.6f, 0.6f,
+                  0.6f);
+      } else {
+        for (int i = start_idx; i < end_idx; ++i) {
+          int obj_idx = picker_to_objects[i];
+          const auto &obj = objects[obj_idx];
+          int item_y = 50 + (i - start_idx) * row_h;
+
+          // Background highlight for selected item (transparent yellow/gold)
+          if (i == task_tree_view.task_picker_selected_idx_) {
+            glEnable(GL_BLEND);
+            glColor4f(1.0f, 0.85f, 0.0f,
+                      0.35f); // semi-transparent vibrant yellow/gold
+            glBegin(GL_QUADS);
+            glVertex2i(picker_x + 4, viewport_h - (item_y + row_h));
+            glVertex2i(picker_x + picker_w - 4, viewport_h - (item_y + row_h));
+            glVertex2i(picker_x + picker_w - 4, viewport_h - item_y);
+            glVertex2i(picker_x + 4, viewport_h - item_y);
+            glEnd();
+
+            // Arrow highlight pointing to selected line
+            draw_text(picker_x + 8, item_y + 11, ">", 1.0f, 0.9f, 0.0f);
+          }
+
+          // Format label standard to HUD: Type (ID, "Name")
+          std::string label = obj.type;
+          if (!obj.taskId.empty() && obj.taskId != "-1") {
+            label += " (" + obj.taskId;
+            if (!obj.name.empty())
+              label += ", \"" + obj.name + "\"";
+            label += ")";
+          } else if (!obj.name.empty()) {
+            label += " (\"" + obj.name + "\")";
+          }
+
+          // Truncate to prevent text overflow
+          if (label.size() > 43) {
+            label = label.substr(0, 40) + "...";
+          }
+
+          // Draw Golden/Yellow Folder Icon
+          int folder_x = picker_x + 22;
+          int folder_y = item_y;
+
+          glColor3f(1.0f, 0.9f, 0.2f); // Golden/yellow folder color
+          glBegin(GL_QUADS);
+          glVertex2i(folder_x, viewport_h - (folder_y + 2));
+          glVertex2i(folder_x + 12, viewport_h - (folder_y + 2));
+          glVertex2i(folder_x + 12, viewport_h - (folder_y + 12));
+          glVertex2i(folder_x, viewport_h - (folder_y + 12));
+          glEnd();
+
+          // Folder tab
+          glBegin(GL_QUADS);
+          glVertex2i(folder_x, viewport_h - folder_y);
+          glVertex2i(folder_x + 5, viewport_h - folder_y);
+          glVertex2i(folder_x + 5, viewport_h - (folder_y + 2));
+          glVertex2i(folder_x, viewport_h - (folder_y + 2));
+          glEnd();
+
+          // Folder outline
+          glColor3f(0.0f, 0.0f, 0.0f);
+          glBegin(GL_LINE_LOOP);
+          glVertex2i(folder_x, viewport_h - (folder_y + 2));
+          glVertex2i(folder_x + 12, viewport_h - (folder_y + 2));
+          glVertex2i(folder_x + 12, viewport_h - (folder_y + 12));
+          glVertex2i(folder_x, viewport_h - (folder_y + 12));
+          glEnd();
+
+          // Select color
+          float tr = 1.0f, tg = 1.0f,
+                tb = 1.0f; // White text color as requested
+          if (i == task_tree_view.task_picker_selected_idx_) {
+            tr = 1.0f;
+            tg = 0.9f;
+            tb = 0.1f; // Yellow highlight for selected text
+          }
+
+          draw_text(picker_x + 38, item_y + 11, label.c_str(), tr, tg, tb);
+        }
+      }
+
+      // Scrollbar on the right edge if tasks count exceeds viewport capacity
+      if (count > max_visible) {
+        int track_x = picker_x + picker_w - 8;
+        int track_h = picker_h - 10;
+        int track_y_top = viewport_h - 55;
+        int track_y_bottom = track_y_top - track_h;
+
+        // Draw track (translucent white)
+        glColor4f(1.0f, 1.0f, 1.0f, 0.15f);
+        glBegin(GL_LINES);
+        glVertex2i(track_x, track_y_bottom);
+        glVertex2i(track_x, track_y_top);
+        glEnd();
+
+        // Calculate thumb size and position
+        float visible_ratio = (float)max_visible / (float)count;
+        int thumb_h = std::max(20, (int)(track_h * visible_ratio));
+
+        float scroll_ratio = 0.0f;
+        if (count > max_visible) {
+          scroll_ratio = (float)task_tree_view.task_picker_scroll_offset_ /
+                         (float)(count - max_visible);
+        }
+        int thumb_y_top =
+            track_y_top - (int)((track_h - thumb_h) * scroll_ratio);
+        int thumb_y_bottom = thumb_y_top - thumb_h;
+
+        // Draw thumb (semi-transparent yellow/gold)
+        glColor4f(1.0f, 0.85f, 0.0f, 0.7f); // Transparent yellow/gold
+        glLineWidth(3.0f);
+        glBegin(GL_LINES);
+        glVertex2i(track_x, thumb_y_bottom);
+        glVertex2i(track_x, thumb_y_top);
+        glEnd();
+        glLineWidth(1.0f);
+      }
+    }
 
     if (task_tree_view.task_editor_open_) {
       // Render Task Editor Box

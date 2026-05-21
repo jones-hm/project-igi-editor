@@ -925,6 +925,77 @@ void App::Input_OnMotion(int x, int y) {
 void App::Input_OnSpecial(int key, int x, int y) {
 	auto& config = Config::Get();
 
+	if (task_picker_open_) {
+		auto& objects = level_.GetLevelObjects().GetObjects();
+		std::vector<int> picker_to_objects;
+		
+		std::string search_lower = task_picker_search_;
+		std::transform(search_lower.begin(), search_lower.end(), search_lower.begin(), [](unsigned char c) { return std::tolower(c); });
+		
+		for (int i = 0; i < (int)objects.size(); ++i) {
+			if (!objects[i].deleted) {
+				const auto& obj = objects[i];
+				std::string label = obj.type;
+				if (!obj.taskId.empty() && obj.taskId != "-1") {
+					label += " (" + obj.taskId;
+					if (!obj.name.empty())
+						label += ", \"" + obj.name + "\"";
+					label += ")";
+				} else if (!obj.name.empty()) {
+					label += " (\"" + obj.name + "\")";
+				}
+				
+				std::string label_lower = label;
+				std::transform(label_lower.begin(), label_lower.end(), label_lower.begin(), [](unsigned char c) { return std::tolower(c); });
+				
+				if (search_lower.empty() || label_lower.find(search_lower) != std::string::npos) {
+					picker_to_objects.push_back(i);
+				}
+			}
+		}
+
+		if (!picker_to_objects.empty()) {
+			int count = (int)picker_to_objects.size();
+			if (key == GLUT_KEY_UP) {
+				if (task_picker_selected_idx_ > 0) {
+					task_picker_selected_idx_--;
+				} else {
+					task_picker_selected_idx_ = count - 1;
+				}
+			}
+			else if (key == GLUT_KEY_DOWN) {
+				if (task_picker_selected_idx_ < count - 1) {
+					task_picker_selected_idx_++;
+				} else {
+					task_picker_selected_idx_ = 0;
+				}
+			}
+			else if (key == GLUT_KEY_PAGE_UP) {
+				task_picker_selected_idx_ = std::max(0, task_picker_selected_idx_ - 10);
+			}
+			else if (key == GLUT_KEY_PAGE_DOWN) {
+				task_picker_selected_idx_ = std::min(count - 1, task_picker_selected_idx_ + 10);
+			}
+			else if (key == GLUT_KEY_HOME) {
+				task_picker_selected_idx_ = 0;
+			}
+			else if (key == GLUT_KEY_END) {
+				task_picker_selected_idx_ = count - 1;
+			}
+
+			int row_h = 16;
+			int picker_h = window_state_.viewport_height_ - 100;
+			int max_visible = std::max(1, picker_h / row_h);
+			if (task_picker_selected_idx_ < task_picker_scroll_offset_) {
+				task_picker_scroll_offset_ = task_picker_selected_idx_;
+			}
+			else if (task_picker_selected_idx_ >= task_picker_scroll_offset_ + max_visible) {
+				task_picker_scroll_offset_ = task_picker_selected_idx_ - max_visible + 1;
+			}
+		}
+		return;
+	}
+
 	if (task_editor_open_) {
 		// Task editor handles its own input or blocks others
 		if (key == GLUT_KEY_LEFT) {
@@ -1125,37 +1196,25 @@ void App::Input_OnSpecial(int key, int x, int y) {
 		return;
 	}
 	if (key == GLUT_KEY_PAGE_UP) {
-		viewer_.move_speed_ *= 2.0f;
 		viewer_.jump_speed_ *= 2.0f;
-
-		if (viewer_.move_speed_ > MAX_MOVE_SPEED) {
-			viewer_.move_speed_ = MAX_MOVE_SPEED;
-		}
 
 		if (viewer_.jump_speed_ > MAX_JUMP_SPEED) {
 			viewer_.jump_speed_ = MAX_JUMP_SPEED;
 		}
 
-		printf("current move speed set to %d, jump speed set to %d\n",
-			(int)viewer_.move_speed_, (int)viewer_.jump_speed_);
+		printf("current jump speed set to %d\n", (int)viewer_.jump_speed_);
 
 		return;
 	}
 
 	if (key == GLUT_KEY_PAGE_DOWN) {
-		viewer_.move_speed_ *= 0.5f;
 		viewer_.jump_speed_ *= 0.5f;
-
-		if (viewer_.move_speed_ < MIN_MOVE_SPEED) {
-			viewer_.move_speed_ = MIN_MOVE_SPEED;
-		}
 
 		if (viewer_.jump_speed_ < MIN_JUMP_SPEED) {
 			viewer_.jump_speed_ = MIN_JUMP_SPEED;
 		}
 
-		printf("current move speed set to %d, jump speed set to %d\n",
-			(int)viewer_.move_speed_, (int)viewer_.jump_speed_);
+		printf("current jump speed set to %d\n", (int)viewer_.jump_speed_);
 
 		return;
 	}
@@ -1240,6 +1299,143 @@ static constexpr movement_key_s MOVEMENT_KEYS[] = {
 
 void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	auto& config = Config::Get();
+
+	if (task_picker_open_) {
+		if (key == 27) { // ESC - Cancel and close
+			task_picker_open_ = false;
+			return;
+		}
+		if (key == 13) { // Enter - Confirm selection
+			auto& objects = level_.GetLevelObjects().GetObjects();
+			std::vector<int> picker_to_objects;
+			
+			std::string search_lower = task_picker_search_;
+			std::transform(search_lower.begin(), search_lower.end(), search_lower.begin(), [](unsigned char c) { return std::tolower(c); });
+			
+			for (int i = 0; i < (int)objects.size(); ++i) {
+				if (!objects[i].deleted) {
+					const auto& obj = objects[i];
+					std::string label = obj.type;
+					if (!obj.taskId.empty() && obj.taskId != "-1") {
+						label += " (" + obj.taskId;
+						if (!obj.name.empty())
+							label += ", \"" + obj.name + "\"";
+						label += ")";
+					} else if (!obj.name.empty()) {
+						label += " (\"" + obj.name + "\")";
+					}
+					
+					std::string label_lower = label;
+					std::transform(label_lower.begin(), label_lower.end(), label_lower.begin(), [](unsigned char c) { return std::tolower(c); });
+					
+					if (search_lower.empty() || label_lower.find(search_lower) != std::string::npos) {
+						picker_to_objects.push_back(i);
+					}
+				}
+			}
+
+			if (task_picker_selected_idx_ >= 0 && task_picker_selected_idx_ < (int)picker_to_objects.size()) {
+				if (selected_object_index_ < 0 || selected_object_index_ >= (int)objects.size()) {
+					status_message_ = "Error: Must select a valid parent task first.";
+					Logger::Get().Log(LogLevel::WARNING, "[App] Validation failed: Parent index is invalid.");
+					task_picker_open_ = false;
+					return;
+				}
+
+				int sourceIdx = picker_to_objects[task_picker_selected_idx_];
+				
+				std::vector<LevelObject> temp_clipboard;
+				std::function<void(int, int)> copy_recurse = [&](int idx, int newParentInTemp) {
+					if (idx < 0 || idx >= (int)objects.size()) return;
+					
+					LevelObject copy = objects[idx];
+					copy.childrenIndices.clear();
+					copy.parentIndex = newParentInTemp;
+					copy.modified = true;
+					copy.qscLine.clear();
+					
+					int tempIdx = (int)temp_clipboard.size();
+					temp_clipboard.push_back(copy);
+					
+					if (newParentInTemp != -1) {
+						temp_clipboard[newParentInTemp].childrenIndices.push_back(tempIdx);
+					}
+					
+					for (int childIdx : objects[idx].childrenIndices) {
+						copy_recurse(childIdx, tempIdx);
+					}
+				};
+				
+				copy_recurse(sourceIdx, -1);
+
+				if (!ValidateParentChildCompatibility(objects[selected_object_index_], temp_clipboard)) {
+					status_message_ = "Error: Cannot add Computer to a WaterTower.";
+					Logger::Get().Log(LogLevel::WARNING, "[App] Validation failed: Cannot add Computer task to WaterTower parent.");
+					task_picker_open_ = false;
+					return;
+				}
+				
+				int targetParent = selected_object_index_;
+				int startIdxInObjects = (int)objects.size();
+				
+				for (size_t i = 0; i < temp_clipboard.size(); ++i) {
+					LevelObject pasted = temp_clipboard[i];
+					
+					if (pasted.parentIndex == -1) {
+						pasted.parentIndex = targetParent;
+						if (targetParent != -1) {
+							objects[targetParent].childrenIndices.push_back((int)objects.size());
+							objects[targetParent].modified = true;
+						}
+					} else {
+						pasted.parentIndex += startIdxInObjects;
+					}
+					
+					for (size_t j = 0; j < pasted.childrenIndices.size(); ++j) {
+						pasted.childrenIndices[j] += startIdxInObjects;
+					}
+					
+					if (pasted.qscFuncName == "Task_New") {
+						pasted.taskId = "-1";
+						if (!pasted.argTokens.empty()) {
+							pasted.argTokens[0] = "-1";
+						}
+					}
+					
+					objects.push_back(pasted);
+					level_.GetLevelObjects().UpdateCoordinatesInLine(objects.back());
+				}
+				
+				selected_object_index_ = startIdxInObjects;
+				level_.SaveAndReloadObjects();
+				
+				auto& reloaded = level_.GetLevelObjects().GetObjects();
+				if (!reloaded.empty()) {
+					selected_object_index_ = std::min(selected_object_index_, (int)reloaded.size() - 1);
+				}
+				Logger::Get().Log(LogLevel::INFO, "[App] Successfully cloned task subtree into the tree hierarchy.");
+			}
+			task_picker_open_ = false;
+			return;
+		}
+		if (key == 8) { // Backspace
+			if (!task_picker_search_.empty()) {
+				task_picker_search_.pop_back();
+				task_picker_selected_idx_ = 0;
+				task_picker_scroll_offset_ = 0;
+			}
+			return;
+		}
+		if (key >= 32 && key <= 126) { // Printable characters
+			if (task_picker_search_.size() < 20) {
+				task_picker_search_ += (char)key;
+				task_picker_selected_idx_ = 0;
+				task_picker_scroll_offset_ = 0;
+			}
+			return;
+		}
+		return; // Block other keyboard input while picker is open
+	}
 
 	if (task_editor_open_) {
 		if (key == 27) { // ESC - Cancel and close (Discard edits!)
@@ -1590,7 +1786,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 void App::ResetLevel() {
 	int levelNo = level_.GetLevelNo();
 
-	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Level " + std::to_string(levelNo) + " - restore objects.qsc and objects.qvm from QFiles");
+	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Level " + std::to_string(levelNo) + " - restore objects.qvm from QFiles/IGI_QVM to IGIPath");
 
 	// Force kill any running game instance to release file locks on objects.qvm
 #ifdef _WIN32
@@ -1621,45 +1817,14 @@ void App::ResetLevel() {
 		baseQFiles = Config::Get().qEditorPath + "\\QFiles";
 	}
 
-	// Step 1: Restore objects.qsc from QFiles to exe directory
-	char srcQsc[1024];
-	Str_SPrintf(srcQsc, 1024, "%s\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", baseQFiles.c_str(), levelNo);
-
-	std::string exeDir = Utils::GetExeDirectory();
-	char dstQsc[1024];
-	Str_SPrintf(dstQsc, 1024, "%s\\objects.qsc", exeDir.c_str());
-
-	Logger::Get().Log(LogLevel::INFO, "[App] Step 1: Copying objects.qsc from " + std::string(srcQsc) + " to " + std::string(dstQsc));
-
-	try {
-		if (std::filesystem::exists(srcQsc)) {
-			// Force permissions to allow overwrite/delete
-			if (std::filesystem::exists(dstQsc)) {
-				std::filesystem::permissions(dstQsc, 
-					std::filesystem::perms::owner_all | std::filesystem::perms::group_all | std::filesystem::perms::others_all,
-					std::filesystem::perm_options::replace);
-				std::filesystem::remove(dstQsc);
-			}
-			std::filesystem::copy_file(srcQsc, dstQsc, std::filesystem::copy_options::overwrite_existing);
-			Logger::Get().Log(LogLevel::INFO, "[App] Objects.qsc copied successfully.");
-		}
-		else {
-			Logger::Get().Log(LogLevel::ERR, "[App] Error: Source file " + std::string(srcQsc) + " does not exist.");
-		}
-	}
-	catch (const std::exception& e) {
-		Logger::Get().Log(LogLevel::ERR, "[App] ResetLevel step 1 error: " + std::string(e.what()));
-	}
-
-	// Step 2: Restore objects.qvm from QFiles to IGIPath
-	ConfigData& cfg = Config::Get();
+	// Copy objects.qvm from QFiles/IGI_QVM to IGIPath
 	char srcQvm[1024];
 	Str_SPrintf(srcQvm, 1024, "%s\\IGI_QVM\\missions\\location0\\level%d\\objects.qvm", baseQFiles.c_str(), levelNo);
 
 	char dstQvm[1024];
 	Str_SPrintf(dstQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", Utils::GetIGIRootPath().c_str(), levelNo);
 
-	Logger::Get().Log(LogLevel::INFO, "[App] Step 2: Copying objects.qvm from " + std::string(srcQvm) + " to " + std::string(dstQvm));
+	Logger::Get().Log(LogLevel::INFO, "[App] Copying objects.qvm from " + std::string(srcQvm) + " to " + std::string(dstQvm));
 
 	try {
 		if (std::filesystem::exists(srcQvm)) {
@@ -1679,8 +1844,18 @@ void App::ResetLevel() {
 		}
 	}
 	catch (const std::exception& e) {
-		Logger::Get().Log(LogLevel::ERR, "[App] ResetLevel step 2 error: " + std::string(e.what()));
+		Logger::Get().Log(LogLevel::ERR, "[App] ResetLevel error: " + std::string(e.what()));
 	}
+
+	// Remove local objects.qsc so it recompiles fresh from QVM
+	std::string exeDir = Utils::GetExeDirectory();
+	std::string dstQsc = exeDir + "\\objects.qsc";
+	try {
+		if (std::filesystem::exists(dstQsc)) {
+			std::filesystem::remove(dstQsc);
+		}
+	}
+	catch (...) {}
 
 	// Reload level after reset
 	LoadLevel(levelNo);
@@ -1691,36 +1866,52 @@ void App::ResetLevel() {
 void App::ResetScript() {
 	int levelNo = level_.GetLevelNo();
 
-	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Script for Level " + std::to_string(levelNo) + " - copy objects.qsc from QFiles to exe directory");
+	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Script for Level " + std::to_string(levelNo) + " - restore objects.qvm from QFiles/IGI_QVM to IGIPath");
 
 	std::string baseQFiles = Config::Get().filesPath;
 	if (baseQFiles.empty()) {
 		baseQFiles = Config::Get().qEditorPath + "\\QFiles";
 	}
 
-	// Source: QEditor IGI_QSC
-	char srcQsc[1024];
-	Str_SPrintf(srcQsc, 1024, "%s\\IGI_QSC\\missions\\location0\\level%d\\objects.qsc", baseQFiles.c_str(), levelNo);
+	// Copy objects.qvm from QFiles/IGI_QVM to IGIPath
+	char srcQvm[1024];
+	Str_SPrintf(srcQvm, 1024, "%s\\IGI_QVM\\missions\\location0\\level%d\\objects.qvm", baseQFiles.c_str(), levelNo);
 
-	// Destination: exe directory
-	std::string exeDir = Utils::GetExeDirectory();
-	char dstQsc[1024];
-	Str_SPrintf(dstQsc, 1024, "%s\\objects.qsc", exeDir.c_str());
+	char dstQvm[1024];
+	Str_SPrintf(dstQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", Utils::GetIGIRootPath().c_str(), levelNo);
 
-	Logger::Get().Log(LogLevel::INFO, "[App] Resetting objects.qsc from " + std::string(srcQsc) + " to " + std::string(dstQsc));
+	Logger::Get().Log(LogLevel::INFO, "[App] Copying objects.qvm from " + std::string(srcQvm) + " to " + std::string(dstQvm));
 
 	try {
-		if (std::filesystem::exists(srcQsc)) {
-			std::filesystem::copy_file(srcQsc, dstQsc, std::filesystem::copy_options::overwrite_existing);
-			Logger::Get().Log(LogLevel::INFO, "[App] Script reset successful.");
+		if (std::filesystem::exists(srcQvm)) {
+			std::filesystem::create_directories(std::filesystem::path(dstQvm).parent_path());
+			// Force permissions to allow overwrite/delete
+			if (std::filesystem::exists(dstQvm)) {
+				std::filesystem::permissions(dstQvm, 
+					std::filesystem::perms::owner_all | std::filesystem::perms::group_all | std::filesystem::perms::others_all,
+					std::filesystem::perm_options::replace);
+				std::filesystem::remove(dstQvm);
+			}
+			std::filesystem::copy_file(srcQvm, dstQvm, std::filesystem::copy_options::overwrite_existing);
+			Logger::Get().Log(LogLevel::INFO, "[App] QVM copied successfully to game path.");
 		}
 		else {
-			Logger::Get().Log(LogLevel::ERR, "[App] Error: Source file " + std::string(srcQsc) + " does not exist.");
+			Logger::Get().Log(LogLevel::ERR, "[App] Error: Source QVM not found at " + std::string(srcQvm));
 		}
 	}
 	catch (const std::exception& e) {
 		Logger::Get().Log(LogLevel::ERR, "[App] ResetScript error: " + std::string(e.what()));
 	}
+
+	// Remove local objects.qsc so it recompiles fresh from QVM
+	std::string exeDir = Utils::GetExeDirectory();
+	std::string dstQsc = exeDir + "\\objects.qsc";
+	try {
+		if (std::filesystem::exists(dstQsc)) {
+			std::filesystem::remove(dstQsc);
+		}
+	}
+	catch (...) {}
 
 	// Reload the level to apply changes
 	LoadLevel(levelNo);
@@ -1819,6 +2010,10 @@ void App::Frame(float delta_seconds) {
 			.edit_box_w_ = edit_box_w_,
 			.edit_box_h_ = edit_box_h_,
 			.edit_scroll_x_ = edit_scroll_x_,
+			.task_picker_open_ = task_picker_open_,
+			.task_picker_selected_idx_ = task_picker_selected_idx_,
+			.task_picker_scroll_offset_ = task_picker_scroll_offset_,
+			.task_picker_search_ = task_picker_search_,
 			.enable_camera_mode_ = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera)
 		};
 		draw_params_.level_objects_ = &level_.GetLevelObjects();
@@ -1906,6 +2101,10 @@ void App::Frame(float delta_seconds) {
 		.edit_box_w_ = edit_box_w_,
 		.edit_box_h_ = edit_box_h_,
 		.edit_scroll_x_ = edit_scroll_x_,
+		.task_picker_open_ = task_picker_open_,
+		.task_picker_selected_idx_ = task_picker_selected_idx_,
+		.task_picker_scroll_offset_ = task_picker_scroll_offset_,
+		.task_picker_search_ = task_picker_search_,
 		.enable_camera_mode_ = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera)
 	};
 
@@ -1943,6 +2142,30 @@ void App::ProcessInput(float delta_seconds) {
 	input_.mouse_delta_y_ = 0;
 
 	UpdateViewerVectors();
+
+	// Gradually increase/decrease camera movement speed based on active movement
+	{
+		bool is_fwd = (input_.keys_ & MK_FORWARD) || Utils::IsKeyBindingPressed(Config::Get().keyMoveCameraForward);
+		bool is_bwd = (input_.keys_ & MK_BACKWARD) || Utils::IsKeyBindingPressed(Config::Get().keyMoveCameraBackward);
+		bool is_left = (input_.keys_ & MK_LEFT);
+		bool is_right = (input_.keys_ & MK_RIGHT);
+		bool is_up = (input_.keys_ & MK_STRAIGHT_UP);
+		bool is_down = (input_.keys_ & MK_STRAIGHT_DOWN);
+
+		bool is_moving = is_fwd || is_bwd || is_left || is_right || is_up || is_down;
+
+		if (is_moving) {
+			viewer_.move_speed_ += (viewer_.move_speed_ + 8.0f * WORLD_UNITS_PER_METER) * 0.8f * delta_seconds;
+			if (viewer_.move_speed_ > MAX_MOVE_SPEED) {
+				viewer_.move_speed_ = MAX_MOVE_SPEED;
+			}
+		} else {
+			viewer_.move_speed_ -= (viewer_.move_speed_ - MIN_MOVE_SPEED) * 3.0f * delta_seconds;
+			if (viewer_.move_speed_ < MIN_MOVE_SPEED) {
+				viewer_.move_speed_ = MIN_MOVE_SPEED;
+			}
+		}
+	}
 
 	if (viewer_.clip_to_z_ && !enableCameraMode) {
 
@@ -2715,33 +2938,23 @@ void App::LoadQSCForLevel(int level_no) {
 	try {
 		namespace fs = std::filesystem;
 
-		std::string qsc_source = Utils::GetLevelQSCPath(level_no);
 		std::string qsc_dest = Utils::GetExeDirectory() + "\\objects.qsc";
+		std::string qvm_source = Utils::GetLevelQVMPath(level_no);
 		
-		Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] Source: " + qsc_source);
-		Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] Destination: " + qsc_dest);
+		Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] Always reading level objects.qvm directly: " + qvm_source);
+		Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] Destination QSC: " + qsc_dest);
 
-		// Check if source exists
-		if (!fs::exists(qsc_source)) {
-			Logger::Get().Log(LogLevel::WARNING, "[App] [LoadQSCForLevel] QSC file not found at: " + qsc_source);
-			Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] Attempting to decompile from game QVM...");
-			DecompileFromGame(level_no);
-			return;
-		}
-
-		// Copy to current directory
-		Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] Copying QSC to exe directory...");
-		if (fs::exists(qsc_dest)) fs::remove(qsc_dest);
-		fs::copy_file(qsc_source, qsc_dest, fs::copy_options::overwrite_existing);
-		Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] SUCCESS: Loaded QSC from: " + qsc_source + " to: " + qsc_dest);
+		// Decompile from the game QVM directly to the destination QSC
+		DecompileFromGame(level_no);
+		Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] SUCCESS: Loaded/Decompiled level from QVM to: " + qsc_dest);
 	}
 	catch (const std::exception& e) {
-		std::string errorMsg = "Error loading QSC file for level " + std::to_string(level_no) + ":\n" + std::string(e.what());
+		std::string errorMsg = "Error loading Level " + std::to_string(level_no) + ":\n" + std::string(e.what());
 		Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
 		Logger::Get().Log(LogLevel::ERR, errorMsg);
 	}
 	catch (...) {
-		std::string errorMsg = "Unknown error loading QSC file for level " + std::to_string(level_no);
+		std::string errorMsg = "Unknown error loading Level " + std::to_string(level_no);
 		Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
 		Logger::Get().Log(LogLevel::ERR, errorMsg);
 	}
@@ -2990,36 +3203,37 @@ void App::ProcessTreeViewHover(int mx, int my) {
 }
 
 void App::CreateNewTask() {
+    if (task_picker_open_) return;
     auto& objects = level_.GetLevelObjects().GetObjects();
-    LevelObject newObj;
-    newObj.qscFuncName = "Task_New";
-    newObj.type = "Container";
-    newObj.name = "NewTask_" + std::to_string(objects.size());
-    newObj.pos = glm::dvec3(viewer_.pos_);
-    newObj.rot = glm::vec3(0.0f);
-    newObj.scale = 1.0f;
-    newObj.isContainer = true;
-    newObj.expanded = true;
-    newObj.modified = true;
-    newObj.taskId = "-1"; // Auto-assign or manual
-    
-    // Add to current selection as parent if applicable
-    if (selected_object_index_ >= 0 && selected_object_index_ < (int)objects.size()) {
-        if (objects[selected_object_index_].isContainer) {
-            newObj.parentIndex = selected_object_index_;
-            objects[selected_object_index_].childrenIndices.push_back((int)objects.size());
-        }
+    if (selected_object_index_ < 0 && !objects.empty()) {
+        status_message_ = "Error: Must select a valid parent task first.";
+        return;
     }
-    
-    objects.push_back(newObj);
-    selected_object_index_ = (int)objects.size() - 1;
-    level_.GetLevelObjects().UpdateCoordinatesInLine(objects.back());
-    level_.SaveAndReloadObjects();
-    auto& reloaded = level_.GetLevelObjects().GetObjects();
-    if (!reloaded.empty()) selected_object_index_ = std::min(selected_object_index_, (int)reloaded.size() - 1);
-    
-    Logger::Get().Log(LogLevel::INFO, "[App] Created new task at viewer position");
-    printf("[App] Created new task at viewer position\n");
+    if (objects.empty()) {
+        LevelObject newObj;
+        newObj.qscFuncName = "Task_New";
+        newObj.type = "Container";
+        newObj.name = "NewTask_0";
+        newObj.pos = glm::dvec3(viewer_.pos_);
+        newObj.rot = glm::vec3(0.0f);
+        newObj.scale = 1.0f;
+        newObj.isContainer = true;
+        newObj.expanded = true;
+        newObj.modified = true;
+        newObj.taskId = "-1";
+        
+        objects.push_back(newObj);
+        selected_object_index_ = 0;
+        level_.GetLevelObjects().UpdateCoordinatesInLine(objects.back());
+        level_.SaveAndReloadObjects();
+        return;
+    }
+
+    task_picker_open_ = true;
+    task_picker_selected_idx_ = 0;
+    task_picker_scroll_offset_ = 0;
+    task_picker_search_ = "";
+    Logger::Get().Log(LogLevel::INFO, "[App] Opened Task Picker overlay");
 }
 
 void App::DeleteSelectedTask() {
@@ -3077,8 +3291,18 @@ void App::CopySelectedTask(bool includeSubtree) {
 
 void App::PasteTask() {
     if (clipboard_.empty()) return;
-    int targetParent = selected_object_index_;
     auto& objects = level_.GetLevelObjects().GetObjects();
+    if (selected_object_index_ < 0 || selected_object_index_ >= (int)objects.size()) {
+        status_message_ = "Error: Must select a valid parent task first.";
+        Logger::Get().Log(LogLevel::WARNING, "[App] Validation failed: Parent index is invalid for Paste operation.");
+        return;
+    }
+    if (!ValidateParentChildCompatibility(objects[selected_object_index_], clipboard_)) {
+        status_message_ = "Error: Cannot add Computer to a WaterTower.";
+        Logger::Get().Log(LogLevel::WARNING, "[App] Validation failed: Cannot paste Computer task to WaterTower parent.");
+        return;
+    }
+    int targetParent = selected_object_index_;
 
     int startIdxInObjects = (int)objects.size();
     
@@ -3437,6 +3661,64 @@ std::vector<int> App::GetVisibleTreeNodes() {
     return visibleIndices;
 }
 
+bool App::IsComputer(const LevelObject& obj) {
+	std::string name = obj.name;
+	std::string type = obj.type;
+	std::string modelId = obj.modelId;
+	std::string qscFuncName = obj.qscFuncName;
+	std::string friendlyName = level_.GetLevelObjects().GetModelName(obj.modelId);
 
+	auto to_lower = [](std::string s) {
+		std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+		return s;
+	};
 
+	name = to_lower(name);
+	type = to_lower(type);
+	modelId = to_lower(modelId);
+	qscFuncName = to_lower(qscFuncName);
+	friendlyName = to_lower(friendlyName);
 
+	return (name.find("computer") != std::string::npos ||
+			type.find("computer") != std::string::npos ||
+			modelId.find("computer") != std::string::npos ||
+			qscFuncName.find("computer") != std::string::npos ||
+			friendlyName.find("computer") != std::string::npos);
+}
+
+bool App::IsWaterTower(const LevelObject& obj) {
+	std::string name = obj.name;
+	std::string type = obj.type;
+	std::string modelId = obj.modelId;
+	std::string qscFuncName = obj.qscFuncName;
+	std::string friendlyName = level_.GetLevelObjects().GetModelName(obj.modelId);
+
+	auto to_lower = [](std::string s) {
+		std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+		return s;
+	};
+
+	name = to_lower(name);
+	type = to_lower(type);
+	modelId = to_lower(modelId);
+	qscFuncName = to_lower(qscFuncName);
+	friendlyName = to_lower(friendlyName);
+
+	return (name.find("watertower") != std::string::npos || name.find("water_tower") != std::string::npos ||
+			type.find("watertower") != std::string::npos || type.find("water_tower") != std::string::npos ||
+			modelId.find("watertower") != std::string::npos || modelId.find("water_tower") != std::string::npos ||
+			qscFuncName.find("watertower") != std::string::npos || qscFuncName.find("water_tower") != std::string::npos ||
+			friendlyName.find("watertower") != std::string::npos || friendlyName.find("water_tower") != std::string::npos);
+}
+
+bool App::ValidateParentChildCompatibility(const LevelObject& parent, const std::vector<LevelObject>& addedSubtree) {
+	if (!IsWaterTower(parent)) {
+		return true;
+	}
+	for (const auto& obj : addedSubtree) {
+		if (IsComputer(obj)) {
+			return false;
+		}
+	}
+	return true;
+}

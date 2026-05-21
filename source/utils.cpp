@@ -341,19 +341,13 @@ std::string GetVersionString() {
 }
 
 std::string GetLevelQSCPath(int level_no) {
-	std::string qeditor_path = Config::Get().qEditorPath;
-	std::string qfiles_path = qeditor_path + "\\QFiles\\IGI_QSC\\missions\\location0\\level" + std::to_string(level_no);
-	return qfiles_path + "\\objects.qsc";
+	std::string exeDir = GetExeDirectory();
+	return exeDir + "\\objects.qsc";
 }
 
 std::string GetLevelQVMPath(int level_no) {
-	// Read from config in exe directory
-	std::string exeDir = GetExeDirectory();
-	std::string configPath = exeDir + "\\config.ini";
-	char igiPath[MAX_PATH];
-	GetPrivateProfileStringA("GamePath", "IGIPath", "D:\\IGI1", igiPath, MAX_PATH, configPath.c_str());
-	std::string game_path = std::string(igiPath);
-	Logger::Get().Log(LogLevel::INFO, "[Utils] GetLevelQVMPath using IGIPath: " + game_path + " (from config: " + configPath + ")");
+	std::string game_path = GetIGIRootPath();
+	Logger::Get().Log(LogLevel::INFO, "[Utils] GetLevelQVMPath using custom location: " + game_path);
 	return game_path + "\\missions\\location0\\level" + std::to_string(level_no) + "\\objects.qvm";
 }
 
@@ -472,7 +466,7 @@ void TrimFileInPlace(const std::string& filepath) {
 }
 
 std::string GetIGIRootPath() {
-	std::string path = Config::Get().igiPath;
+	std::string path = GetExeDirectory();
 	// Trim trailing slashes/spaces
 	while (!path.empty() && (path.back() == '\\' || path.back() == '/' || path.back() == ' ')) {
 		path.pop_back();

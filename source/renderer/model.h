@@ -10,6 +10,7 @@ struct SubMesh {
     GLuint textureID   = 0;
     int    alphaMode   = 0; // 0=OPAQUE, 1=MASK, 2=BLEND
     glm::vec4 baseColorFactor = glm::vec4(1.0f);
+    int    materialSlot = -1;
 };
 
 struct Mesh {
