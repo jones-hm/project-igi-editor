@@ -18,7 +18,6 @@ struct ConfigData {
 
     // [Paths]
     std::string aiPath;
-    std::string compilerPath;
     std::string filesPath;
     std::string graphsPath;
 

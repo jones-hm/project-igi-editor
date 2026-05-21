@@ -11,7 +11,9 @@
 #include "common.h"
 #include "logger.h"
 #include "config.h"
-#include "compiler.h"
+#include "parsers/qsc_lexer.h"
+#include "parsers/qsc_parser.h"
+#include "parsers/qvm_compiler.h"
 
 #include <iostream>
 #include <fstream>
@@ -173,12 +175,13 @@ static void TestQVM() {
 
     // Test objects compiler round-trip!
     std::string recompiledObjectsPath = "scratch\\cpp_tests\\objects_recompiled.qvm";
-    Compiler compiler;
-    compiler.SetOutputCallback([](const std::string& msg) {
-        std::cout << "  [Compiler Output] " << msg << "\n";
-    });
-    
-    bool compileSuccess = compiler.Compile(outObjects, recompiledObjectsPath);
+    std::ifstream qscIn(outObjects);
+    std::string qscSrc((std::istreambuf_iterator<char>(qscIn)), std::istreambuf_iterator<char>());
+    auto lexR   = qsc::Lex(qscSrc);
+    auto parseR = lexR.ok ? qsc::Parse(lexR.tokens) : qsc::ParseResult{};
+    std::string compErr;
+    bool compileSuccess = lexR.ok && parseR.ok &&
+                          qvm::CompileToFile(*parseR.program, recompiledObjectsPath, &compErr);
     ASSERT_TRUE(compileSuccess, "Recompiled objects.qsc back to objects.qvm successfully");
     if (compileSuccess) {
         QVMFile qvmRecompiled = QVM_Parse(recompiledObjectsPath);

@@ -9,8 +9,6 @@
 #include "igi_bridge.h"
 #include "renderer/model.h"
 #include "config.h"
-#include "cli/compiler.h"
-#include "cli/decompiler.h"
 
 
 /*
@@ -124,9 +122,6 @@ private:
 	IGIBridge				bridge_;
 	Renderer::draw_params_s	draw_params_;
 	int						terrain_mod_options_;
-	Compiler				compiler_;
-	Decompiler				decompiler_;
-
 	// editor
 	bool					edit_mode_;
 	bool					terrain_edit_enabled_;

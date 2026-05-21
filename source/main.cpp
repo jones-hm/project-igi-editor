@@ -605,10 +605,7 @@ int main(int argc, char **argv) {
           ", Debug: " +
           std::string(Config::Get().debugLogging ? "TRUE" : "FALSE"));
 
-  // setup path of res and shaders folders
-  Folders_Init();
-
-  // Intercept headless CLI commands
+  // Intercept headless CLI commands before any GUI/folder setup
   if (CLIHandler::IsCLICommand(argc, argv)) {
     int result = CLIHandler::Process(argc, argv);
 #if defined(_WIN32) && defined(_DEBUG)
@@ -616,6 +613,9 @@ int main(int argc, char **argv) {
 #endif
     return result;
   }
+
+  // setup path of res and shaders folders (GUI mode only — creates QEditor dirs)
+  Folders_Init();
 
 #if defined(_WIN32) && !defined(_DEBUG)
   // If NOT in CLI mode and NOT in Debug, hide the console window for a clean

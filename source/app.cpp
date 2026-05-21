@@ -7,6 +7,11 @@
 #include <freeglut.h>
 #include "logger.h"
 #include "utils.h"
+#include "parsers/qsc_lexer.h"
+#include "parsers/qsc_parser.h"
+#include "parsers/qvm_compiler.h"
+#include "parsers/qvm_parser.h"
+#include "parsers/qvm_decompiler.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -2698,12 +2703,6 @@ void App::LoadQSCForLevel(int level_no) {
 		Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] Source: " + qsc_source);
 		Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] Destination: " + qsc_dest);
 
-		// Set up compiler output callback
-		compiler_.SetOutputCallback([](const std::string& msg) {
-			Logger::Get().Log(LogLevel::INFO, msg);
-			printf("%s\n", msg.c_str());
-		});
-
 		// Check if source exists
 		if (!fs::exists(qsc_source)) {
 			Logger::Get().Log(LogLevel::WARNING, "[App] [LoadQSCForLevel] QSC file not found at: " + qsc_source);
@@ -2744,13 +2743,8 @@ void App::DecompileFromGame(int level_no) {
 			return;
 		}
 
-		// Set up decompiler output callback
-		decompiler_.SetOutputCallback([](const std::string& msg) {
-			Logger::Get().Log(LogLevel::INFO, msg);
-			printf("%s\n", msg.c_str());
-		});
-
-		bool success = decompiler_.Decompile(qvm_source, qsc_dest);
+		QVMFile qvm = QVM_Parse(qvm_source);
+		bool success = qvm.valid && QVM_Decompile(qvm, qsc_dest);
 		if (!success) {
 			std::string errorMsg = "Failed to decompile QVM from:\n" + qvm_source;
 			Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
@@ -2785,14 +2779,14 @@ void App::SaveAndCompile() {
 		return;
 	}
 
-	// Set up compiler output callback
-	compiler_.SetOutputCallback([](const std::string& msg) {
-		Logger::Get().Log(LogLevel::INFO, msg);
-		printf("%s\n", msg.c_str());
-	});
-
-	Logger::Get().Log(LogLevel::INFO, "[App] Calling compiler.Compile()");
-	bool success = compiler_.Compile(qsc_source, qvm_dest);
+	Logger::Get().Log(LogLevel::INFO, "[App] Compiling QSC (native)");
+	std::ifstream qscFile(qsc_source);
+	std::string qscSrc((std::istreambuf_iterator<char>(qscFile)), std::istreambuf_iterator<char>());
+	auto lexResult  = qsc::Lex(qscSrc);
+	auto parseResult = lexResult.ok ? qsc::Parse(lexResult.tokens) : qsc::ParseResult{};
+	std::string compileErr;
+	bool success = lexResult.ok && parseResult.ok &&
+	               qvm::CompileToFile(*parseResult.program, qvm_dest, &compileErr);
 	if (success) {
 		Logger::Get().Log(LogLevel::INFO, "[App] Successfully compiled and deployed QVM to: " + qvm_dest);
 	} else {

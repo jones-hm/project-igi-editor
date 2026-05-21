@@ -12,8 +12,6 @@
 #include "parsers/qsc_lexer.h"
 #include "parsers/qsc_parser.h"
 #include "parsers/qvm_compiler.h"
-#include "compiler.h"
-#include "decompiler.h"
 #include "parsers/res_parser.h"
 #include "parsers/terrain_files.h"
 #include "parsers/tex_parser.h"
@@ -57,8 +55,10 @@ void CLIHandler::PrintHelp() {
               << "  --mef <file.mef>                       Parse and print MEF model details\n"
               << "  --mef <file.mef> --export-obj <out.obj> Export MEF model to OBJ format\n"
               << "  --mef <file.mef> --export-mef <out.mef> Export MEF model to ASCII MEF format\n"
-              << "  --qsc <file.qsc> --compile <out.qvm>   Compile QSC script to QVM\n"
-              << "  --qvm <file.qvm> --decompile <out.qsc> Decompile QVM back to QSC\n"
+              << "  --qsc <file.qsc> --compile <out.qvm>   Compile QSC to QVM (native in-process)\n"
+              << "  --qsc <file.qsc> --lex                 Lex QSC and print tokens\n"
+              << "  --qsc <file.qsc> --parse               Parse QSC and dump AST\n"
+              << "  --qvm <file.qvm> --decompile <out.qsc> Decompile QVM back to QSC (native)\n"
               << "  --qvm <file.qvm>                       Parse QVM bytecode details\n"
               << "  --res <file.res>                       List RES archive contents\n"
               << "  --res <file.res> --extract <name> <out> Extract specific resource\n"
@@ -105,8 +105,6 @@ int CLIHandler::Process(int argc, char** argv) {
                 return LexQSC(inpath);
             } else if (i + 1 < argc && std::string(argv[i+1]) == "--parse") {
                 return ParseQSC(inpath);
-            } else if (i + 1 < argc && std::string(argv[i+1]) == "--compile-native" && i + 2 < argc) {
-                return CompileQSCNative(inpath, argv[i+2]);
             }
         } else if (arg == "--qvm" && i + 1 < argc) {
             std::string inpath = argv[++i];
@@ -259,21 +257,6 @@ int CLIHandler::ParseQVM(const std::string& filepath, bool decompile, const std:
     }
 }
 
-int CLIHandler::CompileQSC(const std::string& inpath, const std::string& outpath) {
-    Logger::Get().Log(LogLevel::INFO, "[CLI] Compiling QSC: " + inpath + " -> " + outpath);
-    Compiler c;
-    c.SetOutputCallback([](const std::string& msg) {
-        Logger::Get().Log(LogLevel::INFO, "[Compiler] " + msg);
-        std::cout << "[Compiler] " << msg << "\n";
-    });
-
-    if (c.Compile(inpath, outpath)) {
-        Logger::Get().Log(LogLevel::INFO, "[CLI] Successfully compiled QSC to: " + outpath);
-        return 0;
-    }
-    Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to compile QSC: " + inpath);
-    return 1;
-}
 
 int CLIHandler::LexQSC(const std::string& inpath) {
     Logger::Get().Log(LogLevel::INFO, "[CLI] Lexing QSC: " + inpath);
@@ -326,8 +309,8 @@ int CLIHandler::ParseQSC(const std::string& inpath) {
     return 0;
 }
 
-int CLIHandler::CompileQSCNative(const std::string& inpath, const std::string& outpath) {
-    Logger::Get().Log(LogLevel::INFO, "[CLI] Native-compiling QSC: " + inpath + " -> " + outpath);
+int CLIHandler::CompileQSC(const std::string& inpath, const std::string& outpath) {
+    Logger::Get().Log(LogLevel::INFO, "[CLI] Compiling QSC: " + inpath + " -> " + outpath);
     std::ifstream f(inpath, std::ios::binary);
     if (!f) {
         Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to open: " + inpath);
@@ -343,7 +326,7 @@ int CLIHandler::CompileQSCNative(const std::string& inpath, const std::string& o
         Logger::Get().Log(LogLevel::ERR, "[CLI] " + err);
         return 1;
     }
-    Logger::Get().Log(LogLevel::INFO, "[CLI] Native-compiled QSC -> " + outpath);
+    Logger::Get().Log(LogLevel::INFO, "[CLI] Compiled QSC -> " + outpath);
     return 0;
 }
 

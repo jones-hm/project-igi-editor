@@ -55,8 +55,6 @@ std::string GetExeDirectory();
 std::string GetVersionString();
 std::string GetLevelQSCPath(int level_no);
 std::string GetLevelQVMPath(int level_no);
-bool ValidateAndSetupQEditor();
-
 // Game specific utilities
 bool IsUndergroundModel(const std::string& name, const std::string& modelId);
 

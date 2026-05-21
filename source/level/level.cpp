@@ -13,7 +13,9 @@
 #include "cli/asset_extractor.h"
 #include "parsers/qvm_parser.h"
 #include "parsers/qvm_decompiler.h"
-#include "cli/compiler.h"
+#include "parsers/qsc_lexer.h"
+#include "parsers/qsc_parser.h"
+#include "parsers/qvm_compiler.h"
 
 
 
@@ -276,12 +278,17 @@ void Level::CompileCurrentQSC(int level_no) {
 
 	try {
 		Logger::Get().Log(LogLevel::INFO, "[Level] Compiling " + editorQSC + " -> " + std::string(qvmDest));
-		
-		Compiler compiler;
-		if (compiler.Compile(editorQSC, qvmDest)) {
+		std::ifstream qscFile(editorQSC);
+		std::string qscSrc((std::istreambuf_iterator<char>(qscFile)), std::istreambuf_iterator<char>());
+		auto lexR   = qsc::Lex(qscSrc);
+		auto parseR = lexR.ok ? qsc::Parse(lexR.tokens) : qsc::ParseResult{};
+		std::string compErr;
+		bool compiled = lexR.ok && parseR.ok &&
+		                qvm::CompileToFile(*parseR.program, std::string(qvmDest), &compErr);
+		if (compiled) {
 			Logger::Get().Log(LogLevel::INFO, "[Level] SUCCESS! Compiled QVM deployed to: " + std::string(qvmDest));
 		} else {
-			Logger::Get().Log(LogLevel::ERR, "[Level] FAILED: Compiler failed to produce output.");
+			Logger::Get().Log(LogLevel::ERR, "[Level] FAILED: " + (compErr.empty() ? lexR.error + parseR.error : compErr));
 		}
 	}
 	catch (const std::exception& e) {
@@ -410,15 +417,17 @@ void Level::SaveObjectsLocalOnly() {
 }
 
 void Level::SaveChanges() {
-	terrain_.Save(cur_level_no_);
+	bool terrainSaved = terrain_.Save(cur_level_no_);
 
 	// IMPORTANT: AppData\Roaming\QEditor\QFiles is READ-ONLY.
 	// We NEVER write back to the QFiles source. All saves go to the local
 	// exe-directory copy of objects.qsc, which is then compiled to QVM.
 	SaveObjectsLocalOnly();
 
-	// Move terrain from editor path to IGI game path
-	MoveTerrainToGamePath(cur_level_no_);
+	// Only move terrain to game path if it was actually loaded and saved
+	if (terrainSaved) {
+		MoveTerrainToGamePath(cur_level_no_);
+	}
 }
 
 void Level::SaveAndReloadObjects() {

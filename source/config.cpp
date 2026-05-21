@@ -53,7 +53,6 @@ void Config::CreateDefault() {
     data_.qEditorPath = std::string(appData) + "\\QEditor";
 
     data_.aiPath = data_.qEditorPath + "\\AIFiles";
-    data_.compilerPath = data_.qEditorPath + "\\QCompiler";
     data_.filesPath = data_.qEditorPath + "\\QFiles";
     data_.graphsPath = data_.qEditorPath + "\\QGraphs";
 
@@ -174,7 +173,6 @@ void Config::Load() {
                 else if (key == "QEditorPath") data_.qEditorPath = val;
             } else if (section == "Paths") {
                 if (key == "AIFiles") data_.aiPath = val;
-                else if (key == "QCompiler") data_.compilerPath = val;
                 else if (key == "QFiles") data_.filesPath = val;
                 else if (key == "QGraphs") data_.graphsPath = val;
             } else if (section == "Marker") {
@@ -278,7 +276,6 @@ void Config::Save() {
     file << "MoveBackward=Down" << std::endl;
     file << "MoveLeft=Left" << std::endl;
     file << "MoveRight=Right" << std::endl;
-    file << "QCompiler=" << data_.compilerPath << std::endl;
     file << "QFiles=" << data_.filesPath << std::endl;
     file << "QGraphs=" << data_.graphsPath << std::endl;
     file << std::endl;
