@@ -660,7 +660,7 @@ int main(int argc, char **argv) {
   int pos_y = (screen_cy - wnd_h) >> 1;
   glutInitWindowPosition(pos_x, pos_y);
   glutInitWindowSize(wnd_w, wnd_h);
-  std::string windowTitle = "IGI 1 Editor v" + version + " - HeavenHM";
+  std::string windowTitle = "IGI Editor v" + version;
   glutCreateWindow(windowTitle.c_str());
 
 #if defined(_WIN32)

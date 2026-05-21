@@ -50,47 +50,47 @@ With the release of our premium modding features, we have expanded our workspace
 
 ### 🖥️ Main Editor & Navigation
 
-![IGI Editor Screenshot](assets/igi-editor.png)
+![IGI Editor Screenshot](assets/screenshots/igi-editor.png)
 *3D viewport showing level models, objects, and real-time navigation.*
 
-![IGI Editor Level 8](assets/igi-editor-level8.png)
+![IGI Editor Level 8](assets/screenshots/igi-editor-level8.png)
 *Level 8 Harbor terrain, dynamic structures, and Flight Camera visualization.*
 
-![IGI Editor Level 10](assets/igi-editor-level10.png)
+![IGI Editor Level 10](assets/screenshots/igi-editor-level10.png)
 *Level 10 Research Facility rendering, building placement, and real-time snapping.*
 
 ### 🌳 Task & Objective Editor
 
-![IGI Editor Task Tree](assets/igi-editor-task-tree.png)
+![IGI Editor Task Tree](assets/screenshots/igi-editor-task-tree.png)
 *Visual Task Tree Editor for mission objective management.*
 
-![IGI Editor Task Tree Editor](assets/igi-editor-task-edit.png)
+![IGI Editor Task Tree Editor](assets/screenshots/igi-editor-task-edit.png)
 *Interactive Task Objective Editor modal for inline task renaming, notes updates, and direct live save/reload functionality.*
 
-![IGI Editor Copy & Paste Task](assets/igi-editor-copy-task.png)
+![IGI Editor Copy & Paste Task](assets/screenshots/igi-editor-copy-task.png)
 *Task Copy & Paste feature where you can copy and paste any task to replicate any objects with its object tree.*
 
-![IGI Editor Add New Task](assets/igi-editor-new-task.png)
+![IGI Editor Add New Task](assets/screenshots/igi-editor-new-task.png)
 *Adding a new task allows you to easily inject custom new Objects, Buildings, or AI units directly into the level.*
 
 ### 🏔️ Terrain Editor
 
-![IGI Editor Terrain Editor](assets/igi-editor-terrain.png)
+![IGI Editor Terrain Editor](assets/screenshots/igi-editor-terrain.png)
 *Interactive 3D Terrain Editor showing terrain sculpting, heightmap editing, and active wireframe brush.*
 
 ### 📦 Object & Controls Editor
 
-![IGI Editor Controls](assets/igi-editor-controls.png)
+![IGI Editor Controls](assets/screenshots/igi-editor-controls.png)
 *HUD telemetry displaying precise translation, rotation, and selection info.*
 
 ### 🤖 AI Editor
 
-![IGI Editor AI](assets/igi-editor-ai.png)
+![IGI Editor AI](assets/screenshots/igi-editor-ai.png)
 *AI Unit identification and management interface.*
 
 ### ⚙️ Debugging & Compilation
 
-![IGI Editor Debug Screenshot](assets/igi-editor-debug.png)
+![IGI Editor Debug Screenshot](assets/screenshots/igi-editor-debug.png)
 *Debug Console showing IGIPath resolution and QVM compilation pipeline.*
 
 ## Headless CLI Tool
@@ -130,7 +130,7 @@ The editor requires QEditor to be installed in AppData for QSC/QVM compilation a
 ### Local Repository Folders
 - **`shaders/`**: Core OpenGL GLSL shader source files
 - **`bin/`**: Pre-compiled binaries and required dynamic libraries (DLLs)
-- **`assets/`**: Editor assets (screenshots, icons)
+- **`assets/`**: Editor assets (icons, screenshots in `assets/screenshots/`)
 
 ## 🛠️ Future Roadmap
 

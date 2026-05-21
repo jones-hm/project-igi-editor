@@ -4,6 +4,8 @@
  *****************************************************************************/
 
 #include "pch.h"
+#include <cstdlib>
+#include <stdexcept>
 #include <freeglut.h>
 #include "logger.h"
 #include "utils.h"
@@ -199,9 +201,11 @@ void App::LoadLevel(int level_no) {
 		
 		// Verify level number is valid
 		if (level_no < MIN_LEVEL_NO || level_no > MAX_LEVEL_NO) {
-			Logger::Get().Log(LogLevel::ERR, "[App] Invalid level number: " + std::to_string(level_no) + 
-				" (valid range: " + std::to_string(MIN_LEVEL_NO) + "-" + std::to_string(MAX_LEVEL_NO) + ")");
-			return;
+			std::string errorMsg = "Invalid level number: " + std::to_string(level_no) + " (valid range: " + std::to_string(MIN_LEVEL_NO) + "-" + std::to_string(MAX_LEVEL_NO) + ")";
+			Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
+			Logger::Get().Log(LogLevel::ERR, errorMsg);
+			// Exit the application safely; destructor will be called automatically
+			std::exit(EXIT_FAILURE);
 		}
 		
 		renderer_.SetLevel(level_no);
@@ -354,6 +358,20 @@ void App::LoadAIModelsFromFolder(int level_no) {
 	};
 	std::vector<AIData> aiDataList;
 	std::string jsonPath = qeditor_path + "\\IGIModelsAllLevel.json";
+	bool usingBackup = false;
+
+	if (!std::filesystem::exists(jsonPath)) {
+		std::string backupPath = Utils::GetExeDirectory() + "\\IGIModelsAllLevel.json";
+		if (std::filesystem::exists(backupPath)) {
+			jsonPath = backupPath;
+			usingBackup = true;
+			Logger::Get().Log(LogLevel::WARNING, "[App] QEditor not found at APPDATA or configured path. Using backup IGIModelsAllLevel.json from executable directory: " + backupPath);
+		} else {
+			Logger::Get().Log(LogLevel::ERR, "[App] QEditor missing and backup IGIModelsAllLevel.json not found in executable directory!");
+		}
+	} else {
+		Logger::Get().Log(LogLevel::INFO, "[App] Loading AI models from: " + jsonPath);
+	}
 	
 	if (std::filesystem::exists(jsonPath)) {
 		FILE* f = fopen(jsonPath.c_str(), "rb");
@@ -2406,7 +2424,7 @@ void App::SnapObjectsToTerrain() {
             float zOffset = renderer_.GetMeshZOffset(obj.modelId, obj.isBuilding);
             obj.snap_z_offset = (double)(zOffset * 40.96f * obj.scale);
             obj.pos.z = (double)terrainZ + obj.snap_z_offset;
-            Logger::Get().Log(LogLevel::INFO, "[App] Snapped " + obj.modelId + " to Z=" + std::to_string(obj.pos.z));
+            Logger::Get().Log(LogLevel::DEBUG, "[App] Snapped " + obj.modelId + " to Z=" + std::to_string(obj.pos.z));
             snapped++;
         } else {
             Logger::Get().Log(LogLevel::WARNING, "[App] Snap FAILED for " + obj.modelId + " at (" + std::to_string(obj.pos.x) + ", " + std::to_string(obj.pos.y) + "). Outside terrain?");
@@ -3244,6 +3262,20 @@ static std::vector<ModelEntry> LoadAllModelsFromJson() {
 	std::vector<ModelEntry> entries;
 	std::string qeditor_path = Config::Get().qEditorPath;
 	std::string jsonPath = qeditor_path + "\\IGIModels.json";
+	bool usingBackup = false;
+
+	if (!std::filesystem::exists(jsonPath)) {
+		std::string backupPath = Utils::GetExeDirectory() + "\\IGIModels.json";
+		if (std::filesystem::exists(backupPath)) {
+			jsonPath = backupPath;
+			usingBackup = true;
+			Logger::Get().Log(LogLevel::WARNING, "[App] QEditor not found at APPDATA or configured path. Using backup IGIModels.json from executable directory: " + backupPath);
+		} else {
+			Logger::Get().Log(LogLevel::ERR, "[App] QEditor missing and backup IGIModels.json not found in executable directory!");
+		}
+	} else {
+		Logger::Get().Log(LogLevel::INFO, "[App] Loading model database from: " + jsonPath);
+	}
 	
 	std::ifstream file(jsonPath, std::ios::binary);
 	

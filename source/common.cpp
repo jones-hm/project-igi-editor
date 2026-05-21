@@ -848,6 +848,54 @@ void Folders_Init() {
 
 	// Use configurable path from config.ini
 	std::string qeditor_path = Config::Get().qEditorPath;
+	bool found = false;
+
+	// 1. Check if configured path is valid and exists
+	if (!qeditor_path.empty() && std::filesystem::exists(qeditor_path)) {
+		found = true;
+	}
+
+	// 2. Check local/portable path (at igi1ed.exe location)
+	char exe_dir[1024];
+	Str_Copy(exe_dir, 1024, buf);
+	Str_ExtractFileDirSelf(exe_dir);
+
+	if (!found) {
+		std::string local_qeditor = std::string(exe_dir) + "/QEditor";
+		std::string local_qfiles = std::string(exe_dir) + "/QFiles";
+		if (std::filesystem::exists(local_qfiles)) {
+			qeditor_path = exe_dir; // exe directory contains QFiles/IGI_QSC
+			Config::Get().qEditorPath = qeditor_path;
+			found = true;
+		} else if (std::filesystem::exists(local_qeditor)) {
+			qeditor_path = local_qeditor;
+			Config::Get().qEditorPath = qeditor_path;
+			found = true;
+		}
+	}
+
+	// 3. Check default %APPDATA%\QEditor path
+	if (!found) {
+		char appdata_env[1024] = {};
+		GetEnvironmentVariableA("APPDATA", appdata_env, 1024);
+		std::string default_appdata = std::string(appdata_env) + "\\QEditor";
+		if (std::filesystem::exists(default_appdata)) {
+			qeditor_path = default_appdata;
+			Config::Get().qEditorPath = qeditor_path;
+			found = true;
+		}
+	}
+
+	// 4. Show warning if missing from all locations, but do not abort
+	if (!found) {
+		MessageBoxA(NULL, 
+			"Warning: QEditor / QVM Editor path could not be found in APPDATA or the local directory!\n\n"
+			"Some features such as level script compilation and friendly model name lookup will not work properly without it.\n"
+			"The system will continue to run, but some game files/features might not work properly.", 
+			"QEditor Directory Missing", 
+			MB_OK | MB_ICONWARNING);
+	}
+
 	if (!qeditor_path.empty()) {
 		Str_Copy(appdata_buf, 1024, qeditor_path.c_str());
 		// Ensure base directory exists (in case it's a new ToolKit path)

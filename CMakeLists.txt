@@ -163,11 +163,13 @@ if (WIN32)
       "${DLL_SRC_DIR}/glew32.dll"
       "${PROJECT_SOURCE_DIR}/config.ini"
       "${PROJECT_SOURCE_DIR}/version"
+      "${PROJECT_SOURCE_DIR}/assets/misc/IGIModels.json"
+      "${PROJECT_SOURCE_DIR}/assets/misc/IGIModelsAllLevel.json"
       "$<TARGET_FILE_DIR:igi-editor>"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${PROJECT_SOURCE_DIR}/shaders"
       "$<TARGET_FILE_DIR:igi-editor>/shaders"
-    COMMENT "Copying runtime files (DLLs, config.ini, version, shaders) to output directory"
+    COMMENT "Copying runtime files (DLLs, config.ini, version, shaders, models json) to output directory"
   )
 else()
   target_link_libraries(igi-editor PRIVATE glut GL GLEW)

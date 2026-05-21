@@ -262,7 +262,7 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
     if (isGrouping) obj.isContainer = true;
     
     obj.parentIndex = parentIdx;
-    obj.expanded = false; // Closed by default as requested
+    obj.expanded = false; // Closed by default
     obj.qscLine = rawLine;
 
     int arg_idx = 0;
@@ -410,7 +410,7 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
         objects_[parentIdx].childrenIndices.push_back(currentObjIdx);
     }
     
-    Logger::Get().Log(LogLevel::INFO, "[LevelObjects]   -> " + typeStr + ": " + obj.modelId + 
+    Logger::Get().Log(LogLevel::DEBUG, "[LevelObjects]   -> " + typeStr + ": " + obj.modelId + 
         " (parent: " + std::to_string(parentIdx) + ")");
 
     // Always recurse into FUNC arguments
@@ -436,10 +436,24 @@ void LevelObjects::LoadModelNames() {
 
     char jsonPath[1024];
     Str_SPrintf(jsonPath, 1024, "%s\\IGIModels.json", qeditor_path.c_str());
+    bool usingBackup = false;
+
+    if (!std::filesystem::exists(jsonPath)) {
+        std::string backupPath = Utils::GetExeDirectory() + "\\IGIModels.json";
+        if (std::filesystem::exists(backupPath)) {
+            Str_Copy(jsonPath, 1024, backupPath.c_str());
+            usingBackup = true;
+            Logger::Get().Log(LogLevel::WARNING, "[LevelObjects] QEditor not found at APPDATA or configured path. Using backup IGIModels.json from executable directory: " + backupPath);
+        } else {
+            Logger::Get().Log(LogLevel::ERR, "[LevelObjects] QEditor missing and backup IGIModels.json not found in executable directory!");
+        }
+    }
 
     char* buf = nullptr;
     if (File_LoadText(jsonPath, buf)) {
-        Logger::Get().Log(LogLevel::INFO, "[LevelObjects] Loading model names from: " + std::string(jsonPath));
+        if (!usingBackup) {
+            Logger::Get().Log(LogLevel::INFO, "[LevelObjects] Loading model names from: " + std::string(jsonPath));
+        }
         std::string content(buf);
 
         File_FreeBuf(buf);
