@@ -89,8 +89,11 @@ res/
 
 # Others
 .cache/
+.agent
 .gemini/
 .claude/
+.antigravity
+.antigravitycli
 claude.md
 cursor.md
 agents.md
@@ -102,16 +105,11 @@ agents.md
 .agent/
 vcbuild/
 bin/
-build/
 x64/
 x86/
 Debug/
 Release/
 *.txt
-*.jpg
-*.jpeg
-*.png
-*.webp
 *.py
 *.qsc
 models/
