@@ -1,8 +1,8 @@
 #include "pch.h"
 #include "decompiler.h"
 #include "utils.h"
-#include "renderer/qvm_parser.h"
-#include "renderer/qvm_decompiler.h"
+#include "parsers/qvm_parser.h"
+#include "parsers/qvm_decompiler.h"
 #include <filesystem>
 #include <sstream>
 #include <cstdio>

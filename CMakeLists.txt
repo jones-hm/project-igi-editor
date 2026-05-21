@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 #   Added in version 3.16
 
 project (igi_editor 
-  VERSION 1.0
+  VERSION 1.5
   LANGUAGES C CXX)
 
 # Designated initializers, introduced in C++20
@@ -14,14 +14,14 @@ set(CMAKE_CXX_STANDARD 20)
 SET_PROPERTY(GLOBAL PROPERTY USE_FOLDERS ON)
 
 if (CMAKE_BUILD_TYPE STREQUAL "")
-    set(CMAKE_BUILD_TYPE "Debug")
+    set(CMAKE_BUILD_TYPE "Release")
 endif ()
 
 message("CMAKE_BUILD_TYPE = ${CMAKE_BUILD_TYPE}")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions(-DDEBUG)
-	add_definitions(-D_DEBUG)
+        add_definitions(-D_DEBUG)
     message("Set cmake debug")
 endif ()
 
@@ -37,13 +37,10 @@ endif()
 file(GLOB SOURCES "source/*.h" "source/*.cpp")
 file(GLOB SOURCES_LEVEL "source/level/*.*")
 file(GLOB SOURCES_RENDERER "source/renderer/*.*")
+file(GLOB SOURCES_PARSERS "source/parsers/*.*")
+file(GLOB SOURCES_CLI "source/cli/*.*")
 file(GLOB SHADERS_41 "shaders/41/*.*")
 file(GLOB SHADERS_45 "shaders/45/*.*")
-
-# Explicitly add new source files (GLOB might not pick them up immediately)
-list(APPEND SOURCES "source/compiler.cpp" "source/decompiler.cpp" "source/utils.cpp" "source/cli_handler.cpp" "source/renderer/mef_exporter.cpp" "source/cli_tests.cpp")
-list(APPEND SOURCES_RENDERER "source/renderer/qvm_decompiler.cpp")
-list(APPEND SOURCES_LEVEL "source/level/tex_parser.cpp" "source/level/graph_parser.cpp" "source/level/asset_extractor.cpp")
 
 # Add Windows icon resource file
 if (WIN32)
@@ -52,13 +49,15 @@ endif()
 
 source_group("level" FILES ${SOURCES_LEVEL})
 source_group("renderer" FILES ${SOURCES_RENDERER})
+source_group("parsers" FILES ${SOURCES_PARSERS})
+source_group("cli" FILES ${SOURCES_CLI})
 source_group("shaders/41" FILES ${SHADERS_41})
 source_group("shaders/45" FILES ${SHADERS_45})
 
-add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SHADERS_41} ${SHADERS_45})
+add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SOURCES_PARSERS} ${SOURCES_CLI} ${SHADERS_41} ${SHADERS_45})
 
 if (WIN32)
-  set_target_properties(igi-editor PROPERTIES 
+  set_target_properties(igi-editor PROPERTIES
     ICON ${PROJECT_SOURCE_DIR}/assets/igi-editor-icon.ico
     OUTPUT_NAME "igi1ed"
   )
@@ -79,16 +78,16 @@ set_source_files_properties(
   source/renderer/renderer_splines.cpp
   source/renderer/renderer_terrain.cpp
   source/renderer/wic_loader.cpp
-  source/renderer/qvm_parser.cpp
-  source/level/res_parser.cpp
-  source/level/mtp_parser.cpp
-  source/level/tex_parser.cpp
-  source/level/graph_parser.cpp
-  source/level/asset_extractor.cpp
+  source/parsers/qvm_parser.cpp
+  source/parsers/res_parser.cpp
+  source/parsers/mtp_parser.cpp
+  source/parsers/tex_parser.cpp
+  source/parsers/graph_parser.cpp
+  source/cli/asset_extractor.cpp
   source/level/terrain.cpp
-  source/renderer/qvm_decompiler.cpp
-  source/cli_handler.cpp
-  source/cli_tests.cpp
+  source/parsers/qvm_decompiler.cpp
+  source/cli/cli_handler.cpp
+  source/cli/cli_tests.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
@@ -96,6 +95,8 @@ target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source)
+target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source/parsers)
+target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/tinygltf)
 
 
@@ -107,7 +108,7 @@ if (WIN32)
     set(GL_LIB_DIR "${PROJECT_SOURCE_DIR}/third_party/GL/lib/x86")
   endif()
   message("Selected GL library path: ${GL_LIB_DIR}")
-  
+
   target_link_directories(igi-editor PRIVATE ${GL_LIB_DIR})
   target_link_libraries(igi-editor PRIVATE freeglut glew32 OpenGL32)
 
@@ -121,7 +122,7 @@ if (WIN32)
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${PROJECT_SOURCE_DIR}/bin/Debug"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}/bin/Release"
   )
-  
+
   # Ensure Release builds don't use debug runtime
   set_target_properties(igi-editor PROPERTIES
     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
@@ -140,7 +141,7 @@ if (WIN32)
     LINK_FLAGS_DEBUG "/SUBSYSTEM:CONSOLE"
     LINK_FLAGS_RELEASE "/SUBSYSTEM:CONSOLE"
   )
-  
+
   # Ensure Release mode entry point is correct for console app
   set_target_properties(igi-editor PROPERTIES
     OUTPUT_NAME "igi1ed"
@@ -148,37 +149,3 @@ if (WIN32)
 else()
   target_link_libraries(igi-editor PRIVATE glut GL GLEW)
 endif()
-
-# QVM verify tool (standalone test executable)
-add_executable(verify_compiler
-    scratch/verify_compiler.cpp
-    source/renderer/qvm_parser.cpp
-    source/renderer/qvm_decompiler.cpp
-    source/logger.cpp
-    source/config.cpp
-)
-target_include_directories(verify_compiler PRIVATE ${PROJECT_SOURCE_DIR}/source)
-target_include_directories(verify_compiler PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
-target_include_directories(verify_compiler PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
-target_include_directories(verify_compiler PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
-set_source_files_properties(
-    scratch/verify_compiler.cpp
-    source/renderer/qvm_parser.cpp
-    source/renderer/qvm_decompiler.cpp
-    source/logger.cpp
-    source/config.cpp
-    PROPERTIES SKIP_PRECOMPILE_HEADERS ON
-)
-if (WIN32)
-    target_link_directories(verify_compiler PRIVATE ${GL_LIB_DIR})
-    target_link_libraries(verify_compiler PRIVATE freeglut glew32 OpenGL32)
-    set_target_properties(verify_compiler PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}/bin/Release"
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${PROJECT_SOURCE_DIR}/bin/Debug"
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
-    )
-    if (MSVC)
-        target_compile_options(verify_compiler PRIVATE "/bigobj")
-    endif()
-endif()
-

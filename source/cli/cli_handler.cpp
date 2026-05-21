@@ -3,18 +3,18 @@
 #include "utils.h"
 #include "common.h"
 #include "logger.h"
-#include "renderer/mef_parser.h"
-#include "renderer/mef_exporter.h"
-#include "renderer/mef_native.h"
-#include "level/mtp_parser.h"
-#include "renderer/qvm_parser.h"
-#include "renderer/qvm_decompiler.h"
+#include "parsers/mef_parser.h"
+#include "parsers/mef_exporter.h"
+#include "parsers/mef_native.h"
+#include "parsers/mtp_parser.h"
+#include "parsers/qvm_parser.h"
+#include "parsers/qvm_decompiler.h"
 #include "compiler.h"
 #include "decompiler.h"
-#include "level/res_parser.h"
-#include "level/terrain_files.h"
-#include "level/tex_parser.h"
-#include "level/graph_parser.h"
+#include "parsers/res_parser.h"
+#include "parsers/terrain_files.h"
+#include "parsers/tex_parser.h"
+#include "parsers/graph_parser.h"
 #include "cli_tests.h"
 #include <filesystem>
 
@@ -34,8 +34,7 @@ bool CLIHandler::IsCLICommand(int argc, char** argv) {
 }
 
 void CLIHandler::PrintHelp() {
-    std::cout << "IGI Editor v1.0.0 - CLI & Headless Tool\n\n"
-              << "GUI Editor Mode Options:\n"
+    std::cout << "IGI Editor v1.5.0 - CLI & Headless Tool\n\n"              << "GUI Editor Mode Options:\n"
               << "  -level <num>                           Load specific level (1-14)\n"
               << "  -w <width> -h <height>                 Set window dimensions\n"
               << "  -draw_parts <bitmask>                  Selective loading (1=terrain, 2=sky, 4=objects, 8=flat_sky, 16=buildings, 32=props, 64=AI)\n"

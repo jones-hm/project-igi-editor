@@ -10,10 +10,10 @@
 #include <unordered_map>
 #include "logger.h"
 #include "utils.h"
-#include "asset_extractor.h"
-#include "../renderer/qvm_parser.h"
-#include "../renderer/qvm_decompiler.h"
-#include "../compiler.h"
+#include "cli/asset_extractor.h"
+#include "parsers/qvm_parser.h"
+#include "parsers/qvm_decompiler.h"
+#include "cli/compiler.h"
 
 
 

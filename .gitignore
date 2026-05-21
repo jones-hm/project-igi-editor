@@ -93,7 +93,7 @@ res/
 .claude/
 claude.md
 cursor.md
-agent.md
+agents.md
 *.log
 *.tlog
 .env
@@ -115,6 +115,7 @@ Release/
 *.py
 *.qsc
 docs/
+models/
 
 # Dont Ignore
 !assets

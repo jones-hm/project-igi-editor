@@ -37,12 +37,13 @@
 
 
 #include "common.h"
-
 #include "level/level_common.h"
 #include "level/flat_sky_layer.h"
 #include "level/terrain.h"
 #include "level/level.h"
+#include "cli/asset_extractor.h"
 
+// renderer
 #include "renderer/gl_helper.h"
 #include "renderer/renderer_skydome.h"
 #include "renderer/renderer_flat_sky_layer.h"

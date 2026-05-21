@@ -5,6 +5,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 class Renderer_Objects {
 public:
@@ -15,6 +16,7 @@ public:
     void Shutdown();
 
     void SetLevel(int level) { current_level_ = level; }
+    void ClearCaches();
 
     void Draw(GLuint ubo_mats, bool overlay_wireframe, const std::vector<LevelObject>& objects, int selected_object_index, int hover_object_index, int draw_parts);
     static bool IsSkippedModelId(const std::string& modelId);
@@ -32,6 +34,7 @@ private:
     GLuint shader_program_;
     GLuint ubo_binding_point_;
     GLuint selection_vao_, selection_vbo_;
+    std::unordered_set<std::string> logged_draw_buildings_;
 
     void DrawSelectionBox(const LevelObject& obj, GLuint ubo_mats, const glm::vec4& color);
     Mesh CreateCubeMesh();

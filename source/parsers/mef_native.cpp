@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <vector>
-#include "hardcoded_bones.h"
+#include "renderer/hardcoded_bones.h"
 
 // ---------------------------------------------------------------------------
 // Internal types

@@ -9,8 +9,8 @@
 #include "igi_bridge.h"
 #include "renderer/model.h"
 #include "config.h"
-#include "compiler.h"
-#include "decompiler.h"
+#include "cli/compiler.h"
+#include "cli/decompiler.h"
 
 
 /*

@@ -7,8 +7,8 @@
 #include "terrain_files.h"
 #include <filesystem>
 #include "logger.h"
-#include "../renderer/qvm_parser.h"
-#include "../renderer/qvm_decompiler.h"
+#include "parsers/qvm_parser.h"
+#include "parsers/qvm_decompiler.h"
 
 static std::string GetExeDirectory() {
 	char exePath[MAX_PATH];

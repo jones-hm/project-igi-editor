@@ -1,5 +1,51 @@
 # Changelogs
 
+## 1.5.0 - Asset Extraction & Advanced Native Fixes
+This release introduces automated asset extraction and addresses critical rendering and caching bugs for complex native models.
+
+### 📦 Automated Asset Management
+- **Level Asset Extractor**: Implemented a robust `AssetExtractor` system that automatically unzips textures and models from `.res` archives into the editor's working directory on-demand (`--extract-level` CLI).
+- **Timestamp Caching**: Added file-timestamp validation to ensure `.res` extraction only occurs when necessary, drastically improving level loading speeds across sessions.
+- **Level Cache Isolation**: Fixed critical caching bugs where meshes and textures from a previously loaded level (e.g., Level 4) would bleed into the active level (e.g., Level 1). The engine now completely purges the GL mesh, texture, and DAT map caches when switching levels.
+
+### 📐 Advanced Native Rendering Fixes
+- **Bone Model Geometry (Type-1)**: Fixed an issue where character models (like `013_01_1` and `003_02_1`) failed to load faces. The `ParseSplitBoneTriangles` parser now dynamically scans all ECAF offsets across out-of-order blocks to accurately calculate missing triangle counts.
+- **Building Floors & Collision Rendering (Type-3)**: Fixed a major rendering bug where multi-room buildings were missing their floors. The editor now correctly extracts `XTVC`/`ECFC` collision chunks (where the original game engine stores untextured structural elements like floors and ramps) and appends them as standalone untextured render blocks.
+- **Precision Z-Offset Snapping**: Refined the terrain snapping system (`mainZOffset`) for buildings. The calculation now strictly utilizes the lowest Z-coordinate of *textured* submeshes, preventing invisible underground foundations from interfering with accurate floor-to-terrain alignment.
+
+---
+
+## 1.4.0 - Native Game Engine Parity & Toolchain Expansion
+This major release marks the complete transition to the Project IGI native file ecosystem. The editor now directly parses and manages proprietary game assets, providing pixel-perfect parity with the original game engine and a robust headless toolset for modders.
+
+### 🛠️ Native File Format Ecosystem
+- **Native MEF (Model Engine Format)**: Complete replacement of the legacy OBJ/GLB pipeline with a high-performance proprietary MEF parser.
+- **Bone & Rigging Support**: Full support for character bone hierarchies, rig mapping, and animation playback structures.
+- **Native TEX Loader**: Direct support for IGI Texture formats (Version 7, Mode 67 BGRA8888) with mipmap and transparency handling.
+- **RES Archive Parser**: Built-in ILFF/IRES archive management for dynamic asset extraction from original game resource files.
+- **MTP Package Support**: Implementation of the FORM/IFF structured texture mapping parser for complex model-texture packaging.
+
+### 📜 Integrated Scripting & VM Toolchain
+- **QVM Decompiler**: Robust reverse-engineering of IGI bytecode (Version 0.5) back to human-readable QSC scripts.
+- **QCompiler Pipeline**: Seamless integration of mission logic compilation, enabling direct saving of QSC changes into game-ready QVM binaries.
+- **Bytecode Verification**: Automated integrity checks for compiled scripts to ensure stability in the game engine.
+
+### 💻 Headless CLI & Automation
+- **Unified Headless Toolset**: Added advanced command-line switches to `igi1ed.exe` for automated workflows:
+  - `--extract-level <num>`: Batch extract all level resources (Models, Textures, Terrain).
+  - `--mef <file>`: Detailed model geometry and bone structure analysis.
+  - `--qsc/--qvm`: CLI-based compilation and decompilation routines.
+  - `--res/--mtp`: Archive listing and specific block extraction.
+  - `--terrain`: Raw heightmap and lightmap structure analysis.
+
+### 🚀 Performance & Systems Optimization
+- **AssetExtractor**: Intelligent management system for level data with file-timestamp caching to prevent redundant extractions.
+- **Unified Logger**: Level-specific instrumentation with debug dump support and improved UI telemetry.
+- **AppData Synchronization**: Automated migration and locking between local editor folders and `%APPDATA%\QEditor`.
+- **Skeletal Rendering**: Improved character rendering with accurate bone-weight visualization and coordinate alignment.
+
+---
+
 ## 1.0.0 - Official First Public Release
 Welcome to the first public release of the **Project IGI 3D Editor**! This release marks a massive milestone, providing a state-of-the-art 3D modding suite with intuitive controls, visual script compilation pipelines, and precision world manipulation tools.
 
