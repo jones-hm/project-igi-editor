@@ -2646,15 +2646,18 @@ void App::SnapObjectsToTerrain() {
             continue;
         }
 
-        // Objects that are children of buildings (interior furniture, crates, doors) have
-        // their Z already set correctly by the level designer (on the building floor).
-        // Terrain-snapping them would move them to the terrain surface below the floor.
+        // Objects that are children of buildings (interior furniture, crates, AI) have
+        // their QSC Z set relative to the building's pre-snap position (= terrainZ).
+        // After snap, the building floor is at terrainZ + building.snap_z_offset, so
+        // the child must be raised by the same amount to stay on the building floor.
         bool isIndoorChild = false;
+        double buildingSnapZ = 0.0;
         if (obj.parentIndex != -1 && obj.parentIndex < (int)objects.size()) {
             int pIdx = obj.parentIndex;
             while (pIdx != -1 && pIdx < (int)objects.size()) {
                 if (objects[pIdx].isBuilding) {
                     isIndoorChild = true;
+                    buildingSnapZ = objects[pIdx].snap_z_offset;
                     break;
                 }
                 pIdx = objects[pIdx].parentIndex;
@@ -2662,7 +2665,7 @@ void App::SnapObjectsToTerrain() {
         }
         if (isIndoorChild) {
             obj.snap_z_offset = 0.0;
-            obj.pos.z = obj.original_pos.z;
+            obj.pos.z = obj.original_pos.z + buildingSnapZ;
             skipped++;
             continue;
         }

@@ -198,9 +198,10 @@ static void ConvertTex24ToPic(
 			const uint8_t* src_pixel = src_line + x * 3;
 			uint8_t* dst_pixel = dst_line + x * 4;
 
-			dst_pixel[0] = src_pixel[2];
-			dst_pixel[1] = src_pixel[0];
-			dst_pixel[2] = src_pixel[1];
+			// File stores BGR: src[0]=B, src[1]=G, src[2]=R → output RGBA
+			dst_pixel[0] = src_pixel[2]; // R
+			dst_pixel[1] = src_pixel[1]; // G
+			dst_pixel[2] = src_pixel[0]; // B
 			dst_pixel[3] = 255;
 		}
 	}
@@ -223,10 +224,11 @@ static void ConvertTex32ToPic(
 			const uint8_t* src_pixel = src_line + x * 4;
 			uint8_t* dst_pixel = dst_line + x * 4;
 
-			dst_pixel[0] = src_pixel[2];
-			dst_pixel[1] = src_pixel[0];
-			dst_pixel[2] = src_pixel[1];
-			dst_pixel[3] = src_pixel[3];
+			// File stores BGRA (ARGB LE): src[0]=B, src[1]=G, src[2]=R, src[3]=A → output RGBA
+			dst_pixel[0] = src_pixel[2]; // R
+			dst_pixel[1] = src_pixel[1]; // G
+			dst_pixel[2] = src_pixel[0]; // B
+			dst_pixel[3] = src_pixel[3]; // A
 		}
 	}
 }
