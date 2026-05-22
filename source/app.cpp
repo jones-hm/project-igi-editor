@@ -2599,10 +2599,11 @@ void App::SnapObjectsToTerrain() {
             skipped++;
             continue;
         }
-        // Skip snapping for AI Soldiers, Cameras, Terminals, and Spline Waypoints
+        // Skip snapping for Cameras, Terminals, and Spline Waypoints
         // Terminals sit on interior floors at their exact QSC Z, not outdoor terrain.
-        if (obj.type == "HumanSoldier" || obj.type == "HumanSoldierFemale" ||
-            obj.type == "SCamera" || obj.type == "Terminal" || obj.type == "SplineObjWaypoint" ||
+        // AI soldiers (HumanSoldier/HumanSoldierFemale) fall through so they can be
+        // terrain-snapped; the isIndoorChild check below handles interior AI.
+        if (obj.type == "SCamera" || obj.type == "Terminal" || obj.type == "SplineObjWaypoint" ||
             obj.type == "AmbientArea" || obj.type == "Elevator" || obj.isWire) {
             
             // Only restore original Z if the object has NOT been moved/modified by the user
@@ -2645,8 +2646,38 @@ void App::SnapObjectsToTerrain() {
             continue;
         }
 
+        // Objects that are children of buildings (interior furniture, crates, doors) have
+        // their Z already set correctly by the level designer (on the building floor).
+        // Terrain-snapping them would move them to the terrain surface below the floor.
+        bool isIndoorChild = false;
+        if (obj.parentIndex != -1 && obj.parentIndex < (int)objects.size()) {
+            int pIdx = obj.parentIndex;
+            while (pIdx != -1 && pIdx < (int)objects.size()) {
+                if (objects[pIdx].isBuilding) {
+                    isIndoorChild = true;
+                    break;
+                }
+                pIdx = objects[pIdx].parentIndex;
+            }
+        }
+        if (isIndoorChild) {
+            obj.snap_z_offset = 0.0;
+            obj.pos.z = obj.original_pos.z;
+            skipped++;
+            continue;
+        }
+
         float terrainZ = 0.0f;
         if (level_.GetTerrainZ(obj.pos.x, obj.pos.y, terrainZ, false)) {
+            bool isHuman = (obj.type == "HumanSoldier" || obj.type == "HumanSoldierFemale");
+            if (isHuman && (obj.original_pos.z - (double)terrainZ) > 400.0) {
+                // AI is well above the terrain surface — standing on a building or elevated platform.
+                // Preserve the level designer's original Z instead of snapping to terrain below.
+                obj.snap_z_offset = 0.0;
+                obj.pos.z = obj.original_pos.z;
+                skipped++;
+                continue;
+            }
             float zOffset = renderer_.GetMeshZOffset(obj.modelId, obj.isBuilding);
             obj.snap_z_offset = (double)(zOffset * 40.96f * obj.scale);
             obj.pos.z = (double)terrainZ + obj.snap_z_offset;

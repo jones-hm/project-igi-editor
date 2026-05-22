@@ -453,8 +453,9 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     parentRot = glm::rotate(parentRot, (float)obj.rot.x, glm::vec3(1,0,0));
                     parentRot = glm::rotate(parentRot, (float)obj.rot.y, glm::vec3(0,1,0));
 
-                    // ATTA offset is in parent-local QSC units — rotate by parent to get world offset.
-                    // Use obj.pos.z (full snapped world Z) to match the parent model's coordinate origin.
+                    // att.px/py/pz is the sub-model origin offset from the parent building's local
+                    // origin, in raw game units. The editor snaps the parent to terrainZ + snap_z_offset,
+                    // so sub-models must track that same snapped position: parent.pos + att_offset.
                     glm::vec3 localOff(att.px, att.py, att.pz);
                     glm::vec3 worldOff = glm::vec3(parentRot * glm::vec4(localOff, 0.f));
                     glm::vec3 wpos(

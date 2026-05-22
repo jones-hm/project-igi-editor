@@ -19,7 +19,6 @@
 #include "asset_extractor.h"
 #include "res_parser.h"
 #include "../logger.h"
-
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -182,6 +181,7 @@ void AssetExtractor::CleanupExtractedAssets(const std::string& output_dir) {
     std::error_code ec;
     const std::string modelsDir   = output_dir + "\\models";
     const std::string texturesDir = output_dir + "\\textures";
+    const std::string terrainDir  = output_dir + "\\terrain";
     const std::string cacheDir    = output_dir + "\\cache";
 
     if (fs::exists(modelsDir, ec)) {
@@ -191,6 +191,10 @@ void AssetExtractor::CleanupExtractedAssets(const std::string& output_dir) {
     if (fs::exists(texturesDir, ec)) {
         fs::remove_all(texturesDir, ec);
         Logger::Get().Log(LogLevel::INFO, "[AssetExtractor] Removed extracted textures: " + texturesDir);
+    }
+    if (fs::exists(terrainDir, ec)) {
+        fs::remove_all(terrainDir, ec);
+        Logger::Get().Log(LogLevel::INFO, "[AssetExtractor] Removed extracted terrain: " + terrainDir);
     }
     if (fs::exists(cacheDir, ec)) {
         fs::remove_all(cacheDir, ec);
