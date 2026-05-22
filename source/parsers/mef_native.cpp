@@ -1012,16 +1012,14 @@ ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::ve
                 portal.portalId   = portalid;
                 portal.materialId = (i < pmtlMats.size()) ? pmtlMats[i] : 0;
 
-                for (uint32_t j = vertsoff; j < vertsoff + vertsnum; ++j) {
-                    if (j < xvtpVerts.size()) {
-                        portal.verts.push_back(xvtpVerts[j]);
-                    }
+                const size_t vertsEnd = static_cast<size_t>(vertsoff) + vertsnum;
+                for (size_t j = vertsoff; j < vertsEnd && j < xvtpVerts.size(); ++j) {
+                    portal.verts.push_back(xvtpVerts[j]);
                 }
 
-                for (uint32_t j = facesoff; j < facesoff + facesnum; ++j) {
-                    if (j < cftpFaces.size()) {
-                        portal.faces.push_back(cftpFaces[j]);
-                    }
+                const size_t facesEnd = static_cast<size_t>(facesoff) + facesnum;
+                for (size_t j = facesoff; j < facesEnd && j < cftpFaces.size(); ++j) {
+                    portal.faces.push_back(cftpFaces[j]);
                 }
 
                 geometry.portals.push_back(std::move(portal));
