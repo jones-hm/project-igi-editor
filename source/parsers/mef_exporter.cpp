@@ -150,6 +150,16 @@ bool ExportToMefAscii(const ParsedGeometry &geometry,
       << a.boneId << ");\n";
   }
 
+  for (const auto &p : geometry.portals) {
+    f << "PortalBegin(" << p.portalId << ", " << p.materialId << ");\n";
+    for (const auto &v : p.verts)
+        f << "PortalVertex(" << std::fixed << std::setprecision(6)
+          << v.x << ", " << v.y << ", " << v.z << ");\n";
+    for (const auto &face : p.faces)
+        f << "PortalFace(" << face[0] << ", " << face[1] << ", " << face[2] << ");\n";
+    f << "PortalEnd();\n";
+  }
+
   f.close();
   Logger::Get().Log(LogLevel::INFO,
                     "[MefExporter] Successfully exported ASCII MEF to: " +

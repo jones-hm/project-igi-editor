@@ -197,6 +197,8 @@ int CLIHandler::ParseMEF(const std::string &filepath) {
     Logger::Get().Log(LogLevel::INFO,
                       "[CLI]   MEF Attachments: " +
                           std::to_string(geometry.mefAttachments.size()));
+    Logger::Get().Log(LogLevel::INFO,
+        "[CLI]   Portals: " + std::to_string(geometry.portals.size()));
     return 0;
   } catch (const std::exception &e) {
     // Fallback: try parsing as ASCII MEF using MEFParser

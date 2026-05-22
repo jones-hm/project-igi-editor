@@ -953,6 +953,82 @@ ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::ve
     if (xtvm)  geometry.xtvmVerts  = ParseXtvmVerts (bytes, *xtvm);
     if (atta)  geometry.mefAttachments = ParseMefAttachments(bytes, *atta);
 
+    // ---- Parse portal chunks (all optional) ----
+    {
+        const ChunkInfo* trop = FindChunk(chunks, "TROP");
+        const ChunkInfo* xvtp = FindChunk(chunks, "XVTP");
+        const ChunkInfo* cftp = FindChunk(chunks, "CFTP");
+        const ChunkInfo* pmtl = FindChunk(chunks, "PMTL");
+
+        std::vector<glm::vec3> xvtpVerts;
+        if (xvtp != nullptr) {
+            const size_t count = xvtp->size / 12;
+            xvtpVerts.reserve(count);
+            for (size_t i = 0; i < count; ++i) {
+                const size_t base = xvtp->data + i * 12;
+                xvtpVerts.push_back(glm::vec3(
+                    ReadValue<float>(bytes, base + 0),
+                    ReadValue<float>(bytes, base + 4),
+                    ReadValue<float>(bytes, base + 8)
+                ));
+            }
+        }
+
+        std::vector<std::array<uint32_t, 3>> cftpFaces;
+        if (cftp != nullptr) {
+            const size_t count = cftp->size / 12;
+            cftpFaces.reserve(count);
+            for (size_t i = 0; i < count; ++i) {
+                const size_t base = cftp->data + i * 12;
+                cftpFaces.push_back({
+                    ReadValue<uint32_t>(bytes, base + 0),
+                    ReadValue<uint32_t>(bytes, base + 4),
+                    ReadValue<uint32_t>(bytes, base + 8)
+                });
+            }
+        }
+
+        std::vector<uint32_t> pmtlMats;
+        if (pmtl != nullptr) {
+            const size_t count = pmtl->size / 16;
+            pmtlMats.reserve(count);
+            for (size_t i = 0; i < count; ++i) {
+                const size_t base = pmtl->data + i * 16;
+                pmtlMats.push_back(ReadValue<uint32_t>(bytes, base + 0));
+            }
+        }
+
+        if (trop != nullptr) {
+            const size_t count = trop->size / 20;
+            for (size_t i = 0; i < count; ++i) {
+                const size_t base = trop->data + i * 20;
+                const uint32_t vertsoff = ReadValue<uint32_t>(bytes, base + 0);
+                const uint32_t vertsnum = ReadValue<uint32_t>(bytes, base + 4);
+                const uint32_t facesoff = ReadValue<uint32_t>(bytes, base + 8);
+                const uint32_t facesnum = ReadValue<uint32_t>(bytes, base + 12);
+                const uint32_t portalid = ReadValue<uint32_t>(bytes, base + 16);
+
+                PortalRecord portal;
+                portal.portalId   = portalid;
+                portal.materialId = (i < pmtlMats.size()) ? pmtlMats[i] : 0;
+
+                for (uint32_t j = vertsoff; j < vertsoff + vertsnum; ++j) {
+                    if (j < xvtpVerts.size()) {
+                        portal.verts.push_back(xvtpVerts[j]);
+                    }
+                }
+
+                for (uint32_t j = facesoff; j < facesoff + facesnum; ++j) {
+                    if (j < cftpFaces.size()) {
+                        portal.faces.push_back(cftpFaces[j]);
+                    }
+                }
+
+                geometry.portals.push_back(std::move(portal));
+            }
+        }
+    }
+
     return geometry;
 }
 

@@ -93,6 +93,13 @@ struct TamcRecord {
     uint16_t unknown{0};
 };
 
+struct PortalRecord {
+    uint32_t portalId   = 0;
+    uint32_t materialId = 0;
+    std::vector<glm::vec3>               verts;
+    std::vector<std::array<uint32_t, 3>> faces;
+};
+
 struct ParsedGeometry {
     struct RenderBlock {
         size_t triangleStart = 0;
@@ -125,6 +132,7 @@ struct ParsedGeometry {
     std::vector<XtvcVertex>  xtvcVerts1;
     std::vector<EcfcFace>    ecfcFaces1;
     std::vector<TamcRecord>  tamcRecords1;
+    std::vector<PortalRecord> portals;
 };
 
 // Parse a binary MEF file and return all geometry + bone data.
