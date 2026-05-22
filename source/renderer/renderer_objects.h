@@ -7,6 +7,12 @@
 #include <vector>
 #include <unordered_set>
 
+struct AttachInfo {
+    std::string modelId;
+    float px, py, pz;           // raw game-unit position from ATTA record
+    float r[9];                 // 3x3 rotation matrix (r00..r08)
+};
+
 class Renderer_Objects {
 public:
     Renderer_Objects();
@@ -30,6 +36,7 @@ private:
     std::map<std::string, Mesh> mesh_cache_;
     std::map<std::string, GLuint> texture_cache_;
     std::map<std::string, std::vector<std::string>> model_texture_map_cache_;
+    std::map<std::string, std::vector<AttachInfo>> attachment_cache_;
     int texture_map_level_ = -1;
     GLuint shader_program_;
     GLuint ubo_binding_point_;

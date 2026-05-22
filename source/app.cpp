@@ -116,15 +116,6 @@ bool App::Init(int argc, char** argv) {
 	Logger::Get().Init(exeDir + "\\igi_editor.log");
 	Logger::Get().Log(LogLevel::INFO, "IGI Editor Initializing...");
 
-	// Check if running with admin privileges
-	if (!Utils::IsElevatedProcess()) {
-		std::string errorMsg = "WARNING: Application is not running with administrator privileges.\n\n"
-			"Some features may not work correctly.\n"
-			"Please right-click and select 'Run as administrator'.";
-		Utils::ShowWarning(errorMsg, "IGI Editor - Warning");
-		Logger::Get().Log(LogLevel::WARNING, "[App] Not running with admin privileges");
-	}
-
 	if (!renderer_.Init()) {
 		return false;
 	}

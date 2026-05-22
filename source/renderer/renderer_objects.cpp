@@ -11,6 +11,7 @@
 #include "utils.h"
 #include "../level/level_common.h"
 #include "gl_helper.h"
+#include "../parsers/mef_native.h"
 
 
 bool Renderer_Objects::IsSkippedModelId(const std::string& modelId) {
@@ -218,6 +219,7 @@ void Renderer_Objects::Shutdown() {
     for (auto& pair : mesh_cache_)
         destroyModel(pair.second);
     mesh_cache_.clear();
+    attachment_cache_.clear();
 
     for (auto& pair : texture_cache_) {
         if (pair.second) {
@@ -433,6 +435,85 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
             }
             renderModel(mesh);
         }
+
+        // ── Render ATTA sub-models ────────────────────────────────────────────
+        if (obj.isBuilding) {
+            auto ait = attachment_cache_.find(obj.modelId);
+            if (ait != attachment_cache_.end()) {
+                for (const auto &att : ait->second) {
+                    std::string subKey = std::to_string(current_level_) + ":building:" + att.modelId;
+                    auto sit = mesh_cache_.find(subKey);
+                    if (sit == mesh_cache_.end() || sit->second.vertexCount == 0) continue;
+                    const Mesh &subMesh = sit->second;
+
+                    // Rebuild parent rotation (same IGI order: Yaw/Z, Pitch/X, Roll/Y).
+                    glm::mat4 parentRot(1.0f);
+                    parentRot = glm::rotate(parentRot, (float)obj.rot.z, glm::vec3(0,0,1));
+                    parentRot = glm::rotate(parentRot, (float)obj.rot.x, glm::vec3(1,0,0));
+                    parentRot = glm::rotate(parentRot, (float)obj.rot.y, glm::vec3(0,1,0));
+
+                    // ATTA offset is in parent-local QSC units — rotate by parent to get world offset.
+                    glm::vec3 localOff(att.px, att.py, att.pz);
+                    glm::vec3 worldOff = glm::vec3(parentRot * glm::vec4(localOff, 0.f));
+                    glm::vec3 wpos(
+                        (float)obj.pos.x + worldOff.x,
+                        (float)obj.pos.y + worldOff.y,
+                        (float)obj.pos.z + worldOff.z
+                    );
+
+                    // ATTA r00..r08 is a DirectX row-major 3x3 matrix relative to parent.
+                    // Convert to GLM column-major: each DirectX row → GLM column.
+                    // World rotation = parentRot * attLocalRot.
+                    glm::mat4 attLocalRot(
+                        att.r[0], att.r[1], att.r[2], 0.f,
+                        att.r[3], att.r[4], att.r[5], 0.f,
+                        att.r[6], att.r[7], att.r[8], 0.f,
+                        0.f,      0.f,      0.f,      1.f
+                    );
+
+                    glm::mat4 attModel(1.0f);
+                    attModel = glm::translate(attModel, wpos);
+                    attModel = attModel * parentRot * attLocalRot;
+                    attModel = glm::scale(attModel, glm::vec3(40.96f));
+
+                    glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(attModel));
+
+                    // Draw sub-model submeshes
+                    if (!subMesh.subMeshes.empty()) {
+                        for (const auto &sub : subMesh.subMeshes) {
+                            if (sub.VAO == 0 || sub.vertexCount == 0) continue;
+                            if (sub.textureID > 0) {
+                                glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
+                                glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                                glUniform1i(loc_useTex, 1);
+                                glActiveTexture(GL_TEXTURE0);
+                                glBindTexture(GL_TEXTURE_2D, sub.textureID);
+                                glUniform1i(loc_tex, 0);
+                            } else {
+                                glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
+                                glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                                glUniform1i(loc_useTex, 0);
+                            }
+                            glBindVertexArray(sub.VAO);
+                            glDrawArrays(GL_TRIANGLES, 0, sub.vertexCount);
+                        }
+                        glBindVertexArray(0);
+                    } else if (subMesh.textureID > 0) {
+                        glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
+                        glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                        glUniform1i(loc_useTex, 1);
+                        GL_BindTexture2D(0, subMesh.textureID);
+                        glUniform1i(loc_tex, 0);
+                        renderModel(subMesh);
+                    } else {
+                        glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
+                        glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                        glUniform1i(loc_useTex, 0);
+                        renderModel(subMesh);
+                    }
+                }
+            }
+        }
     }
 
     // Always reset polygon mode after draw
@@ -502,7 +583,64 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
         ApplyTexturesToMesh(mesh, modelId);
         mesh_cache_[cacheKey] = mesh;
         Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Success: Loaded model '" + modelId + "' from " + filepath + " (" + std::to_string(mesh.vertexCount) + " vertices)");
-        return mesh;
+
+        // Parse ATTA records for buildings and pre-load sub-model meshes
+        if (isBuilding && attachment_cache_.find(modelId) == attachment_cache_.end()) {
+            try {
+                ParsedGeometry geo = ParseMefFile(filepath);
+                std::vector<AttachInfo> attaches;
+                for (const auto &a : geo.mefAttachments) {
+                    std::string aname(a.name, strnlen(a.name, 16));
+                    if (aname.empty()) continue;
+
+                    AttachInfo info;
+                    info.modelId = aname;
+                    info.px = a.px; info.py = a.py; info.pz = a.pz;
+                    info.r[0]=a.r00; info.r[1]=a.r01; info.r[2]=a.r02;
+                    info.r[3]=a.r03; info.r[4]=a.r04; info.r[5]=a.r05;
+                    info.r[6]=a.r06; info.r[7]=a.r07; info.r[8]=a.r08;
+                    attaches.push_back(info);
+
+                    Logger::Get().Log(LogLevel::INFO,
+                        "[Renderer_Objects] Attachment '" + aname + "' of '" + modelId +
+                        "' pos=(" + std::to_string(a.px) + "," + std::to_string(a.py) + "," + std::to_string(a.pz) + ")");
+
+                    // Pre-warm the sub-model (textures included), but don't recurse into its attachments
+                    std::string subFile = FindModelFile(aname, isBuilding);
+                    if (subFile.empty()) {
+                        Logger::Get().Log(LogLevel::WARNING,
+                            "[Renderer_Objects] Attachment sub-model NOT FOUND: " + aname);
+                    } else {
+                        std::string subKey = std::to_string(current_level_) + ":" +
+                                             (isBuilding ? "building:" : "object:") + aname;
+                        if (mesh_cache_.find(subKey) == mesh_cache_.end()) {
+                            try {
+                                Mesh subMesh = loadObjModel(subFile, "");
+                                ApplyTexturesToMesh(subMesh, aname);
+                                mesh_cache_[subKey] = subMesh;
+                                Logger::Get().Log(LogLevel::INFO,
+                                    "[Renderer_Objects] Attachment sub-model loaded: " + aname +
+                                    " (" + std::to_string(subMesh.vertexCount) + " verts)");
+                            } catch (const std::exception &se) {
+                                Logger::Get().Log(LogLevel::ERR,
+                                    "[Renderer_Objects] Attachment sub-model load FAILED: " + aname + ": " + se.what());
+                                Mesh empty; mesh_cache_[subKey] = empty;
+                            }
+                        }
+                    }
+                }
+                attachment_cache_[modelId] = std::move(attaches);
+                Logger::Get().Log(LogLevel::INFO,
+                    "[Renderer_Objects] Attachments for '" + modelId + "': " +
+                    std::to_string(attachment_cache_[modelId].size()));
+            } catch (const std::exception &pe) {
+                Logger::Get().Log(LogLevel::WARNING,
+                    "[Renderer_Objects] Could not parse ATTA from '" + filepath + "': " + pe.what());
+                attachment_cache_[modelId] = {};
+            }
+        }
+
+        return mesh_cache_[cacheKey];
 
     } catch (const std::exception& e) {
         Logger::Get().Log(LogLevel::ERR, "[Renderer_Objects] Load FAILED for " + modelId + ": " + std::string(e.what()));

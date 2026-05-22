@@ -59,11 +59,9 @@ bool ExportToMefAscii(const ParsedGeometry &geometry,
     return false;
   }
 
-  f << "// IGI Editor MEF -> MEF ASCII Export\n";
-  f << "NewObject(\"model_mesh\");\n\n";
+  f << "NewObject(\"model_mesh\");\n";
 
   // Emit one Material() + MaterialShininess() per entry in geometry.tamcRecords
-  // (or slot 0 if empty)
   if (!geometry.tamcRecords.empty()) {
     for (size_t i = 0; i < geometry.tamcRecords.size(); ++i) {
       float opacity = geometry.tamcRecords[i].opacity;
@@ -77,7 +75,6 @@ bool ExportToMefAscii(const ParsedGeometry &geometry,
          "0.0, 0.0, 0.0, 1);\n";
     f << "MaterialShininess(0, 0.0);\n";
   }
-  f << "\n";
 
   const size_t numVerts = geometry.vertices.size();
 
@@ -110,8 +107,6 @@ bool ExportToMefAscii(const ParsedGeometry &geometry,
     const auto &v = geometry.vertices[i];
     f << "UV(" << i << ", " << v.uv.x << ", " << v.uv.y << ");\n";
   }
-
-  f << "\n";
 
   // Faces: clamp normal indices to valid range
   const int maxNormIdx = numVerts > 0 ? static_cast<int>(numVerts) - 1 : 0;
