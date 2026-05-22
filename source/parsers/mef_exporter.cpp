@@ -139,9 +139,9 @@ bool ExportToMefAscii(const ParsedGeometry &geometry,
     }
   }
 
-  for (const auto& a : geometry.mefAttachments) {
+  f << std::fixed << std::setprecision(6);
+  for (const auto &a : geometry.mefAttachments) {
     std::string n(a.name, strnlen(a.name, 16));
-    f << std::fixed << std::setprecision(6);
     f << "Attachment(\"" << n << "\", "
       << a.px << ", " << a.py << ", " << a.pz << ", "
       << a.r00 << ", " << a.r01 << ", " << a.r02 << ", "
