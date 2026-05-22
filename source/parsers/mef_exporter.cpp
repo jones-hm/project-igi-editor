@@ -139,6 +139,17 @@ bool ExportToMefAscii(const ParsedGeometry &geometry,
     }
   }
 
+  for (const auto& a : geometry.mefAttachments) {
+    std::string n(a.name, strnlen(a.name, 16));
+    f << std::fixed << std::setprecision(6);
+    f << "Attachment(\"" << n << "\", "
+      << a.px << ", " << a.py << ", " << a.pz << ", "
+      << a.r00 << ", " << a.r01 << ", " << a.r02 << ", "
+      << a.r03 << ", " << a.r04 << ", " << a.r05 << ", "
+      << a.r06 << ", " << a.r07 << ", " << a.r08 << ", "
+      << a.boneId << ");\n";
+  }
+
   f.close();
   Logger::Get().Log(LogLevel::INFO,
                     "[MefExporter] Successfully exported ASCII MEF to: " +
