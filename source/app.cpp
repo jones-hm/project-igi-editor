@@ -224,10 +224,6 @@ void App::LoadLevel(int level_no) {
 			Logger::Get().Log(LogLevel::ERR, "[App] Failed to load level " + std::to_string(level_no));
 		}
 
-		// Load QSC file for this level
-		Logger::Get().Log(LogLevel::INFO, "[App] Step 2: Loading QSC file for level " + std::to_string(level_no));
-		LoadQSCForLevel(level_no);
-
 		// Load AI models from JSON for this level
 		Logger::Get().Log(LogLevel::INFO, "[App] Step 2.5: Loading AI models from IGIModelsAllLevel.json...");
 		LoadAIModelsFromFolder(level_no);

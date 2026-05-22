@@ -438,7 +438,8 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
         // ── Render ATTA sub-models ────────────────────────────────────────────
         if (obj.isBuilding) {
-            auto ait = attachment_cache_.find(obj.modelId);
+            std::string attCacheKey = std::to_string(current_level_) + ":building:" + obj.modelId;
+            auto ait = attachment_cache_.find(attCacheKey);
             if (ait != attachment_cache_.end()) {
                 for (const auto &att : ait->second) {
                     std::string subKey = std::to_string(current_level_) + ":building:" + att.modelId;
@@ -453,12 +454,15 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     parentRot = glm::rotate(parentRot, (float)obj.rot.y, glm::vec3(0,1,0));
 
                     // ATTA offset is in parent-local QSC units — rotate by parent to get world offset.
+                    // Z base = terrain height = obj.pos.z - snap_z_offset (undoes the mainZOffset
+                    // lift added by terrain-snapping so ATTA pz=0 lands at ground level).
                     glm::vec3 localOff(att.px, att.py, att.pz);
                     glm::vec3 worldOff = glm::vec3(parentRot * glm::vec4(localOff, 0.f));
+                    float terrainZ = (float)(obj.pos.z - obj.snap_z_offset);
                     glm::vec3 wpos(
                         (float)obj.pos.x + worldOff.x,
                         (float)obj.pos.y + worldOff.y,
-                        (float)obj.pos.z + worldOff.z
+                        terrainZ + worldOff.z
                     );
 
                     // ATTA r00..r08 is a DirectX row-major 3x3 matrix relative to parent.
@@ -584,8 +588,10 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
         mesh_cache_[cacheKey] = mesh;
         Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Success: Loaded model '" + modelId + "' from " + filepath + " (" + std::to_string(mesh.vertexCount) + " vertices)");
 
-        // Parse ATTA records for buildings and pre-load sub-model meshes
-        if (isBuilding && attachment_cache_.find(modelId) == attachment_cache_.end()) {
+        // Parse ATTA records for buildings and pre-load sub-model meshes.
+        // Key includes level so switching levels re-loads sub-models under the new level prefix.
+        std::string attCacheKey = cacheKey; // already "{level}:building:{modelId}"
+        if (isBuilding && attachment_cache_.find(attCacheKey) == attachment_cache_.end()) {
             try {
                 ParsedGeometry geo = ParseMefFile(filepath);
                 std::vector<AttachInfo> attaches;
@@ -629,14 +635,14 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
                         }
                     }
                 }
-                attachment_cache_[modelId] = std::move(attaches);
+                attachment_cache_[attCacheKey] = std::move(attaches);
                 Logger::Get().Log(LogLevel::INFO,
                     "[Renderer_Objects] Attachments for '" + modelId + "': " +
-                    std::to_string(attachment_cache_[modelId].size()));
+                    std::to_string(attachment_cache_[attCacheKey].size()));
             } catch (const std::exception &pe) {
                 Logger::Get().Log(LogLevel::WARNING,
                     "[Renderer_Objects] Could not parse ATTA from '" + filepath + "': " + pe.what());
-                attachment_cache_[modelId] = {};
+                attachment_cache_[attCacheKey] = {};
             }
         }
 
@@ -1159,13 +1165,32 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
         return result;
     }
 
-    // 2. Fall back to game's native models directory
-    //    (covers 003_01_1 on Level 7, and models on levels 12-14 not extracted locally)
+    // 2. Fall back to game's native models directory for current level
     const std::string igiModels = Utils::GetIGIModelsPath(current_level_);
     result = searchOneDir(igiModels);
     if (!result.empty()) {
         Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in IGI root: " + result);
         return result;
+    }
+
+    // 3. Search all other level directories (local extracted, then IGI root) —
+    //    sub-models referenced by ATTA may live in a different level's directory.
+    for (int lvl = 1; lvl <= 14; ++lvl) {
+        if (lvl == current_level_) continue;
+        const std::string lvlLocal = Utils::GetExeDirectory() + "\\models\\level" + std::to_string(lvl);
+        result = searchOneDir(lvlLocal);
+        if (!result.empty()) {
+            Logger::Get().Log(LogLevel::DEBUG,
+                "[Renderer_Objects] Model found in level" + std::to_string(lvl) + " local: " + result);
+            return result;
+        }
+        const std::string lvlIgi = Utils::GetIGIModelsPath(lvl);
+        result = searchOneDir(lvlIgi);
+        if (!result.empty()) {
+            Logger::Get().Log(LogLevel::DEBUG,
+                "[Renderer_Objects] Model found in level" + std::to_string(lvl) + " IGI: " + result);
+            return result;
+        }
     }
 
     Logger::Get().Log(LogLevel::WARNING,

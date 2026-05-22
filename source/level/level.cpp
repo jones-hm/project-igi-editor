@@ -110,63 +110,18 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 		return false;
 	}
 
-	// Get timestamps of all available objects files and pick the latest
-	char editorQsc[1024];
-	Str_SPrintf(editorQsc, 1024, "%s\\objects.qsc", exeDir.c_str());
-
-	char igiQsc[1024];
-	Str_SPrintf(igiQsc, 1024, "%s\\missions\\location0\\level%d\\objects.qsc", Utils::GetIGIRootPath().c_str(), params.level_no_);
-
+	// Always decompile from objects.qvm — never use a cached QSC.
 	char igiQvm[1024];
 	Str_SPrintf(igiQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", Utils::GetIGIRootPath().c_str(), params.level_no_);
 
-	struct file_entry {
-		std::string path;
-		std::filesystem::file_time_type time;
-		bool isQvm;
-	};
-	std::vector<file_entry> candidates;
-
-	auto addCandidate = [&](const char* path, bool isQvm) {
-		if (File_Exists(path)) {
-			candidates.push_back({ path, std::filesystem::last_write_time(path), isQvm });
-		}
-	};
-
-	// Read from IGI game path only — no external QEditor dependency
-	addCandidate(igiQsc, false);
-	if (!File_Exists(igiQsc)) {
-		addCandidate(igiQvm, true);
-	}
-
-	if (candidates.empty()) {
-		Logger::Get().Log(LogLevel::ERR, "[Level] FATAL: No objects.qsc or objects.qvm found anywhere");
+	if (!File_Exists(igiQvm)) {
+		Logger::Get().Log(LogLevel::ERR, "[Level] FATAL: objects.qvm not found at: " + std::string(igiQvm));
 		return false;
 	}
 
-	// Sort by time descending (newest first)
-	std::sort(candidates.begin(), candidates.end(), [](const file_entry& a, const file_entry& b) {
-		return a.time > b.time;
-		});
-
-	const file_entry& latest = candidates[0];
-	Logger::Get().Log(LogLevel::INFO, "[Level] Latest objects file: " + latest.path + " (isQvm=" + (latest.isQvm ? "true" : "false") + ")");
-
-	if (latest.isQvm) {
-		// Game QVM is newest, decompile it to get latest QSC
-		Logger::Get().Log(LogLevel::INFO, "[Level] Game QVM is newer than QSC, decompiling...");
-		DecompileObjects(params.level_no_);
-		Str_SPrintf(filename, 1024, "%s\\objects.qsc", exeDir.c_str());
-	}
-	else {
-		// A QSC is newest, copy it to editor directory if not already there
-		if (strcmp(latest.path.c_str(), editorQsc) != 0) {
-			std::filesystem::copy_file(latest.path, editorQsc, std::filesystem::copy_options::overwrite_existing);
-			Logger::Get().Log(LogLevel::INFO, "[Level] Copied latest QSC to editor: " + std::string(editorQsc));
-		}
-		Str_SPrintf(filename, 1024, "%s", editorQsc);
-		// NOTE: Do NOT auto-compile on load - only compile when user explicitly saves
-	}
+	Logger::Get().Log(LogLevel::INFO, "[Level] Decompiling objects.qvm for level " + std::to_string(params.level_no_));
+	DecompileObjects(params.level_no_);
+	Str_SPrintf(filename, 1024, "%s\\objects.qsc", exeDir.c_str());
 
 	qsc_path_ = filename;
 
