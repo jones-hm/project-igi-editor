@@ -151,5 +151,49 @@ bool AssetExtractor::EnsureLevelAssets(int level_no,
     bool texOk   = ExtractResIfNeeded(texRes,   texOut,   texStamp);
     bool modelOk = ExtractResIfNeeded(modelRes, modelOut, modelStamp);
 
+    // Also ensure common assets are available (once per session).
+    EnsureCommonAssets(igi_path, output_dir);
+
     return texOk && modelOk;
+}
+
+bool AssetExtractor::EnsureCommonAssets(const std::string& igi_path,
+                                        const std::string& output_dir) {
+    static bool s_done = false;
+    if (s_done) return true;
+    s_done = true;
+
+    const std::string commonDir = igi_path + "\\missions\\location0\\common";
+    const std::string texRes    = commonDir + "\\textures\\location0.res";
+    const std::string modelRes  = commonDir + "\\models\\location0.res";
+    const std::string texOut    = output_dir + "\\textures\\common";
+    const std::string modelOut  = output_dir + "\\models\\common";
+    const std::string cacheDir  = output_dir + "\\cache";
+    const std::string texStamp  = cacheDir + "\\common_textures.stamp";
+    const std::string modelStamp= cacheDir + "\\common_models.stamp";
+
+    Logger::Get().Log(LogLevel::INFO, "[AssetExtractor] EnsureCommonAssets from " + commonDir);
+    ExtractResIfNeeded(texRes,   texOut,   texStamp);
+    ExtractResIfNeeded(modelRes, modelOut, modelStamp);
+    return true;
+}
+
+void AssetExtractor::CleanupExtractedAssets(const std::string& output_dir) {
+    std::error_code ec;
+    const std::string modelsDir   = output_dir + "\\models";
+    const std::string texturesDir = output_dir + "\\textures";
+    const std::string cacheDir    = output_dir + "\\cache";
+
+    if (fs::exists(modelsDir, ec)) {
+        fs::remove_all(modelsDir, ec);
+        Logger::Get().Log(LogLevel::INFO, "[AssetExtractor] Removed extracted models: " + modelsDir);
+    }
+    if (fs::exists(texturesDir, ec)) {
+        fs::remove_all(texturesDir, ec);
+        Logger::Get().Log(LogLevel::INFO, "[AssetExtractor] Removed extracted textures: " + texturesDir);
+    }
+    if (fs::exists(cacheDir, ec)) {
+        fs::remove_all(cacheDir, ec);
+        Logger::Get().Log(LogLevel::INFO, "[AssetExtractor] Removed cache stamps: " + cacheDir);
+    }
 }

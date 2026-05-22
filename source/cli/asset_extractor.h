@@ -15,6 +15,13 @@ public:
                                   const std::string& igi_path,
                                   const std::string& output_dir);
 
+    // Ensure common assets (missions/location0/common) are extracted once.
+    static bool EnsureCommonAssets(const std::string& igi_path,
+                                   const std::string& output_dir);
+
+    // Remove all extracted models and textures folders from output_dir.
+    static void CleanupExtractedAssets(const std::string& output_dir);
+
 private:
     static bool ExtractResIfNeeded(const std::string& res_path,
                                    const std::string& out_dir,

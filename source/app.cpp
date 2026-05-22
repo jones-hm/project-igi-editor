@@ -14,6 +14,7 @@
 #include "parsers/qvm_compiler.h"
 #include "parsers/qvm_parser.h"
 #include "parsers/qvm_decompiler.h"
+#include "cli/asset_extractor.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -181,7 +182,7 @@ void App::Shutdown() {
 	level_.Unload();
 	level_.FreeTerrainCubeDataPools();
 	renderer_.Shutdown();
-
+	AssetExtractor::CleanupExtractedAssets(Utils::GetExeDirectory());
 }
 
 void App::LoadLevel(int level_no) {
@@ -266,6 +267,14 @@ void App::LoadLevel(int level_no) {
 				if (obj.rot.z == 0.0) obj.rot.z = 6.28318;
 				Logger::Get().Log(LogLevel::INFO, "[App] Applied AI rotation override (horizontal only) for " + obj.name + " (" + obj.type + ")");
 			}
+		}
+
+		// Log all loaded objects for verification script
+		for (const auto& obj : objects) {
+			if (obj.deleted || obj.modelId.empty()) continue;
+			Logger::Get().Log(LogLevel::INFO, "[LevelLoader] Object Loaded: ModelID=" + obj.modelId + 
+				", Type=" + obj.type + ", Name=" + obj.name + ", Pos=(" + 
+				std::to_string(obj.pos.x) + ", " + std::to_string(obj.pos.y) + ", " + std::to_string(obj.pos.z) + ")");
 		}
 		
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");

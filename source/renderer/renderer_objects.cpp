@@ -454,15 +454,13 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     parentRot = glm::rotate(parentRot, (float)obj.rot.y, glm::vec3(0,1,0));
 
                     // ATTA offset is in parent-local QSC units — rotate by parent to get world offset.
-                    // Z base = terrain height = obj.pos.z - snap_z_offset (undoes the mainZOffset
-                    // lift added by terrain-snapping so ATTA pz=0 lands at ground level).
+                    // Use obj.pos.z (full snapped world Z) to match the parent model's coordinate origin.
                     glm::vec3 localOff(att.px, att.py, att.pz);
                     glm::vec3 worldOff = glm::vec3(parentRot * glm::vec4(localOff, 0.f));
-                    float terrainZ = (float)(obj.pos.z - obj.snap_z_offset);
                     glm::vec3 wpos(
                         (float)obj.pos.x + worldOff.x,
                         (float)obj.pos.y + worldOff.y,
-                        terrainZ + worldOff.z
+                        (float)obj.pos.z + worldOff.z
                     );
 
                     // ATTA r00..r08 is a DirectX row-major 3x3 matrix relative to parent.
@@ -780,8 +778,6 @@ std::string Renderer_Objects::FindTextureFile(const std::string& textureId) cons
     if (!result.empty()) return result;
 
     // 2. Fall back to the game's own texture directory for this level
-    //    (covers levels 12-14 and underground buildings whose textures were
-    //    never extracted into the editor's local cache)
     const std::string igiTexDir = Utils::GetIGIRootPath() +
         "\\missions\\location0\\level" + std::to_string(current_level_) + "\\textures";
     result = searchDir(std::filesystem::path(igiTexDir));
@@ -791,7 +787,16 @@ std::string Renderer_Objects::FindTextureFile(const std::string& textureId) cons
         return result;
     }
 
-    // 3. Game common/shared textures folder (shared across all levels)
+    // 3. Extracted common location0 textures (from location0.res)
+    const std::string commonLocalTexDir = Utils::GetExeDirectory() + "\\textures\\common";
+    result = searchDir(std::filesystem::path(commonLocalTexDir));
+    if (!result.empty()) {
+        Logger::Get().Log(LogLevel::DEBUG,
+            "[TEX Native] Found texture in extracted common folder: " + result);
+        return result;
+    }
+
+    // 4. Game common/shared textures folder (shared across all levels)
     const std::string igiCommonTexDir = Utils::GetIGIRootPath() + "\\textures";
     result = searchDir(std::filesystem::path(igiCommonTexDir));
     if (!result.empty()) {
@@ -800,7 +805,7 @@ std::string Renderer_Objects::FindTextureFile(const std::string& textureId) cons
         return result;
     }
 
-    // 4. Game location0 common folder (shared across all location0 levels)
+    // 5. Game location0 common folder (shared across all location0 levels)
     const std::string igiLoc0CommonTexDir = Utils::GetIGIRootPath() + "\\missions\\location0\\common\\textures";
     result = searchDir(std::filesystem::path(igiLoc0CommonTexDir));
     if (!result.empty()) {
@@ -809,8 +814,9 @@ std::string Renderer_Objects::FindTextureFile(const std::string& textureId) cons
         return result;
     }
 
-    Logger::Get().Log(LogLevel::WARNING,
-        "[TEX Native] Texture not found in all 4 search paths for id=" + textureId);
+    Logger::Get().Log(LogLevel::ERR,
+        "[TEX Native] Texture NOT FOUND: '" + textureId +
+        "' — searched level " + std::to_string(current_level_) + ", common, and all fallback paths.");
     return "";
 }
 
@@ -1193,9 +1199,26 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
         }
     }
 
-    Logger::Get().Log(LogLevel::WARNING,
-        "[Renderer_Objects] Model search FAILED for ID: " + modelId +
-        " (level " + std::to_string(current_level_) + "). Skipping render.");
+    // 4. Search common location0 assets — extracted cache then raw game dir.
+    const std::string commonLocal = Utils::GetExeDirectory() + "\\models\\common";
+    result = searchOneDir(commonLocal);
+    if (!result.empty()) {
+        Logger::Get().Log(LogLevel::DEBUG,
+            "[Renderer_Objects] Model found in common (local): " + result);
+        return result;
+    }
+    const std::string commonIgi = Utils::GetIGIRootPath() + "\\missions\\location0\\common\\models";
+    result = searchOneDir(commonIgi);
+    if (!result.empty()) {
+        Logger::Get().Log(LogLevel::DEBUG,
+            "[Renderer_Objects] Model found in common (IGI): " + result);
+        return result;
+    }
+
+    Logger::Get().Log(LogLevel::ERR,
+        "[Renderer_Objects] Model NOT FOUND: '" + modelId +
+        "' — searched level " + std::to_string(current_level_) +
+        ", all other levels, and common folder.");
     return "";
 }
 
