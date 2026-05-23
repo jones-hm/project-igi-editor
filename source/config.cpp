@@ -1,6 +1,11 @@
 #include "pch.h"
 #include "config.h"
 #include "logger.h"
+#include "utils.h"
+#include "parsers/qsc_lexer.h"
+#include "parsers/qsc_parser.h"
+#include "parsers/qvm_compiler.h"
+#include "parsers/qvm_parser.h"
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -8,102 +13,6 @@
 #include <algorithm>
 
 ConfigData Config::data_;
-
-void Config::Init() {
-    // Always set defaults first so that any missing keys in config.ini get a value
-    CreateDefault();
-
-    std::string path = GetConfigPath();
-    Logger::Get().Log(LogLevel::INFO, "[Config] Config file path: " + path);
-
-    if (!std::filesystem::exists(path)) {
-        Logger::Get().Log(LogLevel::INFO, "[Config] Config file not found, creating default");
-        Save();
-        Logger::Get().Log(LogLevel::INFO, "[Config] Default config created with IGIPath: " + data_.igiPath);
-    } else {
-        Logger::Get().Log(LogLevel::INFO, "[Config] Config file found, loading...");
-        Load();
-        Logger::Get().Log(LogLevel::INFO, "[Config] Config loaded - IGIPath: " + data_.igiPath);
-    }
-
-    // Always force igiPath to match the directory where the executable is located
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(NULL, exePath, MAX_PATH);
-    std::string exeDir(exePath);
-    size_t lastSlash = exeDir.find_last_of("\\/");
-    if (lastSlash != std::string::npos) {
-        exeDir = exeDir.substr(0, lastSlash);
-    }
-    data_.igiPath = exeDir;
-    Logger::Get().Log(LogLevel::INFO, "[Config] Forced igiPath to ExeDirectory: " + data_.igiPath);
-}
-
-ConfigData& Config::Get() {
-    return data_;
-}
-
-std::string Config::GetConfigPath() {
-    // Get the directory where the executable is located
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(NULL, exePath, MAX_PATH);
-    std::string exeDir(exePath);
-    size_t lastSlash = exeDir.find_last_of("\\/");
-    if (lastSlash != std::string::npos) {
-        exeDir = exeDir.substr(0, lastSlash);
-    }
-    return exeDir + "\\config.ini";
-}
-
-void Config::CreateDefault() {
-    data_.igiPath = "D:\\IGI1";
-    data_.level = 1;
-    data_.editorPath = ".";
-    
-    char appData[1024];
-    GetEnvironmentVariableA("APPDATA", appData, 1024);
-    data_.qEditorPath = std::string(appData) + "\\QEditor";
-
-    data_.aiPath = data_.qEditorPath + "\\AIFiles";
-    data_.filesPath = data_.qEditorPath + "\\QFiles";
-    data_.graphsPath = data_.qEditorPath + "\\QGraphs";
-
-
-    
-    data_.keySnapGround = 'S';
-    data_.keySnapObject = 'O';
-    data_.keyRotateAlpha = 'A';
-    data_.keyRotateBeta = 'B';
-    data_.keyRotateGamma = 'G';
-    data_.keyResetOri = ' '; // Space
-    data_.keyResetPos = 'P';
-    
-    data_.teleportToMarker = 0; // F11 is handled specially
-    data_.resetMarkerToPlayer = 'H';
-
-    // Movement keys (arrow keys) - using GLUT special key codes
-    data_.keyMoveForward = 101; // GLUT_KEY_UP
-    data_.keyMoveBackward = 103; // GLUT_KEY_DOWN
-    data_.keyMoveLeft = 100; // GLUT_KEY_LEFT
-    data_.keyMoveRight = 102; // GLUT_KEY_RIGHT
-
-    // Font and UI settings
-    data_.fontSize = 12.0f;
-    data_.fontColorR = 255;
-    data_.fontColorG = 255;
-    data_.fontColorB = 255;
-
-    // Default keybindings
-    data_.keySave = {0x53, true, false, false};    // CTRL+S (0x53 = 'S')
-    data_.keyResetLevel = {0x52, true, false, false}; // CTRL+R (0x52 = 'R')
-    data_.keyDebug = {0x44, true, false, false};   // CTRL+D (0x44 = 'D')
-    data_.keyQuit = {0x51, true, false, false};    // CTRL+Q (0x51 = 'Q')
-    data_.keyHelp = {0x48, false, false, false};   // H (0x48 = 'H')
-    data_.keyResetScript = {0x52, false, true, false}; // SHIFT+R (0x52 = 'R')
-    data_.keyClipMode = {VK_F3, false, false, false}; // F3
-
-    data_.enableLogging = true;
-    data_.debugLogging = false;
-}
 
 static std::string Trim(const std::string& s) {
     auto start = s.find_first_not_of(" \t\r\n");
@@ -118,16 +27,13 @@ static KeyBinding ParseKeyBinding(const std::string& binding) {
     std::string upper = binding;
     std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
 
-    // Parse modifiers
     if (upper.find("CTRL") != std::string::npos) kb.ctrl = true;
     if (upper.find("SHIFT") != std::string::npos) kb.shift = true;
     if (upper.find("ALT") != std::string::npos) kb.alt = true;
 
-    // Extract the key part (after + or the only part)
     size_t lastPlus = upper.rfind('+');
     std::string keyPart = (lastPlus != std::string::npos) ? upper.substr(lastPlus + 1) : upper;
 
-    // Map to Windows virtual key codes
     if (keyPart == "F1") kb.vkCode = VK_F1;
     else if (keyPart == "F2") kb.vkCode = VK_F2;
     else if (keyPart == "F3") kb.vkCode = VK_F3;
@@ -145,238 +51,346 @@ static KeyBinding ParseKeyBinding(const std::string& binding) {
     else if (keyPart == "HOME") kb.vkCode = VK_HOME;
     else if (keyPart == "SPACE") kb.vkCode = VK_SPACE;
     else if (keyPart.length() == 1) {
-        // Single character key
         kb.vkCode = VkKeyScanA(keyPart[0]) & 0xFF;
     }
 
     return kb;
 }
 
-void Config::Load() {
-    std::string configPath = GetConfigPath();
-    std::ifstream file(configPath);
-    if (!file.is_open()) {
-        Logger::Get().Log(LogLevel::WARNING, "[Config] Failed to open config file at: " + configPath + ". Using defaults.");
-        return;
+std::string Config::GetConfigPath() {
+    return Utils::GetExeDirectory() + "\\content\\qed\\qedconfig.txt";
+}
+
+std::string Config::GetKeybindingsPath() {
+    return Utils::GetExeDirectory() + "\\content\\qed\\qedkeybindings.txt";
+}
+
+void Config::CreateDefault() {
+    // igiPath is same as editor current path, set that to it as default
+    data_.igiPath = Utils::GetExeDirectory();
+    data_.level = 1;
+    data_.editorPath = Utils::GetExeDirectory();
+
+    std::string qeditorPath = Utils::GetExeDirectory() + "\\content\\qed";
+    data_.qEditorPath = qeditorPath;
+    data_.aiPath = qeditorPath + "\\AIFiles";
+    data_.filesPath = qeditorPath + "\\QFiles";
+    data_.graphsPath = qeditorPath + "\\QGraphs";
+
+    data_.keySnapGround = 'S';
+    data_.keySnapObject = 'O';
+    data_.keyRotateAlpha = 'A';
+    data_.keyRotateBeta = 'B';
+    data_.keyRotateGamma = 'G';
+    data_.keyResetOri = ' '; // Space
+    data_.keyResetPos = 'P';
+
+    data_.teleportToMarker = 0; // F11 is handled specially
+    data_.resetMarkerToPlayer = 'H';
+
+    data_.keyMoveForward = 101; // GLUT_KEY_UP
+    data_.keyMoveBackward = 103; // GLUT_KEY_DOWN
+    data_.keyMoveLeft = 100; // GLUT_KEY_LEFT
+    data_.keyMoveRight = 102; // GLUT_KEY_RIGHT
+
+    data_.fontSize = 12.0f;
+    data_.fontColorR = 255;
+    data_.fontColorG = 255;
+    data_.fontColorB = 255;
+
+    data_.keySave = {0x53, true, false, false};    
+    data_.keyResetLevel = {0x52, true, false, false}; 
+    data_.keyDebug = {0x44, true, false, false};   
+    data_.keyQuit = {0x51, true, false, false};    
+    data_.keyHelp = {0x48, false, false, false};   
+    data_.keyResetScript = {0x52, false, true, false}; 
+    data_.keyClipMode = {VK_F3, false, false, false}; 
+
+    data_.enableLogging = true;
+    data_.debugLogging = false;
+}
+
+void Config::Init() {
+    CreateDefault();
+
+    std::string qedDir = Utils::GetExeDirectory() + "\\content\\qed";
+    std::filesystem::create_directories(qedDir);
+
+    std::string txtPath = GetConfigPath();
+    std::string kbPath = GetKeybindingsPath();
+
+    if (!std::filesystem::exists(txtPath) || !std::filesystem::exists(kbPath)) {
+        Logger::Get().Log(LogLevel::INFO, "[Config] Config files not found, creating defaults");
+        Save();
+    } else {
+        Logger::Get().Log(LogLevel::INFO, "[Config] Config files found, loading...");
+        Load();
     }
 
-    Logger::Get().Log(LogLevel::INFO, "[Config] Loading configuration from: " + configPath);
-
-    std::string line, section;
-    while (std::getline(file, line)) {
-        line = Trim(line);
-        if (line.empty() || line[0] == ';') continue;
-
-        if (line[0] == '[' && line.back() == ']') {
-            section = line.substr(1, line.size() - 2);
-            continue;
-        }
-
-        auto eqPos = line.find('=');
-        if (eqPos != std::string::npos) {
-            std::string key = Trim(line.substr(0, eqPos));
-            std::string val = Trim(line.substr(eqPos + 1));
-
-            if (section == "GamePath") {
-                if (key == "IGIPath") data_.igiPath = val;
-                else if (key == "Level") data_.level = std::stoi(val);
-                else if (key == "EditorPath") data_.editorPath = val;
-                else if (key == "QEditorPath") data_.qEditorPath = val;
-            } else if (section == "Paths") {
-                if (key == "AIFiles") data_.aiPath = val;
-                else if (key == "QFiles") data_.filesPath = val;
-                else if (key == "QGraphs") data_.graphsPath = val;
-            } else if (section == "Marker") {
-
-
-                char c = (val.empty() ? 0 : val[0]);
-                if (key == "ManipulatePositionSnapToGround") data_.keySnapGround = c;
-                else if (key == "ManipulatePositionSnapToObject") data_.keySnapObject = c;
-                else if (key == "MoveForward") {
-                    if (val == "Up") data_.keyMoveForward = 101; // GLUT_KEY_UP
-                    else data_.keyMoveForward = c;
-                }
-                else if (key == "MoveBackward") {
-                    if (val == "Down") data_.keyMoveBackward = 103; // GLUT_KEY_DOWN
-                    else data_.keyMoveBackward = c;
-                }
-                else if (key == "MoveLeft") {
-                    if (val == "Left") data_.keyMoveLeft = 100; // GLUT_KEY_LEFT
-                    else data_.keyMoveLeft = c;
-                }
-                else if (key == "MoveRight") {
-                    if (val == "Right") data_.keyMoveRight = 102; // GLUT_KEY_RIGHT
-                    else data_.keyMoveRight = c;
-                }
-                else if (key == "ManipulateOrientationAlpha") data_.keyRotateAlpha = c;
-                else if (key == "ManipulateOrientationBeta") data_.keyRotateBeta = c;
-                else if (key == "ManipulateOrientationGamma") data_.keyRotateGamma = c;
-                else if (key == "ManipulateOrientationReset") data_.keyResetOri = ' ';
-                else if (key == "ManipulatePositionReset") data_.keyResetPos = c;
-                else if (key == "TeleportToMarker") data_.teleportToMarker = c;
-                else if (key == "ResetMarkerToPlayer") data_.resetMarkerToPlayer = c;
-            } else if (section == "UI") {
-                if (key == "FontSize") data_.fontSize = std::stof(val);
-                else if (key == "FontColorR") data_.fontColorR = std::stoi(val);
-                else if (key == "FontColorG") data_.fontColorG = std::stoi(val);
-                else if (key == "FontColorB") data_.fontColorB = std::stoi(val);
-            } else if (section == "Logging") {
-                if (key == "Enable") data_.enableLogging = (val == "true" || val == "1");
-                else if (key == "Debug") data_.debugLogging = (val == "true" || val == "1");
-            } else if (section == "Keybindings") {
-                if (key == "Save") data_.keySave = ParseKeyBinding(val);
-                else if (key == "ResetLevel") data_.keyResetLevel = ParseKeyBinding(val);
-                else if (key == "Debug") data_.keyDebug = ParseKeyBinding(val);
-                else if (key == "Quit") data_.keyQuit = ParseKeyBinding(val);
-                else if (key == "Help") data_.keyHelp = ParseKeyBinding(val);
-                else if (key == "ResetScript") data_.keyResetScript = ParseKeyBinding(val);
+    std::string qscPath = qedDir + "\\qedconfig.qsc";
+    std::string qvmPath = qedDir + "\\qedconfig.qvm";
+    
+    std::ifstream txtIn(txtPath);
+    std::ofstream qscOut(qscPath);
+    if (txtIn && qscOut) {
+        std::string line;
+        while (std::getline(txtIn, line)) {
+            size_t commentPos1 = line.find("//");
+            size_t commentPos2 = line.find(";");
+            size_t pos = std::min(commentPos1, commentPos2);
+            if (pos != std::string::npos) {
+                line = line.substr(0, pos);
+            }
+            
+            std::string clean = Trim(line);
+            if (clean.empty() || clean.front() == '[') continue;
+            
+            auto eqPos = clean.find('=');
+            if (eqPos != std::string::npos) {
+                std::string key = Trim(clean.substr(0, eqPos));
+                std::string val = Trim(clean.substr(eqPos + 1));
                 
-                // NEW: Camera
-                else if (key == "EnableCamera") data_.keyEnableCamera = ParseKeyBinding(val);
-                else if (key == "MoveCameraForward") data_.keyMoveCameraForward = ParseKeyBinding(val);
-                else if (key == "MoveCameraBackward") data_.keyMoveCameraBackward = ParseKeyBinding(val);
-                else if (key == "AdjustCameraRadius") data_.keyAdjustCameraRadius = ParseKeyBinding(val);
-                else if (key == "LookDown") data_.keyLookDown = ParseKeyBinding(val);
-                else if (key == "SnapToObject") data_.keySnapToObject = ParseKeyBinding(val);
-                else if (key == "SnapToGround") data_.keySnapToGround = ParseKeyBinding(val);
-                else if (key == "ClipMode") data_.keyClipMode = ParseKeyBinding(val);
-
-                // NEW: Task
-                else if (key == "CreateNewTask") data_.keyCreateNewTask = ParseKeyBinding(val);
-                else if (key == "CopyTask") data_.keyCopyTask = ParseKeyBinding(val);
-                else if (key == "PasteTask") data_.keyPasteTask = ParseKeyBinding(val);
-                else if (key == "DeleteTask") data_.keyDeleteTask = ParseKeyBinding(val);
-                else if (key == "AssignTaskID") data_.keyAssignTaskID = ParseKeyBinding(val);
-
-                // NEW: Animation
-                else if (key == "StartRecording") data_.keyStartRecording = ParseKeyBinding(val);
-                else if (key == "GoToCursor") data_.keyGoToCursor = ParseKeyBinding(val);
-                else if (key == "SyncPlayback") data_.keySyncPlayback = ParseKeyBinding(val);
-
-                // NEW: Misc
-                else if (key == "Undo") data_.keyUndo = ParseKeyBinding(val);
-                else if (key == "Redo") data_.keyRedo = ParseKeyBinding(val);
-                else if (key == "ReloadSettings") data_.keyReloadSettings = ParseKeyBinding(val);
+                bool isNum = !val.empty() && val.find_first_not_of("0123456789.-") == std::string::npos;
+                if (isNum || val == "true" || val == "false" || val == "TRUE" || val == "FALSE") {
+                    qscOut << key << "(" << val << ");\n";
+                } else {
+                    std::string escVal = val;
+                    size_t p = 0;
+                    while((p = escVal.find('"', p)) != std::string::npos) {
+                        escVal.replace(p, 1, "\\\"");
+                        p += 2;
+                    }
+                    qscOut << key << "(\"" << escVal << "\");\n";
+                }
             }
         }
     }
-    Logger::Get().Log(LogLevel::INFO, "[Config] Configuration successfully loaded.");
+    txtIn.close();
+    qscOut.close();
+
+    std::string compileErr;
+    std::ifstream qscIn(qscPath);
+    std::string qscSrc((std::istreambuf_iterator<char>(qscIn)), std::istreambuf_iterator<char>());
+    auto lexResult  = qsc::Lex(qscSrc);
+    auto parseResult = lexResult.ok ? qsc::Parse(lexResult.tokens) : qsc::ParseResult{};
+    if (lexResult.ok && parseResult.ok) {
+        if (qvm::CompileToFile(*parseResult.program, qvmPath, &compileErr)) {
+            Logger::Get().Log(LogLevel::INFO, "[Config] Successfully compiled qedconfig.qsc to qedconfig.qvm");
+        } else {
+            Logger::Get().Log(LogLevel::ERR, "[Config] Failed to compile QVM: " + compileErr);
+        }
+    }
+
+    QVMFile qvm = QVM_Parse(qvmPath);
+    if (qvm.valid) {
+        Logger::Get().Log(LogLevel::INFO, "[Config] Read config from .qvm (" + std::to_string(qvm.identifierCount()) + " keys)");
+    }
+
+    data_.igiPath = Utils::GetExeDirectory();
+}
+
+ConfigData& Config::Get() {
+    return data_;
+}
+
+void Config::Load() {
+    std::string qedDir = Utils::GetExeDirectory() + "\\content\\qed";
+    std::string qvmPath = qedDir + "\\qedconfig.qvm";
+    std::string qvmKbPath = qedDir + "\\qedkeybindings.qvm";
+
+    auto loadFromTxt = [&]() {
+        auto parseFile = [&](const std::string& path) {
+            std::ifstream file(path);
+            if (!file.is_open()) return;
+            std::string line, section;
+            while (std::getline(file, line)) {
+                size_t cPos1 = line.find("//");
+                size_t cPos2 = line.find(";");
+                if (cPos1 != std::string::npos || cPos2 != std::string::npos) {
+                    line = line.substr(0, std::min(cPos1, cPos2));
+                }
+                line = Trim(line);
+                if (line.empty()) continue;
+                if (line[0] == '[' && line.back() == ']') {
+                    section = line.substr(1, line.size() - 2);
+                    continue;
+                }
+                
+                // Try parsing QED SetEventBinding
+                if (line.find("SetEventBinding(") == 0) {
+                    size_t comma = line.find(',');
+                    size_t endP = line.find(')');
+                    if (comma != std::string::npos && endP != std::string::npos) {
+                        std::string key = line.substr(16, comma - 16);
+                        std::string val = line.substr(comma + 1, endP - comma - 1);
+                        
+                        // Clean quotes
+                        key.erase(std::remove(key.begin(), key.end(), '"'), key.end());
+                        val.erase(std::remove(val.begin(), val.end(), '"'), val.end());
+                        key = Trim(key);
+                        val = Trim(val);
+                        
+                        // Replace < and > with + to match ParseKeyBinding expectations
+                        std::string parseVal = val;
+                        std::replace(parseVal.begin(), parseVal.end(), '<', ' ');
+                        std::replace(parseVal.begin(), parseVal.end(), '>', '+');
+                        // Remove trailing plus
+                        if (!parseVal.empty() && parseVal.back() == '+') parseVal.pop_back();
+                        // Clean spaces
+                        parseVal.erase(std::remove(parseVal.begin(), parseVal.end(), ' '), parseVal.end());
+                        
+                        if (key == "SaveObjectFile") data_.keySave = ParseKeyBinding(parseVal);
+                        else if (key == "ReloadSettings") data_.keyReloadSettings = ParseKeyBinding(parseVal);
+                        else if (key == "Undo") data_.keyUndo = ParseKeyBinding(parseVal);
+                        else if (key == "Redo") data_.keyRedo = ParseKeyBinding(parseVal);
+                                                                        else if (key == "CameraEnable") data_.keyEnableCamera = ParseKeyBinding(parseVal);
+                        else if (key == "CameraMoveForward") { data_.keyMoveCameraForward = ParseKeyBinding(parseVal); }
+                        else if (key == "CameraMoveBackward") { data_.keyMoveCameraBackward = ParseKeyBinding(parseVal); }
+                        else if (key == "CameraStrafeLeft") { }
+                        else if (key == "CameraStrafeRight") { }
+                        else if (key == "CameraAdjustRadius") data_.keyAdjustCameraRadius = ParseKeyBinding(parseVal);
+                        else if (key == "CameraLookDown") data_.keyLookDown = ParseKeyBinding(parseVal);
+                        else if (key == "CameraSnapToObject") data_.keySnapToObject = ParseKeyBinding(parseVal);
+                        else if (key == "CameraSnapToGround") data_.keySnapToGround = ParseKeyBinding(parseVal);
+                        else if (key == "ToggleDisplay") data_.keyClipMode = ParseKeyBinding(parseVal);
+                        else if (key == "TaskNew") data_.keyCreateNewTask = ParseKeyBinding(parseVal);
+                        else if (key == "TaskCopy") data_.keyCopyTask = ParseKeyBinding(parseVal);
+                        else if (key == "TaskPaste") data_.keyPasteTask = ParseKeyBinding(parseVal);
+                        else if (key == "TaskSetID") data_.keyAssignTaskID = ParseKeyBinding(parseVal);
+                        else if (key == "AnimTaskStartRecording") data_.keyStartRecording = ParseKeyBinding(parseVal);
+                        else if (key == "AnimTaskGoToCursor") data_.keyGoToCursor = ParseKeyBinding(parseVal);
+                        else if (key == "AnimTaskToggleSyncPlayback") data_.keySyncPlayback = ParseKeyBinding(parseVal);
+                        else if (key == "Manipulate") {} // Not supported mapped this way yet
+                        else if (key == "ManipulatePositionXY") {}
+                        else if (key == "ManipulatePositionXZ") {}
+                        else if (key == "ManipulatePositionSnapToGround") data_.keySnapGround = 'S'; // Fallback
+                        else if (key == "ManipulatePositionSnapToObject") data_.keySnapObject = 'O'; // Fallback
+                        else if (key == "ManipulateOrientationAlpha") data_.keyRotateAlpha = 'A'; // Fallback
+                        else if (key == "ManipulateOrientationBeta") data_.keyRotateBeta = 'B'; // Fallback
+                        else if (key == "ManipulateOrientationGamma") data_.keyRotateGamma = 'G'; // Fallback
+                        else if (key == "ManipulateOrientationReset") data_.keyResetOri = ' '; // Fallback
+                        else if (key == "ToggleConsole") data_.keyDebug = ParseKeyBinding(parseVal);
+                    }
+                    continue;
+                }
+
+                auto eqPos = line.find('=');
+                if (eqPos != std::string::npos) {
+                    std::string key = Trim(line.substr(0, eqPos));
+                    std::string val = Trim(line.substr(eqPos + 1));
+                    
+                    if (val.back() == ';') val.pop_back();
+
+                    if (key == "IGIPath") data_.igiPath = val;
+                    else if (key == "Level") data_.level = std::stoi(val);
+                    else if (key == "EditorPath") data_.editorPath = val;
+                    else if (key == "QEditorPath") data_.qEditorPath = val;
+                    else if (key == "AIFiles") data_.aiPath = val;
+                    else if (key == "QFiles") data_.filesPath = val;
+                    else if (key == "QGraphs") data_.graphsPath = val;
+                    else if (key == "FontSize") data_.fontSize = std::stof(val);
+                    else if (key == "FontColorR") data_.fontColorR = std::stoi(val);
+                    else if (key == "FontColorG") data_.fontColorG = std::stoi(val);
+                    else if (key == "FontColorB") data_.fontColorB = std::stoi(val);
+                    else if (key == "QEDSaveConfigOnExit" || key == "Enable") data_.enableLogging = (val == "TRUE" || val == "true" || val == "1");
+                    else if (key == "Debug") data_.debugLogging = (val == "TRUE" || val == "true" || val == "1");
+                }
+            }
+        };
+
+        parseFile(GetConfigPath());
+        parseFile(GetKeybindingsPath());
+    };
+
+    // If QVMs exist, we should theoretically parse them.
+    // For now, since QVM_Parse only gives us opcodes and we need key value pairs,
+    // we'll rely on the text fallback for config and keybindings mapping, but read it
+    // understanding the QED syntax!
+    loadFromTxt();
 }
 
 void Config::Save() {
     std::ofstream file(GetConfigPath());
-    if (!file.is_open()) return;
+    if (file.is_open()) {
+        file << "// ================================================\n";
+        file << "// IGI EDITOR CONFIGURATION\n";
+        file << "// ================================================\n\n";
+        file << "[GamePath]\n";
+        file << "Level=" << data_.level << "\n";
+        file << "EditorPath=" << data_.editorPath << "\n";
+        file << "QEditorPath=" << data_.qEditorPath << "\n\n";
+        file << "[Paths]\n";
+        file << "AIFiles=" << data_.aiPath << "\n";
+        file << "QFiles=" << data_.filesPath << "\n";
+        file << "QGraphs=" << data_.graphsPath << "\n\n";
+        file << "[Marker]\n";
+        file << "ManipulatePositionSnapToGround=" << data_.keySnapGround << "\n";
+        file << "ManipulatePositionSnapToObject=" << data_.keySnapObject << "\n";
+        file << "MoveForward=Up\n";
+        file << "MoveBackward=Down\n";
+        file << "MoveLeft=Left\n";
+        file << "MoveRight=Right\n";
+        file << "ManipulateOrientationAlpha=" << data_.keyRotateAlpha << "\n";
+        file << "ManipulateOrientationBeta=" << data_.keyRotateBeta << "\n";
+        file << "ManipulateOrientationGamma=" << data_.keyRotateGamma << "\n";
+        file << "ManipulateOrientationReset=Space\n";
+        file << "ManipulatePositionReset=" << data_.keyResetPos << "\n";
+        file << "TeleportToMarker=F11\n";
+        file << "ResetMarkerToPlayer=" << data_.resetMarkerToPlayer << "\n\n";
+        file << "[UI]\n";
+        file << "FontSize=" << data_.fontSize << "\n";
+        file << "FontColorR=" << data_.fontColorR << "\n";
+        file << "FontColorG=" << data_.fontColorG << "\n";
+        file << "FontColorB=" << data_.fontColorB << "\n\n";
+        file << "[Logging]\n";
+        file << "Enable=" << (data_.enableLogging ? "true" : "false") << "\n";
+        file << "Debug=" << (data_.debugLogging ? "true" : "false") << "\n\n";
+    }
 
-    file << "; ================================================" << std::endl;
-    file << "; IGI EDITOR CONFIGURATION" << std::endl;
-    file << "; ================================================" << std::endl;
-    file << std::endl;
-
-    file << "[GamePath]" << std::endl;
-    file << "Level=" << data_.level << std::endl;
-    file << "EditorPath=" << data_.editorPath << std::endl;
-    file << "QEditorPath=" << data_.qEditorPath << std::endl;
-    file << std::endl;
-
-    file << "[Paths]" << std::endl;
-    file << "AIFiles=" << data_.aiPath << std::endl;
-    file << std::endl;
-    file << "; Movement Keys (Arrow keys for camera movement)" << std::endl;
-    file << "MoveForward=Up" << std::endl;
-    file << "MoveBackward=Down" << std::endl;
-    file << "MoveLeft=Left" << std::endl;
-    file << "MoveRight=Right" << std::endl;
-    file << "QFiles=" << data_.filesPath << std::endl;
-    file << "QGraphs=" << data_.graphsPath << std::endl;
-    file << std::endl;
-
-    file << "[Marker]" << std::endl;
-    file << "; IGI 2 Editor-style object manipulation bindings" << std::endl;
-    file << "Manipulate=LeftMouseButton" << std::endl;
-    file << "ManipulatePositionXY=Shift" << std::endl;
-    file << "ManipulatePositionXZ=Ctrl" << std::endl;
-    file << "ManipulatePositionXZAlt=Shift+Ctrl" << std::endl;
-    file << "ManipulatePositionSnapToGround=" << data_.keySnapGround << std::endl;
-    file << "ManipulatePositionSnapToObject=" << data_.keySnapObject << std::endl;
-    file << "ManipulateOrientationAlpha=" << data_.keyRotateAlpha << std::endl;
-    file << "ManipulateOrientationBeta=" << data_.keyRotateBeta << std::endl;
-    file << "ManipulateOrientationGamma=" << data_.keyRotateGamma << std::endl;
-    file << "ManipulateOrientationReset=Space" << std::endl;
-    file << "ManipulatePositionReset=" << data_.keyResetPos << std::endl;
-    file << std::endl;
-
-    file << "TeleportToMarker=F11" << std::endl;
-    file << "ResetMarkerToPlayer=" << data_.resetMarkerToPlayer << std::endl;
-    file << std::endl;
-
-    file << "[UI]" << std::endl;
-    file << "; Font and UI settings" << std::endl;
-    file << "FontSize=" << data_.fontSize << std::endl;
-    file << "FontColorR=" << data_.fontColorR << std::endl;
-    file << "FontColorG=" << data_.fontColorG << std::endl;
-    file << "FontColorB=" << data_.fontColorB << std::endl;
-    file << std::endl;
-
-    file << "[Logging]" << std::endl;
-    file << "; Enable or disable overall logging" << std::endl;
-    file << "Enable=" << (data_.enableLogging ? "true" : "false") << std::endl;
-    file << "; Enable or disable verbose debug logging" << std::endl;
-    file << "Debug=" << (data_.debugLogging ? "true" : "false") << std::endl;
-    file << std::endl;
-
-    file << "[Keybindings]" << std::endl;
-    auto KeyToString = [](const KeyBinding& kb, const std::string& keyName) -> std::string {
-        std::string s;
-        if (kb.ctrl) s += "CTRL+";
-        if (kb.shift) s += "SHIFT+";
-        if (kb.alt) s += "ALT+";
-        
-        if (kb.vkCode == VK_INSERT) s += "INSERT";
-        else if (kb.vkCode == VK_DELETE) s += "DELETE";
-        else if (kb.vkCode == VK_HOME) s += "HOME";
-        else if (kb.vkCode == VK_SPACE) s += "SPACE";
-        else if (kb.vkCode >= VK_F1 && kb.vkCode <= VK_F12) s += "F" + std::to_string(kb.vkCode - VK_F1 + 1);
-        else if (kb.vkCode >= 0x41 && kb.vkCode <= 0x5A) s += (char)kb.vkCode;
-        else if (kb.vkCode) s += (char)kb.vkCode;
-        return s;
-    };
-
-    file << "Save=" << KeyToString(data_.keySave, "Save") << std::endl;
-    file << "ResetLevel=" << KeyToString(data_.keyResetLevel, "ResetLevel") << std::endl;
-    file << "Debug=" << KeyToString(data_.keyDebug, "Debug") << std::endl;
-    file << "Quit=" << KeyToString(data_.keyQuit, "Quit") << std::endl;
-    file << "Help=" << KeyToString(data_.keyHelp, "Help") << std::endl;
-    file << "ResetScript=" << KeyToString(data_.keyResetScript, "ResetScript") << std::endl;
-    file << std::endl;
-
-    file << "; Camera Controls" << std::endl;
-    file << "EnableCamera=" << KeyToString(data_.keyEnableCamera, "EnableCamera") << std::endl;
-    file << "MoveCameraForward=" << KeyToString(data_.keyMoveCameraForward, "MoveCameraForward") << std::endl;
-    file << "MoveCameraBackward=" << KeyToString(data_.keyMoveCameraBackward, "MoveCameraBackward") << std::endl;
-    file << "AdjustCameraRadius=" << KeyToString(data_.keyAdjustCameraRadius, "AdjustCameraRadius") << std::endl;
-    file << "LookDown=" << KeyToString(data_.keyLookDown, "LookDown") << std::endl;
-    file << "SnapToObject=" << KeyToString(data_.keySnapToObject, "SnapToObject") << std::endl;
-    file << "SnapToGround=" << KeyToString(data_.keySnapToGround, "SnapToGround") << std::endl;
-    file << "ClipMode=" << KeyToString(data_.keyClipMode, "ClipMode") << std::endl;
-    file << std::endl;
-
-    file << "; Task Controls" << std::endl;
-    file << "CreateNewTask=" << KeyToString(data_.keyCreateNewTask, "CreateNewTask") << std::endl;
-    file << "CopyTask=" << KeyToString(data_.keyCopyTask, "CopyTask") << std::endl;
-    file << "PasteTask=" << KeyToString(data_.keyPasteTask, "PasteTask") << std::endl;
-    file << "DeleteTask=" << KeyToString(data_.keyDeleteTask, "DeleteTask") << std::endl;
-    file << "AssignTaskID=" << KeyToString(data_.keyAssignTaskID, "AssignTaskID") << std::endl;
-    file << std::endl;
-
-    file << "; Animation Tasks" << std::endl;
-    file << "StartRecording=" << KeyToString(data_.keyStartRecording, "StartRecording") << std::endl;
-    file << "GoToCursor=" << KeyToString(data_.keyGoToCursor, "GoToCursor") << std::endl;
-    file << "SyncPlayback=" << KeyToString(data_.keySyncPlayback, "SyncPlayback") << std::endl;
-    file << std::endl;
-
-    file << "; Miscellaneous" << std::endl;
-    file << "Undo=" << KeyToString(data_.keyUndo, "Undo") << std::endl;
-    file << "Redo=" << KeyToString(data_.keyRedo, "Redo") << std::endl;
-    file << "ReloadSettings=" << KeyToString(data_.keyReloadSettings, "ReloadSettings") << std::endl;
+    std::ofstream kb(GetKeybindingsPath());
+    if (kb.is_open()) {
+        kb << "// ================================================\n";
+        kb << "// IGI EDITOR KEYBINDINGS\n";
+        kb << "// ================================================\n\n";
+        kb << "[Keybindings]\n";
+        auto KeyToString = [](const KeyBinding& k, const std::string& keyName) -> std::string {
+            std::string s;
+            if (k.ctrl) s += "CTRL+";
+            if (k.shift) s += "SHIFT+";
+            if (k.alt) s += "ALT+";
+            if (k.vkCode == 0x2D) s += "INSERT";
+            else if (k.vkCode == 0x2E) s += "DELETE";
+            else if (k.vkCode == 0x24) s += "HOME";
+            else if (k.vkCode == 0x20) s += "SPACE";
+            else if (k.vkCode >= 0x70 && k.vkCode <= 0x7B) s += "F" + std::to_string(k.vkCode - 0x70 + 1);
+            else if (k.vkCode >= 0x41 && k.vkCode <= 0x5A) s += (char)k.vkCode;
+            else if (k.vkCode) s += (char)k.vkCode;
+            return s;
+        };
+        kb << "Save=" << KeyToString(data_.keySave, "Save") << "\n";
+        kb << "ResetLevel=" << KeyToString(data_.keyResetLevel, "ResetLevel") << "\n";
+        kb << "Debug=" << KeyToString(data_.keyDebug, "Debug") << "\n";
+        kb << "Quit=" << KeyToString(data_.keyQuit, "Quit") << "\n";
+        kb << "Help=" << KeyToString(data_.keyHelp, "Help") << "\n";
+        kb << "ResetScript=" << KeyToString(data_.keyResetScript, "ResetScript") << "\n";
+        kb << "EnableCamera=" << KeyToString(data_.keyEnableCamera, "EnableCamera") << "\n";
+        kb << "MoveCameraForward=" << KeyToString(data_.keyMoveCameraForward, "MoveCameraForward") << "\n";
+        kb << "MoveCameraBackward=" << KeyToString(data_.keyMoveCameraBackward, "MoveCameraBackward") << "\n";
+        kb << "AdjustCameraRadius=" << KeyToString(data_.keyAdjustCameraRadius, "AdjustCameraRadius") << "\n";
+        kb << "LookDown=" << KeyToString(data_.keyLookDown, "LookDown") << "\n";
+        kb << "SnapToObject=" << KeyToString(data_.keySnapToObject, "SnapToObject") << "\n";
+        kb << "SnapToGround=" << KeyToString(data_.keySnapToGround, "SnapToGround") << "\n";
+        kb << "ClipMode=" << KeyToString(data_.keyClipMode, "ClipMode") << "\n";
+        kb << "CreateNewTask=" << KeyToString(data_.keyCreateNewTask, "CreateNewTask") << "\n";
+        kb << "CopyTask=" << KeyToString(data_.keyCopyTask, "CopyTask") << "\n";
+        kb << "PasteTask=" << KeyToString(data_.keyPasteTask, "PasteTask") << "\n";
+        kb << "DeleteTask=" << KeyToString(data_.keyDeleteTask, "DeleteTask") << "\n";
+        kb << "AssignTaskID=" << KeyToString(data_.keyAssignTaskID, "AssignTaskID") << "\n";
+        kb << "StartRecording=" << KeyToString(data_.keyStartRecording, "StartRecording") << "\n";
+        kb << "GoToCursor=" << KeyToString(data_.keyGoToCursor, "GoToCursor") << "\n";
+        kb << "SyncPlayback=" << KeyToString(data_.keySyncPlayback, "SyncPlayback") << "\n";
+        kb << "Undo=" << KeyToString(data_.keyUndo, "Undo") << "\n";
+        kb << "Redo=" << KeyToString(data_.keyRedo, "Redo") << "\n";
+        kb << "ReloadSettings=" << KeyToString(data_.keyReloadSettings, "ReloadSettings") << "\n";
+    }
 }
-

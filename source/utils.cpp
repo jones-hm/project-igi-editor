@@ -406,7 +406,9 @@ bool IsUndergroundModel(const std::string& name, const std::string& modelId) {
 		matches("JNT") ||
 		matches("FIX") ||
 		matches("471_") ||
-		matches("491_");
+		matches("491_") ||
+		matches("472_01_1") ||   // ANYA_HQ — underground command bunker
+		matches("ANYA_HQ");
 }
 
 void SetClipboardText(const std::string& text) {

@@ -353,11 +353,11 @@ void App::LoadAIModelsFromFolder(int level_no) {
 		int team;
 	};
 	std::vector<AIData> aiDataList;
-	std::string jsonPath = qeditor_path + "\\IGIModelsAllLevel.json";
+	std::string jsonPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModelsAllLevel.json";
 	bool usingBackup = false;
 
 	if (!std::filesystem::exists(jsonPath)) {
-		std::string backupPath = Utils::GetExeDirectory() + "\\IGIModelsAllLevel.json";
+		std::string backupPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModelsAllLevel.json";
 		if (std::filesystem::exists(backupPath)) {
 			jsonPath = backupPath;
 			usingBackup = true;
@@ -1782,7 +1782,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 void App::ResetLevel() {
 	int levelNo = level_.GetLevelNo();
 
-	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Level " + std::to_string(levelNo) + " - restore objects.qvm from QFiles/IGI_QVM to IGIPath");
+	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Level " + std::to_string(levelNo) + " - restore objects.qvm from content/tools/IGI_QVM to IGIPath");
 
 	// Force kill any running game instance to release file locks on objects.qvm
 #ifdef _WIN32
@@ -1808,14 +1808,11 @@ void App::ResetLevel() {
 	}
 #endif
 
-	std::string baseQFiles = Config::Get().filesPath;
-	if (baseQFiles.empty()) {
-		baseQFiles = Config::Get().qEditorPath + "\\QFiles";
-	}
+	std::string toolsDir = Utils::GetExeDirectory() + "\content\tools";
 
-	// Copy objects.qvm from QFiles/IGI_QVM to IGIPath
+	// Copy objects.qvm from content/tools/IGI_QVM to IGIPath
 	char srcQvm[1024];
-	Str_SPrintf(srcQvm, 1024, "%s\\IGI_QVM\\missions\\location0\\level%d\\objects.qvm", baseQFiles.c_str(), levelNo);
+	Str_SPrintf(srcQvm, 1024, "%s\IGI_QVM\missions\location0\level%d\objects.qvm", toolsDir.c_str(), levelNo);
 
 	char dstQvm[1024];
 	Str_SPrintf(dstQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", Utils::GetIGIRootPath().c_str(), levelNo);
@@ -1862,16 +1859,13 @@ void App::ResetLevel() {
 void App::ResetScript() {
 	int levelNo = level_.GetLevelNo();
 
-	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Script for Level " + std::to_string(levelNo) + " - restore objects.qvm from QFiles/IGI_QVM to IGIPath");
+	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Script for Level " + std::to_string(levelNo) + " - restore objects.qvm from content/tools/IGI_QVM to IGIPath");
 
-	std::string baseQFiles = Config::Get().filesPath;
-	if (baseQFiles.empty()) {
-		baseQFiles = Config::Get().qEditorPath + "\\QFiles";
-	}
+	std::string toolsDir = Utils::GetExeDirectory() + "\content\tools";
 
-	// Copy objects.qvm from QFiles/IGI_QVM to IGIPath
+	// Copy objects.qvm from content/tools/IGI_QVM to IGIPath
 	char srcQvm[1024];
-	Str_SPrintf(srcQvm, 1024, "%s\\IGI_QVM\\missions\\location0\\level%d\\objects.qvm", baseQFiles.c_str(), levelNo);
+	Str_SPrintf(srcQvm, 1024, "%s\IGI_QVM\missions\location0\level%d\objects.qvm", toolsDir.c_str(), levelNo);
 
 	char dstQvm[1024];
 	Str_SPrintf(dstQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", Utils::GetIGIRootPath().c_str(), levelNo);
@@ -2676,6 +2670,14 @@ void App::SnapObjectsToTerrain() {
             if (isHuman && (obj.original_pos.z - (double)terrainZ) > 400.0) {
                 // AI is well above the terrain surface — standing on a building or elevated platform.
                 // Preserve the level designer's original Z instead of snapping to terrain below.
+                obj.snap_z_offset = 0.0;
+                obj.pos.z = obj.original_pos.z;
+                skipped++;
+                continue;
+            }
+            if (isHuman && (obj.original_pos.z - (double)terrainZ) < -100000.0) {
+                // AI deep underground (e.g. AITYPE_ANYA, AITYPE_SOLDIER_AK inside ANYA_HQ bunker).
+                // Snapping would pull them to the surface; preserve their original Z.
                 obj.snap_z_offset = 0.0;
                 obj.pos.z = obj.original_pos.z;
                 skipped++;
@@ -3540,12 +3542,11 @@ struct ModelEntry {
 
 static std::vector<ModelEntry> LoadAllModelsFromJson() {
 	std::vector<ModelEntry> entries;
-	std::string qeditor_path = Config::Get().qEditorPath;
-	std::string jsonPath = qeditor_path + "\\IGIModels.json";
+	std::string jsonPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModels.json";
 	bool usingBackup = false;
 
 	if (!std::filesystem::exists(jsonPath)) {
-		std::string backupPath = Utils::GetExeDirectory() + "\\IGIModels.json";
+		std::string backupPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModels.json";
 		if (std::filesystem::exists(backupPath)) {
 			jsonPath = backupPath;
 			usingBackup = true;

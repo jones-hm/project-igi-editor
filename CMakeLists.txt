@@ -158,18 +158,34 @@ if (WIN32)
   endif()
 
   add_custom_command(TARGET igi-editor POST_BUILD
+    # Create the new folder structure
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:igi-editor>/content/tools"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:igi-editor>/content/qed"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:igi-editor>/content/cache"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:igi-editor>/content/models"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:igi-editor>/content/terrains"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:igi-editor>/content/textures"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:igi-editor>/content/shaders"
+
+    # Copy files to root (DLLs and version)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${DLL_SRC_DIR}/freeglut.dll"
       "${DLL_SRC_DIR}/glew32.dll"
-      "${PROJECT_SOURCE_DIR}/config.ini"
       "${PROJECT_SOURCE_DIR}/version"
+      "$<TARGET_FILE_DIR:igi-editor>"
+
+    # Copy tools to content/tools
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${PROJECT_SOURCE_DIR}/assets/misc/IGIModels.json"
       "${PROJECT_SOURCE_DIR}/assets/misc/IGIModelsAllLevel.json"
-      "$<TARGET_FILE_DIR:igi-editor>"
+      "$<TARGET_FILE_DIR:igi-editor>/content/tools"
+
+    # Copy shaders
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${PROJECT_SOURCE_DIR}/shaders"
-      "$<TARGET_FILE_DIR:igi-editor>/shaders"
-    COMMENT "Copying runtime files (DLLs, config.ini, version, shaders, models json) to output directory"
+      "$<TARGET_FILE_DIR:igi-editor>/content/shaders"
+
+    COMMENT "Copying runtime files to content/ structure"
   )
 else()
   target_link_libraries(igi-editor PRIVATE glut GL GLEW)

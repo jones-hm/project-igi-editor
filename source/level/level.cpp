@@ -99,7 +99,7 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 		CopyTerrainFromIGI(params.level_no_);
 
 		// Check if terrain folder exists in executable directory
-		std::string terrainPath = exeDir + "\\terrains\\level" + std::to_string(params.level_no_) + "\\terrain";
+		std::string terrainPath = exeDir + "\\content\\terrains\\level" + std::to_string(params.level_no_) + "\\terrain";
 		if (!std::filesystem::exists(terrainPath)) {
 			Logger::Get().Log(LogLevel::ERR, "[Level] FATAL: ERROR Missing terrain folder at: " + std::string(terrainPath));
 			return false;
@@ -254,7 +254,7 @@ void Level::CompileCurrentQSC(int level_no) {
 void Level::CopyTerrainFromIGI(int level_no) {
 	std::string gameTerrain = Utils::GetIGIRootPath() + "\\missions\\location0\\level" + std::to_string(level_no) + "\\terrain";
 	std::string exeDir = GetExeDirectory();
-	std::string dstTerrain = exeDir + "\\terrains\\level" + std::to_string(level_no) + "\\terrain";
+	std::string dstTerrain = exeDir + "\\content\\terrains\\level" + std::to_string(level_no) + "\\terrain";
 
 	Logger::Get().Log(LogLevel::INFO, "[Level] CopyTerrainFromIGI: level=" + std::to_string(level_no));
 	Logger::Get().Log(LogLevel::INFO, "[Level] Source: " + gameTerrain);
@@ -290,9 +290,9 @@ void Level::CopyTerrainFromIGI(int level_no) {
 }
 
 void Level::MoveTerrainToGamePath(int level_no) {
-	// Source is executable directory terrains\levelX\terrain
+	// Source is executable directory content\terrains\levelX\terrain
 	std::string exeDir = GetExeDirectory();
-	std::string srcTerrain = exeDir + "\\terrains\\level" + std::to_string(level_no) + "\\terrain";
+	std::string srcTerrain = exeDir + "\\content\\terrains\\level" + std::to_string(level_no) + "\\terrain";
 
 	ConfigData& cfg = Config::Get();
 	char dstTerrain[1024];

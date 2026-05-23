@@ -63,7 +63,7 @@ void Renderer::LoadBuildingNames() {
   size_t ls = exeDir.find_last_of("\\/");
   if (ls != std::string::npos)
     exeDir = exeDir.substr(0, ls);
-  std::string jsonPath = exeDir + "\\IGIModelsAllLevel.json";
+  std::string jsonPath = exeDir + "\\content\\tools\\IGIModelsAllLevel.json";
 
   FILE *f = fopen(jsonPath.c_str(), "rb");
   if (!f) {

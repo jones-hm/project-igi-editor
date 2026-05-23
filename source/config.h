@@ -96,6 +96,7 @@ private:
     static void Load();
     static void CreateDefault();
     static std::string GetConfigPath();
+    static std::string GetKeybindingsPath();
     
     static ConfigData data_;
 };

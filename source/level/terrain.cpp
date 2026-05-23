@@ -22,7 +22,7 @@ static std::string GetExeDirectory() {
 }
 
 static std::string GetTerrainDir(int level_no) {
-	return GetExeDirectory() + "\\terrains\\level" + std::to_string(level_no) + "\\terrain";
+	return GetExeDirectory() + "\\content\\terrains\\level" + std::to_string(level_no) + "\\terrain";
 }
 
 /*

@@ -470,14 +470,13 @@ void LevelObjects::LoadModelNames() {
     if (!modelNames_.empty()) return;
 
 
-    std::string qeditor_path = Config::Get().qEditorPath;
-
     char jsonPath[1024];
-    Str_SPrintf(jsonPath, 1024, "%s\\IGIModels.json", qeditor_path.c_str());
+    std::string exeDir = Utils::GetExeDirectory();
+    Str_SPrintf(jsonPath, 1024, "%s\\content\\tools\\IGIModels.json", exeDir.c_str());
     bool usingBackup = false;
 
     if (!std::filesystem::exists(jsonPath)) {
-        std::string backupPath = Utils::GetExeDirectory() + "\\IGIModels.json";
+        std::string backupPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModels.json";
         if (std::filesystem::exists(backupPath)) {
             Str_Copy(jsonPath, 1024, backupPath.c_str());
             usingBackup = true;

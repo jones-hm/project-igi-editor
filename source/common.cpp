@@ -1026,7 +1026,7 @@ void Folders_Init() {
 		Str_SPrintf(g_folders.ai_folder_, 1024, ".");
 	}
 
-	Str_SPrintf(g_folders.shader_folder_, 1024, "%s/shaders", buf);
+	Str_SPrintf(g_folders.shader_folder_, 1024, "%s/content/shaders", buf);
 
 	// debug
 	/*

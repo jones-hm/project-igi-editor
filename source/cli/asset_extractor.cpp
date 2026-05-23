@@ -138,10 +138,10 @@ bool AssetExtractor::EnsureLevelAssets(int level_no,
     std::string texRes   = missionDir + "\\textures\\" + levelName + ".res";
     std::string modelRes = missionDir + "\\models\\"   + levelName + ".res";
 
-    std::string texOut   = output_dir + "\\textures\\" + levelName;
-    std::string modelOut = output_dir + "\\models\\" + levelName;
+    std::string texOut   = output_dir + "\\content\\textures\\" + levelName;
+    std::string modelOut = output_dir + "\\content\\models\\" + levelName;
 
-    std::string cacheDir   = output_dir + "\\cache";
+    std::string cacheDir   = output_dir + "\\content\\cache";
     std::string texStamp   = cacheDir + "\\" + levelName + "_textures.stamp";
     std::string modelStamp = cacheDir + "\\" + levelName + "_models.stamp";
 
@@ -165,9 +165,9 @@ bool AssetExtractor::EnsureCommonAssets(const std::string& igi_path,
     const std::string commonDir = igi_path + "\\missions\\location0\\common";
     const std::string texRes    = commonDir + "\\textures\\location0.res";
     const std::string modelRes  = commonDir + "\\models\\location0.res";
-    const std::string texOut    = output_dir + "\\textures\\common";
-    const std::string modelOut  = output_dir + "\\models\\common";
-    const std::string cacheDir  = output_dir + "\\cache";
+    const std::string texOut    = output_dir + "\\content\\textures\\common";
+    const std::string modelOut  = output_dir + "\\content\\models\\common";
+    const std::string cacheDir  = output_dir + "\\content\\cache";
     const std::string texStamp  = cacheDir + "\\common_textures.stamp";
     const std::string modelStamp= cacheDir + "\\common_models.stamp";
 
@@ -179,10 +179,10 @@ bool AssetExtractor::EnsureCommonAssets(const std::string& igi_path,
 
 void AssetExtractor::CleanupExtractedAssets(const std::string& output_dir) {
     std::error_code ec;
-    const std::string modelsDir   = output_dir + "\\models";
-    const std::string texturesDir = output_dir + "\\textures";
-    const std::string terrainDir  = output_dir + "\\terrain";
-    const std::string cacheDir    = output_dir + "\\cache";
+    const std::string modelsDir   = output_dir + "\\content\\models";
+    const std::string texturesDir = output_dir + "\\content\\textures";
+    const std::string terrainDir  = output_dir + "\\content\\terrains";
+    const std::string cacheDir    = output_dir + "\\content\\cache";
 
     if (fs::exists(modelsDir, ec)) {
         fs::remove_all(modelsDir, ec);

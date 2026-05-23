@@ -657,13 +657,13 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
 }
 
 std::string Renderer_Objects::GetLevelTexturesPath() const {
-    return Utils::GetExeDirectory() + "\\textures\\level" + std::to_string(current_level_);
+    return Utils::GetExeDirectory() + "\\content\\textures\\level" + std::to_string(current_level_);
 }
 
 std::string Renderer_Objects::GetLevelTextureDatPath() const {
     // Try local extracted DAT first
     const std::string localDat = Utils::GetExeDirectory() +
-        "\\textures\\level" + std::to_string(current_level_) +
+        "\\content\\textures\\level" + std::to_string(current_level_) +
         "\\level" + std::to_string(current_level_) + ".dat";
     if (std::filesystem::exists(localDat)) return localDat;
 
@@ -789,7 +789,7 @@ std::string Renderer_Objects::FindTextureFile(const std::string& textureId) cons
     }
 
     // 3. Extracted common location0 textures (from location0.res)
-    const std::string commonLocalTexDir = Utils::GetExeDirectory() + "\\textures\\common";
+    const std::string commonLocalTexDir = Utils::GetExeDirectory() + "\\content\\textures\\common";
     result = searchDir(std::filesystem::path(commonLocalTexDir));
     if (!result.empty()) {
         Logger::Get().Log(LogLevel::DEBUG,
@@ -1165,7 +1165,7 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
     };
 
     // 1. Search local extracted models ({exeDir}\models\level{N})
-    const std::string exeModels = Utils::GetExeDirectory() + "\\models\\level" + std::to_string(current_level_);
+    const std::string exeModels = Utils::GetExeDirectory() + "\\content\\models\\level" + std::to_string(current_level_);
     std::string result = searchOneDir(exeModels);
     if (!result.empty()) {
         Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found locally: " + result);
@@ -1184,7 +1184,7 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
     //    sub-models referenced by ATTA may live in a different level's directory.
     for (int lvl = 1; lvl <= 14; ++lvl) {
         if (lvl == current_level_) continue;
-        const std::string lvlLocal = Utils::GetExeDirectory() + "\\models\\level" + std::to_string(lvl);
+        const std::string lvlLocal = Utils::GetExeDirectory() + "\\content\\models\\level" + std::to_string(lvl);
         result = searchOneDir(lvlLocal);
         if (!result.empty()) {
             Logger::Get().Log(LogLevel::DEBUG,
@@ -1201,7 +1201,7 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
     }
 
     // 4. Search common location0 assets — extracted cache then raw game dir.
-    const std::string commonLocal = Utils::GetExeDirectory() + "\\models\\common";
+    const std::string commonLocal = Utils::GetExeDirectory() + "\\content\\models\\common";
     result = searchOneDir(commonLocal);
     if (!result.empty()) {
         Logger::Get().Log(LogLevel::DEBUG,
