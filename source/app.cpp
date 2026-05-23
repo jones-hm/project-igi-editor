@@ -2681,9 +2681,28 @@ void App::SnapObjectsToTerrain() {
                 skipped++;
                 continue;
             }
-            float zOffset = renderer_.GetMeshZOffset(obj.modelId, obj.isBuilding);
-            obj.snap_z_offset = (double)(zOffset * 40.96f * obj.scale);
-            obj.pos.z = (double)terrainZ + obj.snap_z_offset;
+            // Underground/subsurface: QSC Z is far below terrain (e.g. ANYA_HQ, AITYPE_ANYA at ~-13M).
+            // Snapping would pull them to the surface; preserve their original underground Z.
+            if ((obj.original_pos.z - (double)terrainZ) < -1000000.0) {
+                obj.snap_z_offset = 0.0;
+                obj.pos.z = obj.original_pos.z;
+                Logger::Get().Log(LogLevel::INFO, "[App] Deep underground, preserving Z for " + obj.modelId + " (" + obj.name + ") Z=" + std::to_string(obj.pos.z));
+                skipped++;
+                continue;
+            }
+            // Stacked/elevated non-human objects (containers on containers, crates on platforms).
+            // Their QSC Z already accounts for the stack height; snapping collapses them to ground.
+            if (!isHuman && (obj.original_pos.z - (double)terrainZ) > 5000.0) {
+                obj.snap_z_offset = 0.0;
+                obj.pos.z = obj.original_pos.z;
+                Logger::Get().Log(LogLevel::INFO, "[App] Elevated object preserved: " + obj.modelId + " (" + obj.name + ") Z=" + std::to_string(obj.pos.z));
+                skipped++;
+                continue;
+            }
+            // IGI places the mesh origin at the QSC Z coordinate; no mesh-bottom offset is added.
+            // snap_z_offset stays 0 so SaveToQSC writes back the terrain-adjusted Z unchanged.
+            obj.snap_z_offset = 0.0;
+            obj.pos.z = (double)terrainZ;
             Logger::Get().Log(LogLevel::DEBUG, "[App] Snapped " + obj.modelId + " to Z=" + std::to_string(obj.pos.z));
             snapped++;
         } else {
