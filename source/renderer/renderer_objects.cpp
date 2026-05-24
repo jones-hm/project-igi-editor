@@ -136,7 +136,7 @@ void main() {
     float finalAlpha = (u_useTexture != 0 ? texColor.a : 1.0) * u_alpha;
     fragColor = vec4(light * texColor.rgb, finalAlpha);
 
-    if (u_alpha >= 0.99 && texColor.a < 0.5) discard;
+    if (u_alpha >= 0.99 && texColor.a < 0.75) discard;
     if (fragColor.a < 0.05) discard;
 }
 )";
@@ -296,10 +296,18 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     GLint loc_alpha    = glGetUniformLocation(shader_program_, "u_alpha");
     glUniform1f(loc_alpha, 1.0f); // default: fully opaque
 
-    for (const auto& obj : objects) {
-        if (obj.deleted) continue;
-        
-        // Selective rendering logic
+    for (int pass = 0; pass < 2; ++pass) {
+        bool isTransparentPass = (pass == 1);
+        if (isTransparentPass) {
+            glDepthMask(GL_FALSE);
+        } else {
+            glDepthMask(GL_TRUE);
+        }
+
+        for (const auto& obj : objects) {
+            if (obj.deleted) continue;
+            
+            // Selective rendering logic
         bool shouldDraw = false;
         if (draw_parts & DRAW_OBJECTS) {
             shouldDraw = true; // Draw everything
@@ -385,78 +393,80 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
         // Is this a window/glass model? If so, render the whole mesh semi-transparent.
         const bool isWindowModel = window_model_ids_.count(obj.modelId) > 0;
-        if (isWindowModel) {
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glUniform1f(loc_alpha, 0.4f);
-        }
-
-        // Draw each submesh with its own texture and lighting
-        if (!mesh.subMeshes.empty()) {
-            // For mixed textured/untextured meshes, skip large untextured
-            // submeshes that are likely foundations (they should be underground).
-            int maxTexturedVerts = 0;
-            bool hasTextured = false, hasUntextured = false;
-            for (const auto& sub : mesh.subMeshes) {
-                if (sub.textureID > 0) {
-                    hasTextured = true;
-                    maxTexturedVerts = std::max(maxTexturedVerts, sub.vertexCount);
-                } else {
-                    hasUntextured = true;
-                }
+        if (isWindowModel == isTransparentPass) {
+            if (isWindowModel) {
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glUniform1f(loc_alpha, 0.4f);
             }
-            bool mixedMesh = hasTextured && hasUntextured;
-            for (const auto& sub : mesh.subMeshes) {
-                if (sub.VAO == 0 || sub.vertexCount == 0) continue;
-                (void)mixedMesh; // render all submeshes — floors/stories must not be skipped
 
-                if (sub.textureID > 0) {
-                    // Textured submesh: neutral lighting so texture looks natural
+            // Draw each submesh with its own texture and lighting
+            if (!mesh.subMeshes.empty()) {
+                // For mixed textured/untextured meshes, skip large untextured
+                // submeshes that are likely foundations (they should be underground).
+                int maxTexturedVerts = 0;
+                bool hasTextured = false, hasUntextured = false;
+                for (const auto& sub : mesh.subMeshes) {
+                    if (sub.textureID > 0) {
+                        hasTextured = true;
+                        maxTexturedVerts = std::max(maxTexturedVerts, sub.vertexCount);
+                    } else {
+                        hasUntextured = true;
+                    }
+                }
+                bool mixedMesh = hasTextured && hasUntextured;
+                for (const auto& sub : mesh.subMeshes) {
+                    if (sub.VAO == 0 || sub.vertexCount == 0) continue;
+                    (void)mixedMesh; // render all submeshes — floors/stories must not be skipped
+
+                    if (sub.textureID > 0) {
+                        // Textured submesh: neutral lighting so texture looks natural
+                        glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
+                        glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                        glUniform1i(loc_useTex, 1);
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, sub.textureID);
+                        glUniform1i(loc_tex, 0);
+                    } else {
+                        // Untextured submesh: use material baseColorFactor if available,
+                        // otherwise fall back to the hash-based color.
+                        glm::vec3 color(sub.baseColorFactor.r, sub.baseColorFactor.g, sub.baseColorFactor.b);
+                        if (color.r >= 0.99f && color.g >= 0.99f && color.b >= 0.99f) {
+                            color = glm::vec3(r, g, b);
+                        }
+                        glUniform3f(loc_dirlight, color.r * 0.6f, color.g * 0.6f, color.b * 0.6f);
+                        glUniform3f(loc_ambient,  color.r * 0.4f, color.g * 0.4f, color.b * 0.4f);
+                        glUniform1i(loc_useTex, 0);
+                    }
+
+                    glBindVertexArray(sub.VAO);
+                    glDrawArrays(GL_TRIANGLES, 0, sub.vertexCount);
+                }
+                glBindVertexArray(0);
+            } else {
+                // Legacy single-texture path (e.g. old OBJ models)
+                bool hasTexture = (mesh.textureID > 0);
+                if (hasTexture) {
                     glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
                     glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                } else {
+                    glUniform3f(loc_dirlight, 0.7f, 0.7f, 0.7f);
+                    glUniform3f(loc_ambient,  r * 0.4f, g * 0.4f, b * 0.4f);
+                }
+                if (mesh.textureID > 0) {
                     glUniform1i(loc_useTex, 1);
-                    glActiveTexture(GL_TEXTURE0);
-                    glBindTexture(GL_TEXTURE_2D, sub.textureID);
+                    GL_BindTexture2D(0, mesh.textureID);
                     glUniform1i(loc_tex, 0);
                 } else {
-                    // Untextured submesh: use material baseColorFactor if available,
-                    // otherwise fall back to the hash-based color.
-                    glm::vec3 color(sub.baseColorFactor.r, sub.baseColorFactor.g, sub.baseColorFactor.b);
-                    if (color.r >= 0.99f && color.g >= 0.99f && color.b >= 0.99f) {
-                        color = glm::vec3(r, g, b);
-                    }
-                    glUniform3f(loc_dirlight, color.r * 0.6f, color.g * 0.6f, color.b * 0.6f);
-                    glUniform3f(loc_ambient,  color.r * 0.4f, color.g * 0.4f, color.b * 0.4f);
                     glUniform1i(loc_useTex, 0);
                 }
+                renderModel(mesh);
+            }
 
-                glBindVertexArray(sub.VAO);
-                glDrawArrays(GL_TRIANGLES, 0, sub.vertexCount);
+            if (isWindowModel) {
+                glDisable(GL_BLEND);
+                glUniform1f(loc_alpha, 1.0f);
             }
-            glBindVertexArray(0);
-        } else {
-            // Legacy single-texture path (e.g. old OBJ models)
-            bool hasTexture = (mesh.textureID > 0);
-            if (hasTexture) {
-                glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
-                glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
-            } else {
-                glUniform3f(loc_dirlight, 0.7f, 0.7f, 0.7f);
-                glUniform3f(loc_ambient,  r * 0.4f, g * 0.4f, b * 0.4f);
-            }
-            if (mesh.textureID > 0) {
-                glUniform1i(loc_useTex, 1);
-                GL_BindTexture2D(0, mesh.textureID);
-                glUniform1i(loc_tex, 0);
-            } else {
-                glUniform1i(loc_useTex, 0);
-            }
-            renderModel(mesh);
-        }
-
-        if (isWindowModel) {
-            glDisable(GL_BLEND);
-            glUniform1f(loc_alpha, 1.0f);
         }
 
         if (drawHullAsWireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -508,6 +518,8 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
                     // Is this ATTA sub-model a window/glass? Apply transparency.
                     const bool attIsWindow = window_model_ids_.count(att.modelId) > 0;
+                    if (attIsWindow != isTransparentPass) continue;
+
                     if (attIsWindow) {
                         glEnable(GL_BLEND);
                         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -557,6 +569,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 }
             }
         }
+    }
     }
 
     // Always reset polygon mode after draw
@@ -622,7 +635,7 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
         // Parse ATTA records for buildings and pre-load sub-model meshes.
         // Key includes level so switching levels re-loads sub-models under the new level prefix.
         std::string attCacheKey = cacheKey; // already "{level}:building:{modelId}"
-        if (isBuilding && attachment_cache_.find(attCacheKey) == attachment_cache_.end()) {
+        if (attachment_cache_.find(attCacheKey) == attachment_cache_.end()) {
             try {
                 ParsedGeometry geo = ParseMefFile(filepath);
                 std::vector<AttachInfo> attaches;
