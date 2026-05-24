@@ -12,7 +12,17 @@ public:
 
 private:
     Renderer_Objects& obj_renderer_;
-    
-    void DrawSplineSegment(const LevelObject& start, const LevelObject& end, const LevelObject& prev, const LevelObject& nextNext, const LevelObject& parent, GLuint ubo_mats, GLuint shader_program);
-    glm::vec3 CalculateSplinePoint(float t, const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& t0, const glm::vec3& t1);
+
+    void DrawSplineSegment(
+        const LevelObject& start,
+        const LevelObject& end,
+        const LevelObject& prev,
+        const LevelObject& nextNext,
+        const LevelObject& parent,
+        GLuint ubo_mats,
+        GLuint shader_program);
+
+    static glm::vec3 HermitePoint(float t,
+        const glm::vec3& p0, const glm::vec3& p1,
+        const glm::vec3& t0, const glm::vec3& t1);
 };

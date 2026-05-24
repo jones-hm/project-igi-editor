@@ -352,7 +352,8 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
                 case 3: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.x = cur_a->dbl_; obj.original_pos.x = cur_a->dbl_; } break;
                 case 4: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.y = cur_a->dbl_; obj.original_pos.y = cur_a->dbl_; } break;
                 case 5: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.z = cur_a->dbl_; obj.original_pos.z = cur_a->dbl_; } break;
-                case 19: if (cur_a->type_ == QSC::arg_s::type_t::STR) obj.modelId = Utils::Trim(cur_a->str_); break;
+                case 8: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.z = cur_a->dbl_; obj.original_rot.z = cur_a->dbl_; } break; // gamma
+                case 13: if (cur_a->type_ == QSC::arg_s::type_t::STR) obj.modelId = Utils::Trim(cur_a->str_); break;
             }
         } else if (isWire) {
             switch (arg_idx) {
@@ -367,20 +368,16 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
             obj.isSplineWaypoint = true;
             switch (arg_idx) {
                 case 0: obj.taskId = TaskIdFromArg(cur_a); break;
-                case 2: if (cur_a->type_ == QSC::arg_s::type_t::STR) { obj.name = cur_a->str_; obj.original_name = cur_a->str_; obj.has_original_name = true; } break;
-                case 3: case 4: case 5:
-                    if (cur_a->type_ == QSC::arg_s::type_t::DBL) {
-                        int matIdx = arg_idx - 3;
-                        if (matIdx < 3) obj.orientationMatrix[0][matIdx] = cur_a->dbl_; // Store as first row for Euler fallback
-                    }
-                    break;
+                case 3: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.x = cur_a->dbl_; obj.original_rot.x = cur_a->dbl_; } break; // alpha
+                case 4: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.y = cur_a->dbl_; obj.original_rot.y = cur_a->dbl_; } break; // beta
+                case 5: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.z = cur_a->dbl_; obj.original_rot.z = cur_a->dbl_; } break; // gamma
                 case 6: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.x = cur_a->dbl_; obj.original_pos.x = cur_a->dbl_; } break;
                 case 7: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.y = cur_a->dbl_; obj.original_pos.y = cur_a->dbl_; } break;
                 case 8: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.z = cur_a->dbl_; obj.original_pos.z = cur_a->dbl_; } break;
-                case 9: 
+                case 9:
                     if (cur_a->type_ == QSC::arg_s::type_t::STR) {
-                        obj.modelId = cur_a->str_; 
-                        if (obj.modelId == "waypoint") obj.modelId = "";
+                        obj.modelId = cur_a->str_;
+                        if (obj.modelId == "waypoint" || obj.modelId.empty()) obj.modelId = "";
                     }
                     break;
                 case 10: if (cur_a->type_ == QSC::arg_s::type_t::STR) obj.segmentModelId = cur_a->str_; break;
@@ -715,12 +712,16 @@ void LevelObjects::ParseTaskLine(const std::string& line, LevelObject& obj) {
             readDouble(3, obj.pos.x);
             readDouble(4, obj.pos.y);
             readDouble(5, obj.pos.z);
-            if (obj.argTokens.size() > 19) obj.modelId = unquote(obj.argTokens[19]);
+            readDouble(8, obj.rot.z);
+            if (obj.argTokens.size() > 13) obj.modelId = unquote(obj.argTokens[13]);
         } else if (obj.type == "SplineObjWaypoint") {
+            readDouble(3, obj.rot.x);
+            readDouble(4, obj.rot.y);
+            readDouble(5, obj.rot.z);
             readDouble(6, obj.pos.x);
             readDouble(7, obj.pos.y);
             readDouble(8, obj.pos.z);
-            if (obj.argTokens.size() > 9) obj.modelId = unquote(obj.argTokens[9]);
+            if (obj.argTokens.size() > 9) { obj.modelId = unquote(obj.argTokens[9]); if (obj.modelId == "waypoint") obj.modelId = ""; }
             if (obj.argTokens.size() > 10) obj.segmentModelId = unquote(obj.argTokens[10]);
         } else if (obj.type == "Switch") {
             readDouble(3, obj.pos.x);
@@ -798,12 +799,16 @@ void LevelObjects::UpdateCoordinatesInLine(LevelObject& obj) {
             setToken(3, FormatQscDouble(obj.pos.x));
             setToken(4, FormatQscDouble(obj.pos.y));
             setToken(5, FormatQscDouble(saveZ));
-            if (!obj.modelId.empty() || obj.argTokens.size() > 19) setStringToken(19, obj.modelId);
+            setToken(8, FormatQscDouble(obj.rot.z));
+            if (!obj.modelId.empty() || obj.argTokens.size() > 13) setStringToken(13, obj.modelId);
         } else if (obj.type == "SplineObjWaypoint") {
+            setToken(3, FormatQscDouble(obj.rot.x));
+            setToken(4, FormatQscDouble(obj.rot.y));
+            setToken(5, FormatQscDouble(obj.rot.z));
             setToken(6, FormatQscDouble(obj.pos.x));
             setToken(7, FormatQscDouble(obj.pos.y));
             setToken(8, FormatQscDouble(saveZ));
-            if (!obj.modelId.empty() || obj.argTokens.size() > 9) setStringToken(9, obj.modelId);
+            if (!obj.modelId.empty() || obj.argTokens.size() > 9) setStringToken(9, obj.modelId.empty() ? "waypoint" : obj.modelId);
             if (!obj.segmentModelId.empty() || obj.argTokens.size() > 10) setStringToken(10, obj.segmentModelId);
         } else if (obj.type == "Switch") {
             setToken(3, FormatQscDouble(obj.pos.x));

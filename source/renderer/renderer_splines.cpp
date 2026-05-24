@@ -1,132 +1,132 @@
 #include "pch.h"
 #include "renderer_splines.h"
-#include "logger.h"
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <cmath>
 
-void Renderer_Splines::Init() {
-    // Initialization if needed
+void Renderer_Splines::Init() {}
+
+glm::vec3 Renderer_Splines::HermitePoint(float t,
+    const glm::vec3& p0, const glm::vec3& p1,
+    const glm::vec3& t0, const glm::vec3& t1)
+{
+    float t2 = t * t, t3 = t2 * t;
+    return (2.f*t3 - 3.f*t2 + 1.f)*p0
+         + (t3 - 2.f*t2 + t)*t0
+         + (-2.f*t3 + 3.f*t2)*p1
+         + (t3 - t2)*t1;
 }
 
-void Renderer_Splines::Draw(const std::vector<LevelObject>& objects, GLuint ubo_mats, GLuint shader_program) {
+void Renderer_Splines::Draw(
+    const std::vector<LevelObject>& objects,
+    GLuint ubo_mats,
+    GLuint shader_program)
+{
     if (!shader_program) return;
-    
-    // Bind shader and UBO
+
     glUseProgram(shader_program);
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, ubo_mats);
-    
-    // OpenGL state
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
-    glEnable(GL_CULL_FACE);
+    glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
 
     for (const auto& obj : objects) {
-        if (obj.isSplineContainer) {
-            // Check if this spline should be skipped (e.g. wires)
-            if (Renderer_Objects::IsSkippedModelId(obj.modelId)) {
-                continue;
-            }
+        if (!obj.isSplineContainer || obj.deleted) continue;
+        if (Renderer_Objects::IsSkippedModelId(obj.modelId)) continue;
 
-            for (size_t i = 0; i < obj.childrenIndices.size(); ++i) {
-                if (i + 1 < obj.childrenIndices.size()) {
-                    int startIdx = obj.childrenIndices[i];
-                    int endIdx = obj.childrenIndices[i+1];
-                    int prevIdx = (i > 0) ? obj.childrenIndices[i-1] : startIdx;
-                    int nextNextIdx = (i + 2 < obj.childrenIndices.size()) ? obj.childrenIndices[i+2] : endIdx;
-                    
-                    DrawSplineSegment(objects[startIdx], objects[endIdx], objects[prevIdx], objects[nextNextIdx], obj, ubo_mats, shader_program);
-                }
-            }
+        const auto& children = obj.childrenIndices;
+        for (size_t i = 0; i + 1 < children.size(); ++i) {
+            int si = children[i];
+            int ei = children[i + 1];
+            int pi = (i > 0) ? children[i - 1] : si;
+            int ni = (i + 2 < children.size()) ? children[i + 2] : ei;
+
+            if (si < 0 || si >= (int)objects.size()) continue;
+            if (ei < 0 || ei >= (int)objects.size()) continue;
+            if (pi < 0 || pi >= (int)objects.size()) pi = si;
+            if (ni < 0 || ni >= (int)objects.size()) ni = ei;
+
+            if (objects[si].deleted || objects[ei].deleted) continue;
+
+            DrawSplineSegment(
+                objects[si], objects[ei],
+                objects[pi], objects[ni],
+                obj, ubo_mats, shader_program);
         }
     }
-    
-    // Cleanup state
+
     glUseProgram(0);
 }
 
-void Renderer_Splines::DrawSplineSegment(const LevelObject& start, const LevelObject& end, const LevelObject& prev, const LevelObject& nextNext, const LevelObject& parent, GLuint ubo_mats, GLuint shader_program) {
+void Renderer_Splines::DrawSplineSegment(
+    const LevelObject& start,
+    const LevelObject& end,
+    const LevelObject& prev,
+    const LevelObject& nextNext,
+    const LevelObject& parent,
+    GLuint ubo_mats,
+    GLuint shader_program)
+{
     if (start.segmentModelId.empty()) return;
-    
-    // Check if the segment model itself should be skipped
     if (Renderer_Objects::IsSkippedModelId(start.segmentModelId)) return;
-    
+
     Mesh mesh = obj_renderer_.GetOrLoadMesh(start.segmentModelId, false);
     if (mesh.vertexCount == 0) return;
 
-    GLint loc_model = glGetUniformLocation(shader_program, "u_model");
+    GLint loc_model    = glGetUniformLocation(shader_program, "u_model");
     GLint loc_dirlight = glGetUniformLocation(shader_program, "u_dirlight");
     GLint loc_ambient  = glGetUniformLocation(shader_program, "u_ambient");
     GLint loc_useTex   = glGetUniformLocation(shader_program, "u_useTexture");
     GLint loc_tex      = glGetUniformLocation(shader_program, "u_texture");
 
-    float base_scale = 4.096f;
-    
-    glm::vec3 p0 = glm::vec3(start.pos);
-    glm::vec3 p1 = glm::vec3(end.pos);
+    // Catmull-Rom tangents as Hermite tangents for both endpoints
+    glm::vec3 p0     = glm::vec3(start.pos);
+    glm::vec3 p1     = glm::vec3(end.pos);
     glm::vec3 p_prev = glm::vec3(prev.pos);
     glm::vec3 p_next = glm::vec3(nextNext.pos);
-    
-    // Use Catmull-Rom tangents based on adjacent points
-    // This perfectly prevents loops and wild spiraling.
-    glm::vec3 t0 = (p1 - p_prev) * 0.5f;
-    glm::vec3 t1 = (p_next - p0) * 0.5f;
 
-    int steps = parent.splineSegmentCount;
-    if (steps < 1) steps = 20;
+    glm::vec3 tan0 = (p1 - p_prev) * 0.5f;
+    glm::vec3 tan1 = (p_next - p0) * 0.5f;
+
+    // Tile world length at LENGTH_SCALE. Use ceil so tiles slightly overlap
+    // at joints, hiding the corner gap that appears at curves.
+    float localX = mesh.center.x + mesh.halfExtents.x;
+    if (localX < 1.f) localX = 1.f;
+    const float LENGTH_SCALE = 4.096f;
+    float tileWorldLen = localX * LENGTH_SCALE;
+
+    float intervalLen = glm::length(p1 - p0);
+    int steps = std::max(1, (int)std::ceil(intervalLen / tileWorldLen));
+    steps = std::min(steps, 64);
 
     for (int i = 0; i < steps; ++i) {
-        float t = (float)i / (float)steps;
-        float next_t = (float)(i + 1) / (float)steps;
-        
-        glm::vec3 pos = CalculateSplinePoint(t, p0, p1, t0, t1);
-        glm::vec3 nextPos = CalculateSplinePoint(next_t, p0, p1, t0, t1);
-        
-        // If curve collapsed to a point, use linear fallback
+        float t      = (float)i       / (float)steps;
+        float t_next = (float)(i + 1) / (float)steps;
+
+        glm::vec3 pos     = HermitePoint(t,      p0, p1, tan0, tan1);
+        glm::vec3 nextPos = HermitePoint(t_next, p0, p1, tan0, tan1);
+
         if (glm::distance(pos, nextPos) < 0.001f) {
-            pos = p0 + (p1 - p0) * t;
-            nextPos = p0 + (p1 - p0) * next_t;
+            pos     = glm::mix(p0, p1, t);
+            nextPos = glm::mix(p0, p1, t_next);
         }
 
-        glm::vec3 dir = glm::normalize(nextPos - pos);
-        
-        glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, pos);
-        
-        glm::vec3 forward = dir;
-        glm::vec3 up = glm::vec3(0, 0, 1);
-        if (abs(glm::dot(forward, up)) > 0.99f) up = glm::vec3(0, 1, 0);
-        
-        glm::vec3 right = glm::normalize(glm::cross(forward, up));
-        up = glm::normalize(glm::cross(right, forward));
-        
-        // The track model has its length along its local X axis.
-        // Its height is along local Y axis (Y-up model).
-        // Its width is along local Z axis.
-        // So we map:
-        // Local X -> forward
-        // Local Y -> up
-        // Local Z -> right
-        
-        glm::mat4 rot = glm::mat4(1.0f);
-        rot[0] = glm::vec4(forward, 0); // Local X -> forward
-        rot[1] = glm::vec4(up, 0);      // Local Y -> up
-        rot[2] = glm::vec4(right, 0);   // Local Z -> right
-        
-        model = model * rot;
-        
-        // Local X (length) -> forward, Local Y (height) -> up, Local Z (width) -> right
-        float length_scale = base_scale;
-        float height_scale = base_scale * 10.0f; // Stretch massively to form the concrete foundation wall
-        float width_scale = base_scale * 5.7f;
-        
-        model = glm::scale(model, glm::vec3(length_scale, height_scale, width_scale));
-        // Removed the rotate90X because our rot matrix directly maps local Y to up!
+        glm::vec3 tangent = glm::normalize(nextPos - pos);
+
+        // Yaw only: rotate around world Z so local +X aligns with horizontal tangent.
+        // Local Z stays as world up — matching the original correct orientation.
+        float gamma = std::atan2(tangent.y, tangent.x);
+
+        glm::mat4 model = glm::translate(glm::mat4(1.f), pos);
+        model = glm::rotate(model, gamma, glm::vec3(0.f, 0.f, 1.f));
+        model = glm::scale(model, glm::vec3(LENGTH_SCALE, 40.96f, 40.96f));
 
         glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(model));
-        
+
         for (const auto& sub : mesh.subMeshes) {
+            if (sub.VAO == 0 || sub.vertexCount == 0) continue;
             if (sub.textureID > 0) {
                 glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
                 glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
@@ -139,17 +139,9 @@ void Renderer_Splines::DrawSplineSegment(const LevelObject& start, const LevelOb
                 glUniform3f(loc_ambient,  0.2f, 0.2f, 0.2f);
                 glUniform1i(loc_useTex, 0);
             }
-            
             glBindVertexArray(sub.VAO);
             glDrawArrays(GL_TRIANGLES, 0, sub.vertexCount);
         }
         glBindVertexArray(0);
     }
-}
-
-glm::vec3 Renderer_Splines::CalculateSplinePoint(float t, const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& t0, const glm::vec3& t1) {
-    float t2 = t * t;
-    float t3 = t2 * t;
-    // Cubic Hermite Spline formula
-    return (2.0f*t3 - 3.0f*t2 + 1.0f) * p0 + (t3 - 2.0f*t2 + t) * t0 + (-2.0f*t3 + 3.0f*t2) * p1 + (t3 - t2) * t1;
 }

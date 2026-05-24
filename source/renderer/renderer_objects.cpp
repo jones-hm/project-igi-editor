@@ -3,8 +3,6 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
-#include <unordered_set>
-#include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include "logger.h"
@@ -16,63 +14,8 @@
 
 bool Renderer_Objects::IsSkippedModelId(const std::string& modelId) {
     if (modelId.empty()) return false;
-
-    // Use a static set for O(1) exact matches
-    static const std::unordered_set<std::string> skippedIds = {
-        // ── Fences & Gates (terrain-snapping glitches) ──
-        "303_01_1", "303_02_1", "303_03_1", "304_01_1",
-        "302_01_1", "331_01_1",
-        "341_01_1", "341_02_1", "341_03_1", "341_04_1",
-        "341_05_1", "341_06_1", "341_07_1",
-        "366_01_1", "370_01_1", "370_02_1", "370_03_1", "370_04_1",
-
-        // ── Wires & Poles ──
-        "320", "338", "355", "307", "308", "312", "203",
-
-        // ── Holders / Brackets ──
-        "373", "615", "252",
-
-        // ── Collision / Invisible Objects ──
-        "colbox", "colbox2","colbox4" "colbox66"
-    };
-
-    if (skippedIds.count(modelId) > 0) return true;
-
-    // Robust prefix matching: skip if modelId starts with any skip ID
-    for (const auto& sid : skippedIds) {
-        if (modelId.find(sid) == 0) return true; 
-    }
-    return false;
+    return modelId == "colbox" || modelId == "colbox2" || modelId == "colbox4" || modelId == "colbox66";
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-static bool IsFenceModel(const std::string& nameOrId) {
-    std::string upper = nameOrId;
-    std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
-    return upper.find("FENCE") != std::string::npos ||
-           upper.find("GATE") != std::string::npos ||
-           upper.find("POLE_WIRED") != std::string::npos ||
-           upper.find("WIRE") != std::string::npos;
-}
-
-// Known fence/gate model IDs from IGIModelsLevel.json
-static bool IsFenceModelId(const std::string& modelId) {
-    static const std::unordered_set<std::string> fenceIds = {
-        "303_01_1", "303_02_1", "303_03_1", "303_04_1", "304_01_1",
-        "302_01_1", "331_01_1",
-        "338_01_1",
-        "341_01_1", "341_02_1", "341_03_1", "341_04_1",
-        "341_05_1", "341_06_1", "341_07_1",
-        "366_01_1"
-    };
-    if (fenceIds.count(modelId) > 0) return true;
-    // Handle partial IDs from QSC (e.g. "303", "303_01")
-    for (const auto& fid : fenceIds) {
-        if (fid.find(modelId) == 0 || modelId.find(fid) == 0) return true;
-    }
-    return false;
-}
-
 
 // ─── Shader Sources ───────────────────────────────────────────────────────────
 static const char* OBJ_VERT_SRC = R"(
@@ -305,14 +248,14 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
         if (!shouldDraw) continue;
 
-        // TODO: Temporarily skip loading and rendering fence/gate/wire objects and colbox66 due to snapping issues.
-        // Fences are floating or misaligned on terrain. Need to implement proper Z-offset calculation
-        // for fence models that accounts for their unique geometry (posts vs wires).
-        // colbox66 is a collision box model that should not be rendered.
-        // GitHub issue to be created for tracking this fix.
-        if (IsFenceModelId(obj.modelId) || IsFenceModel(obj.name) || IsFenceModel(obj.modelId) ||
-            obj.modelId == "colbox" || obj.name == "colbox" || 
+        // SplineObjWaypoints and SplineObj containers are rendered by renderer_splines.cpp
+        if (obj.isSplineWaypoint || obj.isSplineContainer) continue;
+
+        // Skip empty modelId and collision-only proxies
+        if (obj.modelId.empty()) continue;
+        if (obj.modelId == "colbox" || obj.name == "colbox" ||
             obj.modelId == "colbox2" || obj.name == "colbox2" ||
+            obj.modelId == "colbox4" || obj.name == "colbox4" ||
             obj.modelId == "colbox66" || obj.name == "colbox66") {
             continue;
         }
@@ -334,8 +277,6 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         // obj.pos.z already includes the terrain snap offset from app.cpp,
         // so we use it directly without adding zOffset again.
         model = glm::translate(model, glm::vec3(obj.pos.x, obj.pos.y, obj.pos.z));
-
-        const bool isFence = IsFenceModelId(obj.modelId) || IsFenceModel(obj.name) || IsFenceModel(obj.modelId);
 
         // 2. Apply IGI rotations (Yaw, Pitch, Roll)
         // IGI rotation order: Yaw (Z), then Pitch (X), then Roll (Y)
@@ -527,14 +468,6 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 }
 
 float Renderer_Objects::GetMeshZOffset(const std::string& modelId, bool isBuilding) {
-    // TODO: Temporarily skip fence/gate/wire objects and colbox66 due to snapping issues.
-    // Fences are floating or misaligned on terrain. Need to implement proper Z-offset calculation.
-    // colbox66 is a collision box model that should not be rendered.
-    // See TODO in Draw function for more details.
-    if (IsFenceModelId(modelId) || modelId == "colbox66") {
-        return 0.0f;
-    }
-
     std::string cacheKey = std::to_string(current_level_) + ":" + (isBuilding ? "building:" : "object:") + modelId;
     auto it = mesh_cache_.find(cacheKey);
     Mesh mesh;
@@ -1129,6 +1062,8 @@ Mesh Renderer_Objects::CreateCubeMesh() {
 }
 
 std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isBuilding) {
+    if (modelId.empty()) return "";
+
     // Helper: search one directory for modelId.mef (exact, then fuzzy by type prefix).
     auto searchOneDir = [&](const std::string& dirStr) -> std::string {
         if (dirStr.empty()) return "";
