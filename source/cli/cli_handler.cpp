@@ -7,6 +7,7 @@
 #include "parsers/mef_exporter.h"
 #include "parsers/mef_native.h"
 #include "parsers/mef_parser.h"
+#include "parsers/dat_parser.h"
 #include "parsers/mtp_parser.h"
 #include "parsers/qsc_lexer.h"
 #include "parsers/qsc_parser.h"
@@ -26,7 +27,7 @@ bool CLIHandler::IsCLICommand(int argc, char **argv) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "--help" || arg == "--mef" || arg == "--qsc" || arg == "--qvm" ||
-        arg == "--res" || arg == "--mtp" || arg == "--terrain" ||
+        arg == "--res" || arg == "--mtp" || arg == "--dat" || arg == "--terrain" ||
         arg == "--tex" || arg == "--graph" || arg == "--run-tests" ||
         arg == "--extract-level" || arg == "--verify-level") {
       return true;
@@ -77,6 +78,10 @@ void CLIHandler::PrintHelp() {
       << "  --res <file.res> --extract-all <dir>   Extract all resources to "
          "directory\n"
       << "  --mtp <file.mtp>                       Parse MTP texture mappings\n"
+      << "  --dat <file.dat>                       Parse DAT, print JSON to stdout\n"
+      << "  --dat <file.dat> --output <file.json>  Write DAT JSON to file\n"
+      << "  --dat <file.dat> --filter <model>      Include only entries matching model name\n"
+      << "  --dat <file.dat> --text                Plain-text output instead of JSON\n"
       << "  --terrain <file.lmp/.ctr>              Parse terrain structure\n"
       << "  --tex <file.tex>                       Parse TEX texture and print "
          "info\n"
@@ -127,6 +132,23 @@ int CLIHandler::Process(int argc, char **argv) {
       return ParseMEF(filepath);
     } else if (arg == "--mtp" && i + 1 < argc) {
       return ParseMTP(argv[++i]);
+    } else if (arg == "--dat" && i + 1 < argc) {
+      std::string datPath = argv[++i];
+      std::string outPath, modelFilter;
+      bool useText = false;
+      while (i + 1 < argc) {
+        std::string next = argv[i + 1];
+        if (next == "--output" && i + 2 < argc) {
+          outPath = argv[i + 2]; i += 2;
+        } else if (next == "--filter" && i + 2 < argc) {
+          modelFilter = argv[i + 2]; i += 2;
+        } else if (next == "--text") {
+          useText = true; ++i;
+        } else {
+          break;
+        }
+      }
+      return ParseDAT(datPath, outPath, modelFilter, useText);
     } else if (arg == "--qsc" && i + 1 < argc) {
       std::string inpath = argv[++i];
       if (i + 1 < argc && std::string(argv[i + 1]) == "--compile" &&
@@ -564,6 +586,31 @@ int CLIHandler::ExtractAllRES(const std::string &filepath,
                                          std::string(e.what()));
     return 1;
   }
+}
+
+int CLIHandler::ParseDAT(const std::string &filepath, const std::string &outPath,
+                         const std::string &modelFilter, bool textMode) {
+  Logger::Get().Log(LogLevel::INFO, "[CLI] Parsing DAT file: " + filepath);
+  DATFile dat = DAT_Parse(filepath);
+  if (!dat.valid) {
+    Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to parse DAT: " + dat.error);
+    std::cerr << "ERROR: " << dat.error << "\n";
+    return 1;
+  }
+
+  if (!outPath.empty()) {
+    bool ok = textMode ? DAT_WriteReport(dat, outPath, modelFilter)
+                       : DAT_WriteJSON(dat, outPath, modelFilter);
+    if (!ok) {
+      std::cerr << "ERROR: could not write to " << outPath << "\n";
+      return 1;
+    }
+    std::cout << (textMode ? "DAT report" : "DAT JSON") << " written to: " << outPath << "\n";
+  } else {
+    std::cout << (textMode ? DAT_FormatReport(dat, modelFilter)
+                           : DAT_FormatJSON(dat, modelFilter));
+  }
+  return 0;
 }
 
 int CLIHandler::ParseMTP(const std::string &filepath) {

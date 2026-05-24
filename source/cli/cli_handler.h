@@ -41,6 +41,8 @@ private:
   static int ExtractAllRES(const std::string &filepath,
                            const std::string &outdir);
   static int ParseMTP(const std::string &filepath);
+  static int ParseDAT(const std::string &filepath, const std::string &outPath,
+                      const std::string &modelFilter, bool textMode = false);
   static int ParseTerrain(const std::string &filepath);
   static int ParseTEX(const std::string &filepath,
                       const std::string &exportDir);

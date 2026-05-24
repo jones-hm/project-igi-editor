@@ -818,7 +818,7 @@ void Renderer_Objects::EnsureTextureMapLoaded() {
     texture_map_level_ = current_level_;
 
     const std::string datPath = GetLevelTextureDatPath();
-    Logger::Get().Log(LogLevel::DEBUG, "[TEX Native] Loading DAT map from " + datPath);
+    Logger::Get().Log(LogLevel::INFO, "[TEX Native] Loading DAT map from " + datPath);
 
     std::ifstream file(datPath);
     if (!file.is_open()) {
@@ -856,18 +856,31 @@ void Renderer_Objects::EnsureTextureMapLoaded() {
             break;
         }
 
+        // A count > 64 means the cursor has drifted into the DAT texture-list section
+        // (e.g. "waypoint/0/393" causes "393" to be read as a model with count=stoi("207_01_1")=207).
+        // Stop parsing — everything after this point is the texture manifest, not model entries.
+        if (textureCount > 64) {
+            Logger::Get().Log(LogLevel::INFO,
+                "[TEX Native] DAT parse stopped at model='" + modelId +
+                "' count=" + std::to_string(textureCount) +
+                " — entered texture-list section");
+            break;
+        }
+
         std::vector<std::string> textureIds;
-        textureIds.reserve(std::max(textureCount, 0));
+        textureIds.reserve(textureCount);
         for (int i = 0; i < textureCount && cursor < tokens.size(); ++i) {
             textureIds.push_back(tokens[cursor++]);
         }
 
-        model_texture_map_cache_[modelId] = textureIds;
+        // Use emplace so the first (correct) entry for a model is never overwritten
+        // by a later stale parse of the same model name appearing as a texture ID.
+        model_texture_map_cache_.emplace(modelId, textureIds);
         ++parsedModels;
     }
 
     Logger::Get().Log(
-        LogLevel::DEBUG,
+        LogLevel::INFO,
         "[TEX Native] DAT map loaded level=" + std::to_string(current_level_) +
         " models=" + std::to_string(parsedModels) +
         " tokenCount=" + std::to_string(tokens.size()));

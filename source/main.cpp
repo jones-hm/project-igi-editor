@@ -70,6 +70,7 @@ constexpr int MENU_LOAD_ALL = 91;
 constexpr int MENU_LOAD_OBJECTS = 92;
 constexpr int MENU_LOAD_BUILDINGS = 93;
 constexpr int MENU_LOAD_AI = 94;
+constexpr int MENU_EXPORT_TEXMAP = 99;
 
 constexpr int BRUSH_RAISE = 0;
 constexpr int BRUSH_LOWER = 1;
@@ -427,6 +428,9 @@ static void OnMenu(int menu) {
     break;
   case MENU_EDITOR_SAVE:
     g_app.SaveCurrentLevel();
+    break;
+  case MENU_EXPORT_TEXMAP:
+    g_app.ExportTextureMap();
     break;
   case MENU_SEARCH_MODEL_BY_ID:
     g_app.SearchModelById();
@@ -830,6 +834,7 @@ int main(int argc, char **argv) {
       g_menu_editor_tools); // Set back to editor tools before adding submenus
   glutAddSubMenu("Terrain Brush", g_menu_terrain_brush);
   glutAddMenuEntry("Save Changes", MENU_EDITOR_SAVE);
+  glutAddMenuEntry("Export Tex Map (JSON)", MENU_EXPORT_TEXMAP);
 
   g_menu_object_scale = glutCreateMenu(OnMenu);
   glutAddMenuEntry("0.1x", MENU_SCALE_0_1);

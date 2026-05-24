@@ -33,6 +33,7 @@ public:
 	void					LoadLevel(int level_no);
 	void					SetGameLevel(int level_no);
 	void					SaveCurrentLevel();
+	void					ExportTextureMap();
 	int						GetCurLevelNo() const;
 
 	// Load AI models from ai\levelX folder

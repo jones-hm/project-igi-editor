@@ -15,6 +15,7 @@
 #include "parsers/qvm_parser.h"
 #include "parsers/qvm_decompiler.h"
 #include "cli/asset_extractor.h"
+#include "parsers/dat_parser.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -645,6 +646,34 @@ void App::SaveCurrentLevel() {
 		std::string errorMsg = "Unknown error saving level";
 		Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
 		Logger::Get().Log(LogLevel::ERR, errorMsg);
+	}
+}
+
+void App::ExportTextureMap() {
+	int levelNo = level_.GetLevelNo();
+	const std::string root = Utils::GetIGIRootPath();
+	const std::string datPath = root + "\\missions\\location0\\level" +
+	    std::to_string(levelNo) + "\\level" + std::to_string(levelNo) + ".dat";
+	const std::string outPath = Utils::GetExeDirectory() +
+	    "\\level" + std::to_string(levelNo) + "_texmap.json";
+
+	Logger::Get().Log(LogLevel::INFO,
+	    "[App] ExportTextureMap level=" + std::to_string(levelNo) +
+	    " dat=" + datPath + " out=" + outPath);
+
+	DATFile dat = DAT_Parse(datPath);
+	if (!dat.valid) {
+		Utils::ShowError("Failed to parse DAT:\n" + dat.error, "Export Texture Map");
+		return;
+	}
+	if (DAT_WriteJSON(dat, outPath)) {
+		Utils::ShowInfo(
+		    "Texture map exported (JSON):\n" + outPath +
+		    "\nModels: " + std::to_string(dat.models.size()) +
+		    "  Textures: " + std::to_string(dat.allTextures.size()),
+		    "Export Texture Map");
+	} else {
+		Utils::ShowError("Could not write to:\n" + outPath, "Export Texture Map");
 	}
 }
 
