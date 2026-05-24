@@ -28,7 +28,7 @@ bool CLIHandler::IsCLICommand(int argc, char **argv) {
     if (arg == "--help" || arg == "--mef" || arg == "--qsc" || arg == "--qvm" ||
         arg == "--res" || arg == "--mtp" || arg == "--terrain" ||
         arg == "--tex" || arg == "--graph" || arg == "--run-tests" ||
-        arg == "--extract-level") {
+        arg == "--extract-level" || arg == "--verify-level") {
       return true;
     }
   }
@@ -83,7 +83,17 @@ void CLIHandler::PrintHelp() {
       << "  --tex <file.tex> --export-tga <dir>    Export TEX images as TGA "
          "files to dir\n"
       << "  --graph <file.dat>                     Parse navigation graph .dat "
-         "file\n";
+         "file\n"
+      << "  --verify-level --level N [--level N ...] Verify levels: compare\n"
+      << "      objects.qvm (ground truth) vs igi1ed.log (editor output)\n"
+      << "      --skip-launch          Skip launching editor; use existing log\n"
+      << "      --timeout <sec>        Kill editor after N seconds (0=wait forever)\n"
+      << "      --game-path <path>     IGI1 install path (default from config)\n"
+      << "      --log <path>           Override log file path\n"
+      << "      --report-json <file>   Write aggregated JSON report\n"
+      << "      --report-md <file>     Write aggregated Markdown report\n"
+      << "      --report-dir <dir>     Write per-level JSON+MD reports to dir\n"
+      << "      --delay <sec>          Delay between levels in seconds (default: 5)\n";
 }
 
 int CLIHandler::Process(int argc, char **argv) {
@@ -164,6 +174,40 @@ int CLIHandler::Process(int argc, char **argv) {
                                : Utils::GetExeDirectory() + "\\levels\\level" +
                                      std::to_string(levelNo);
       return ExtractLevelResources(levelNo, outDir);
+    } else if (arg == "--verify-level") {
+      VerifyLevelParams params;
+      // Consume all remaining arguments that belong to --verify-level
+      while (i + 1 < argc) {
+        std::string nx = argv[i + 1];
+        if (nx == "--level" && i + 2 < argc) {
+          params.levels.push_back(std::stoi(argv[i + 2])); i += 2;
+        } else if (nx == "--skip-launch") {
+          params.skipLaunch = true; ++i;
+        } else if (nx == "--timeout" && i + 2 < argc) {
+          params.timeout = std::stoi(argv[i + 2]); i += 2;
+        } else if (nx == "--game-path" && i + 2 < argc) {
+          params.gamePath = argv[i + 2]; i += 2;
+        } else if (nx == "--log" && i + 2 < argc) {
+          params.logPath = argv[i + 2]; i += 2;
+        } else if (nx == "--report-json" && i + 2 < argc) {
+          params.reportJson = argv[i + 2]; i += 2;
+        } else if (nx == "--report-md" && i + 2 < argc) {
+          params.reportMd = argv[i + 2]; i += 2;
+        } else if (nx == "--report-dir" && i + 2 < argc) {
+          params.reportDir = argv[i + 2]; i += 2;
+        } else if (nx == "--delay" && i + 2 < argc) {
+          params.delay = std::stoi(argv[i + 2]); i += 2;
+        } else {
+          // Bare integer treated as a level number (backwards-compat: --verify-level 1)
+          try { params.levels.push_back(std::stoi(nx)); ++i; }
+          catch (...) { break; }
+        }
+      }
+      if (params.levels.empty()) {
+        std::cerr << "[VerifyLevel] ERROR: no levels specified. Use --level N.\n";
+        return 1;
+      }
+      return VerifyLevel(params);
     }
   }
   Logger::Get().Log(LogLevel::WARNING,

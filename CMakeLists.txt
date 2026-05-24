@@ -95,6 +95,7 @@ set_source_files_properties(
   source/parsers/qvm_compiler.cpp
   source/cli/cli_handler.cpp
   source/cli/cli_tests.cpp
+  source/cli/verify_level.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
