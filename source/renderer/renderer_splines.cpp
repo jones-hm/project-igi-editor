@@ -37,6 +37,18 @@ void Renderer_Splines::Draw(
         if (Renderer_Objects::IsSkippedModelId(obj.modelId)) continue;
 
         const auto& children = obj.childrenIndices;
+
+        // In IGI QSC, only the first SplineObjWaypoint carries the segmentModelId.
+        // Subsequent waypoints leave it empty. Find the shared model here and use
+        // it as a fallback so all segments in the spline get rendered.
+        std::string fallbackSegmentModelId;
+        for (int ci : children) {
+            if (ci >= 0 && ci < (int)objects.size() && !objects[ci].segmentModelId.empty()) {
+                fallbackSegmentModelId = objects[ci].segmentModelId;
+                break;
+            }
+        }
+
         for (size_t i = 0; i + 1 < children.size(); ++i) {
             int si = children[i];
             int ei = children[i + 1];
@@ -53,7 +65,8 @@ void Renderer_Splines::Draw(
             DrawSplineSegment(
                 objects[si], objects[ei],
                 objects[pi], objects[ni],
-                obj, ubo_mats, shader_program);
+                obj, ubo_mats, shader_program,
+                fallbackSegmentModelId);
         }
     }
 
@@ -67,12 +80,14 @@ void Renderer_Splines::DrawSplineSegment(
     const LevelObject& nextNext,
     const LevelObject& parent,
     GLuint ubo_mats,
-    GLuint shader_program)
+    GLuint shader_program,
+    const std::string& fallbackSegmentModelId)
 {
-    if (start.segmentModelId.empty()) return;
-    if (Renderer_Objects::IsSkippedModelId(start.segmentModelId)) return;
+    const std::string& segModelId = start.segmentModelId.empty() ? fallbackSegmentModelId : start.segmentModelId;
+    if (segModelId.empty()) return;
+    if (Renderer_Objects::IsSkippedModelId(segModelId)) return;
 
-    Mesh mesh = obj_renderer_.GetOrLoadMesh(start.segmentModelId, false);
+    Mesh mesh = obj_renderer_.GetOrLoadMesh(segModelId, false);
     if (mesh.vertexCount == 0) return;
 
     GLint loc_model    = glGetUniformLocation(shader_program, "u_model");
@@ -98,16 +113,12 @@ void Renderer_Splines::DrawSplineSegment(
     if (t0len > intervalLen2) tan0 *= intervalLen2 / t0len;
     if (t1len > intervalLen2) tan1 *= intervalLen2 / t1len;
 
-    // Tile world length at LENGTH_SCALE. Use ceil so tiles slightly overlap
-    // at joints, hiding the corner gap that appears at curves.
     float localX = mesh.center.x + mesh.halfExtents.x;
-    if (localX < 1.f) localX = 1.f;
-    const float LENGTH_SCALE = 4.096f;
-    float tileWorldLen = localX * LENGTH_SCALE;
+    if (localX < 0.1f) localX = 0.1f;
 
-    float intervalLen = glm::length(p1 - p0);
-    int steps = std::max(1, (int)std::ceil(intervalLen / tileWorldLen));
-    steps = std::min(steps, 64);
+    int steps = parent.splineSegmentCount;
+    if (steps <= 0) steps = 20;
+    if (steps > 64) steps = 64;
 
     for (int i = 0; i < steps; ++i) {
         float t      = (float)i       / (float)steps;
@@ -129,10 +140,13 @@ void Renderer_Splines::DrawSplineSegment(
         float horiz = std::sqrt(tangent.x * tangent.x + tangent.y * tangent.y);
         float pitch  = std::atan2(tangent.z, horiz);
 
+        float dist = glm::distance(pos, nextPos);
+        float scaleX = dist / localX;
+
         glm::mat4 model = glm::translate(glm::mat4(1.f), pos);
         model = glm::rotate(model, gamma, glm::vec3(0.f, 0.f, 1.f));   // yaw around world Z
         model = glm::rotate(model, -pitch, glm::vec3(0.f, 1.f, 0.f));  // pitch around local Y
-        model = glm::scale(model, glm::vec3(LENGTH_SCALE, 40.96f, 40.96f));
+        model = glm::scale(model, glm::vec3(scaleX, 40.96f, 40.96f));
 
         glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(model));
 

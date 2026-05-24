@@ -176,7 +176,10 @@ static void ConvertTex16ToPic(
 			dst_pixel[0] = src_r;
 			dst_pixel[1] = src_g;
 			dst_pixel[2] = src_b;
-			dst_pixel[3] = 255;
+			// IGI uses black (0,0,0) as a transparency key for RGB565 textures
+			// (chain-link fences, wire meshes, etc. have no alpha channel so
+			//  the game treats pure-black pixels as invisible holes).
+			dst_pixel[3] = (src_pixel == 0) ? 0 : 255;
 		}
 	}
 }

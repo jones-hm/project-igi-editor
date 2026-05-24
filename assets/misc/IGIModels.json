@@ -20,6 +20,14 @@
     "ModelId": "415_01_1"
   },
   {
+	"ModelName": "CHECKPOINT",
+	"ModelId": "425_01_1",
+  },
+    {
+	"ModelName": "CHECKPOINT_WINDOW",
+	"ModelId": "425_02_1",
+  },
+  {
     "ModelName": "AIRCONTROL_TOWER_INTERIOR",
     "ModelId": "415_02_1"
   },
@@ -752,7 +760,7 @@
     "ModelId": "410_02_1"
   },
   {
-    "ModelName": "GLASS",
+    "ModelName": "GARAGE_WINDOW",
     "ModelId": "410_03_1"
   },
   {
@@ -1311,8 +1319,8 @@
     "ModelName": "OFFICEBUILDING",
     "ModelId": "409_01_1"
   },
-  {
-    "ModelName": "OFFICEBUILDING_INTERIOR",
+    {
+    "ModelName": "OFFICEBUILDING_WINDOW",
     "ModelId": "409_02_1"
   },
   {
@@ -1608,11 +1616,11 @@
     "ModelId": "400_03_1"
   },
   {
-    "ModelName": "SECURITYBUILDING_INTERIOR",
+    "ModelName": "SECURITYBUILDING_WINDOW",
     "ModelId": "400_15_1"
   },
   {
-    "ModelName": "SECURITYBUILDING_INTERIOR",
+    "ModelName": "SECURITYBUILDING_WINDOW",
     "ModelId": "400_16_1"
   },
   {

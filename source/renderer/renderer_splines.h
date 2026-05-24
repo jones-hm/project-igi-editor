@@ -20,7 +20,8 @@ private:
         const LevelObject& nextNext,
         const LevelObject& parent,
         GLuint ubo_mats,
-        GLuint shader_program);
+        GLuint shader_program,
+        const std::string& fallbackSegmentModelId = "");
 
     static glm::vec3 HermitePoint(float t,
         const glm::vec3& p0, const glm::vec3& p1,

@@ -630,6 +630,18 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  std::string contentPath = exeDir + "\\content";
+  if (!std::filesystem::exists(contentPath) || !std::filesystem::is_directory(contentPath)) {
+    std::string errorMsg = "Fatal Error: 'content' directory not found in:\n" + exeDir +
+                           "\n\nPlease make sure the 'content' directory is present next to the editor executable.";
+#if defined(_WIN32)
+    Utils::LogAndShowError(errorMsg, "IGI Editor - Launch Error");
+#else
+    fprintf(stderr, "%s\n", errorMsg.c_str());
+#endif
+    return 1;
+  }
+
   // setup path of res and shaders folders (GUI mode only — creates QEditor dirs)
   Folders_Init();
 

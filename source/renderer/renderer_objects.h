@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <unordered_set>
+#include <set>
 
 struct AttachInfo {
     std::string modelId;
@@ -42,7 +43,10 @@ private:
     GLuint ubo_binding_point_;
     GLuint selection_vao_, selection_vbo_;
     std::unordered_set<std::string> logged_draw_buildings_;
+    std::set<std::string> window_model_ids_;
+    bool window_ids_loaded_ = false;
 
+    void EnsureWindowModelIdsLoaded();
     void DrawSelectionBox(const LevelObject& obj, GLuint ubo_mats, const glm::vec4& color);
     Mesh CreateCubeMesh();
     Mesh CreateTextMesh(const std::string& text);

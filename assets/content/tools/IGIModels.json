@@ -20,6 +20,18 @@
     "ModelId": "415_01_1"
   },
   {
+	"ModelName": "CHECKPOINT",
+	"ModelId": "425_01_1",
+  },
+    {
+	"ModelName": "CHECKPOINT_WINDOW",
+	"ModelId": "425_02_1",
+  },
+   {
+	"ModelName": "CHECKPOINT_WINDOW",
+	"ModelId": "425_03_1",
+  },
+  {
     "ModelName": "AIRCONTROL_TOWER_INTERIOR",
     "ModelId": "415_02_1"
   },
@@ -424,7 +436,7 @@
     "ModelId": "455_01_1"
   },
   {
-    "ModelName": "COMM_TOWER_INTERIOR",
+    "ModelName": "COMM_TOWER_WINDOW",
     "ModelId": "455_04_1"
   },
   {
@@ -752,7 +764,7 @@
     "ModelId": "410_02_1"
   },
   {
-    "ModelName": "GLASS",
+    "ModelName": "GARAGE_WINDOW",
     "ModelId": "410_03_1"
   },
   {
@@ -1311,13 +1323,17 @@
     "ModelName": "OFFICEBUILDING",
     "ModelId": "409_01_1"
   },
-  {
-    "ModelName": "OFFICEBUILDING_INTERIOR",
+    {
+    "ModelName": "OFFICEBUILDING_WINDOW",
     "ModelId": "409_02_1"
   },
   {
-    "ModelName": "OFFICEBUILDING_INTERIOR",
+    "ModelName": "OFFICEBUILDING_WINDOW",
     "ModelId": "409_03_1"
+  },
+  {
+    "ModelName": "OFFICEBUILDING_WINDOW",
+    "ModelId": "409_04_1"
   },
   {
     "ModelName": "OFFICEBUILDING_INTERIOR",
@@ -1608,11 +1624,11 @@
     "ModelId": "400_03_1"
   },
   {
-    "ModelName": "SECURITYBUILDING_INTERIOR",
+    "ModelName": "SECURITYBUILDING_WINDOW",
     "ModelId": "400_15_1"
   },
   {
-    "ModelName": "SECURITYBUILDING_INTERIOR",
+    "ModelName": "SECURITYBUILDING_WINDOW",
     "ModelId": "400_16_1"
   },
   {
@@ -1640,11 +1656,11 @@
     "ModelId": "490_02_1"
   },
   {
-    "ModelName": "SECURITYBUILDING_UG_EXTERIOR",
+    "ModelName": "SECURITYBUILDING_WINDOW",
     "ModelId": "490_03_1"
   },
   {
-    "ModelName": "SECURITYBUILDING_UG_EXTERIOR",
+    "ModelName": "SECURITYBUILDING_WINDOW",
     "ModelId": "490_04_1"
   },
   {
@@ -1970,6 +1986,14 @@
   {
     "ModelName": "THREE_STOREY_BUILDING_GLASS_TOP3_RIGHT",
     "ModelId": "458_10_1"
+  },
+  {
+    "ModelName": "THREE_STOREY_BUILDING_GLASS_FRONT1",
+    "ModelId": "458_12_1"
+  },
+  {
+    "ModelName": "THREE_STOREY_BUILDING_GLASS_FRONT2",
+    "ModelId": "458_13_1"
   },
   {
     "ModelName": "THREE_STOREY_BUILDING_WINDOW",

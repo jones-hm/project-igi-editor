@@ -12,6 +12,65 @@
 #include "../parsers/mef_native.h"
 
 
+// ─── EnsureWindowModelIdsLoaded ───────────────────────────────────────────────
+// Reads IGIModels.json once and collects ModelIds whose ModelName contains
+// "WINDOW" or "GLASS". These models are rendered semi-transparent.
+void Renderer_Objects::EnsureWindowModelIdsLoaded() {
+    if (window_ids_loaded_) return;
+    window_ids_loaded_ = true;
+
+    const std::string jsonPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModels.json";
+    if (!std::filesystem::exists(jsonPath)) {
+        Logger::Get().Log(LogLevel::WARNING, "[Renderer_Objects] IGIModels.json not found at: " + jsonPath);
+        return;
+    }
+
+    std::ifstream f(jsonPath);
+    if (!f.is_open()) return;
+
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+
+    // Manual parse: find every {"ModelName":"...WINDOW.../GLASS...","ModelId":"..."}
+    size_t pos = 0;
+    while (pos < content.size()) {
+        // Find ModelName value
+        size_t nameKey = content.find("\"ModelName\"", pos);
+        if (nameKey == std::string::npos) break;
+        size_t nameStart = content.find('"', nameKey + 11);
+        if (nameStart == std::string::npos) break;
+        ++nameStart;
+        size_t nameEnd = content.find('"', nameStart);
+        if (nameEnd == std::string::npos) break;
+        std::string modelName = content.substr(nameStart, nameEnd - nameStart);
+
+        // Find ModelId value (must appear after the ModelName within same object)
+        size_t idKey = content.find("\"ModelId\"", nameEnd);
+        if (idKey == std::string::npos) break;
+        size_t idStart = content.find('"', idKey + 9);
+        if (idStart == std::string::npos) break;
+        ++idStart;
+        size_t idEnd = content.find('"', idStart);
+        if (idEnd == std::string::npos) break;
+        std::string modelId = content.substr(idStart, idEnd - idStart);
+
+        // Check if this is a window/glass model
+        auto toUpper = [](std::string s) {
+            for (auto& c : s) c = (char)toupper((unsigned char)c);
+            return s;
+        };
+        const std::string upper = toUpper(modelName);
+        if (upper.find("WINDOW") != std::string::npos || upper.find("GLASS") != std::string::npos) {
+            window_model_ids_.insert(modelId);
+        }
+
+        pos = idEnd + 1;
+    }
+
+    Logger::Get().Log(LogLevel::INFO,
+        "[Renderer_Objects] Loaded " + std::to_string(window_model_ids_.size()) +
+        " window/glass model IDs from IGIModels.json");
+}
+
 bool Renderer_Objects::IsSkippedModelId(const std::string& modelId) {
     if (modelId.empty()) return false;
     return modelId == "colbox" || modelId == "colbox2" || modelId == "colbox4" || modelId == "colbox66";
@@ -57,6 +116,7 @@ uniform vec3 u_dirlight;   // directional light RGB
 uniform vec3 u_ambient;    // ambient light RGB
 uniform sampler2D u_texture;
 uniform int u_useTexture;
+uniform float u_alpha;     // material alpha (1.0 = opaque, <1.0 = transparent)
 
 out vec4 fragColor;
 
@@ -73,13 +133,11 @@ void main() {
 
     vec4 texColor = (u_useTexture != 0) ? texture(u_texture, v_uv) : vec4(1.0, 1.0, 1.0, 1.0);
 
-    if (u_useTexture == 0) {
-        fragColor = vec4(light * texColor.rgb, 1.0);
-    } else {
-        fragColor = vec4(light * texColor.rgb, texColor.a);
-    }
+    float finalAlpha = (u_useTexture != 0 ? texColor.a : 1.0) * u_alpha;
+    fragColor = vec4(light * texColor.rgb, finalAlpha);
 
-    if (fragColor.a < 0.1) discard;
+    if (u_alpha >= 0.99 && texColor.a < 0.5) discard;
+    if (fragColor.a < 0.05) discard;
 }
 )";
 
@@ -205,7 +263,9 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         }
         return;
     }
-    
+
+    EnsureWindowModelIdsLoaded();
+
     if (!shader_program_) return;
 
     // Bind our object shader
@@ -233,6 +293,8 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     GLint loc_ambient  = glGetUniformLocation(shader_program_, "u_ambient");
     GLint loc_useTex   = glGetUniformLocation(shader_program_, "u_useTexture");
     GLint loc_tex      = glGetUniformLocation(shader_program_, "u_texture");
+    GLint loc_alpha    = glGetUniformLocation(shader_program_, "u_alpha");
+    glUniform1f(loc_alpha, 1.0f); // default: fully opaque
 
     for (const auto& obj : objects) {
         if (obj.deleted) continue;
@@ -321,6 +383,14 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         }
         if (drawHullAsWireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
+        // Is this a window/glass model? If so, render the whole mesh semi-transparent.
+        const bool isWindowModel = window_model_ids_.count(obj.modelId) > 0;
+        if (isWindowModel) {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glUniform1f(loc_alpha, 0.4f);
+        }
+
         // Draw each submesh with its own texture and lighting
         if (!mesh.subMeshes.empty()) {
             // For mixed textured/untextured meshes, skip large untextured
@@ -360,18 +430,8 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     glUniform1i(loc_useTex, 0);
                 }
 
-                // Enable blending for alpha BLEND materials
-                bool blendEnabled = false;
-                if (sub.alphaMode == 2) { // BLEND
-                    glEnable(GL_BLEND);
-                    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                    blendEnabled = true;
-                }
                 glBindVertexArray(sub.VAO);
                 glDrawArrays(GL_TRIANGLES, 0, sub.vertexCount);
-                if (blendEnabled) {
-                    glDisable(GL_BLEND);
-                }
             }
             glBindVertexArray(0);
         } else {
@@ -392,6 +452,11 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 glUniform1i(loc_useTex, 0);
             }
             renderModel(mesh);
+        }
+
+        if (isWindowModel) {
+            glDisable(GL_BLEND);
+            glUniform1f(loc_alpha, 1.0f);
         }
 
         if (drawHullAsWireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -441,6 +506,16 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
                     glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(attModel));
 
+                    // Is this ATTA sub-model a window/glass? Apply transparency.
+                    const bool attIsWindow = window_model_ids_.count(att.modelId) > 0;
+                    if (attIsWindow) {
+                        glEnable(GL_BLEND);
+                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                        glUniform1f(loc_alpha, 0.4f);
+                    } else {
+                        glUniform1f(loc_alpha, 1.0f);
+                    }
+
                     // Draw sub-model submeshes
                     if (!subMesh.subMeshes.empty()) {
                         for (const auto &sub : subMesh.subMeshes) {
@@ -473,6 +548,11 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                         glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
                         glUniform1i(loc_useTex, 0);
                         renderModel(subMesh);
+                    }
+
+                    if (attIsWindow) {
+                        glDisable(GL_BLEND);
+                        glUniform1f(loc_alpha, 1.0f);
                     }
                 }
             }
