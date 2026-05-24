@@ -95,6 +95,7 @@ void Config::CreateDefault() {
     data_.keyDeleteTask = {VK_DELETE, false, false, false};
     data_.enableLogging = true;
     data_.debugLogging = false;
+    data_.enableLOD = true;
     data_.consoleAutoActivate = 2;
     data_.searchType = 133577004;
     data_.invertMouse = false;
@@ -118,8 +119,13 @@ void Config::CreateDefault() {
 
 void Config::Init() {
     CreateDefault();
-    std::string qedDir = Utils::GetExeDirectory() + "\\content\\qed";
-    std::filesystem::create_directories(qedDir);
+    std::string contentDir = Utils::GetExeDirectory() + "\\content";
+    if (!std::filesystem::exists(contentDir)) {
+        Logger::Get().Log(LogLevel::FATAL, "FATAL: content directory not found: " + contentDir);
+        Utils::ShowError("ERROR: FATAL\ncontent directory not found:\n" + contentDir + "\nEditor will now exit.", "IGI Editor - Launch Error");
+        std::exit(1);
+    }
+    std::string qedDir = contentDir + "\\qed";
 
     // Compile all .qsc files to .qvm
     for (const auto& entry : std::filesystem::directory_iterator(qedDir)) {
@@ -170,6 +176,7 @@ void Config::Load() {
                 else if (key == "FontColorB") data_.fontColorB = std::stoi(val);
                 else if (key == "Logs" || key == "Enable" || key == "SaveConfigOnExit") data_.enableLogging = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Debug") data_.debugLogging = (val == "TRUE" || val == "true" || val == "1");
+                else if (key == "Lod") data_.enableLOD = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "ConsoleAutoActivate") data_.consoleAutoActivate = std::stoi(val);
                 else if (key == "SearchType") data_.searchType = std::stoll(val);
                 else if (key == "InvertMouse") data_.invertMouse = (val == "TRUE" || val == "true" || val == "1");

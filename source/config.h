@@ -76,6 +76,9 @@ struct ConfigData {
     bool enableLogging;
     bool debugLogging;
 
+    // [Renderer]
+    bool enableLOD; // Portal/attachment distance culling for buildings
+
     // NEW: Advanced QED Settings
     int consoleAutoActivate;
     int searchType;

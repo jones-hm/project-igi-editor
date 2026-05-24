@@ -62,6 +62,6 @@ private:
     void EnsureTextureMapLoaded();
     std::vector<std::string> GetTextureIdsForModel(const std::string& modelId);
     GLuint GetOrLoadTexture(const std::string& textureId);
-    void ApplyTexturesToMesh(Mesh& mesh, const std::string& modelId);
+    void ApplyTexturesToMesh(Mesh& mesh, const std::string& modelId, const std::string& parentModelId = "");
     void InitSelectionBox();
 };

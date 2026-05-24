@@ -848,12 +848,21 @@ void Folders_Init() {
 	}
 
 	std::string exeDir = Utils::GetExeDirectory();
-	std::string toolsPath = exeDir + "\\content\\tools";
+	std::string contentDir = exeDir + "\\content";
 
 	namespace fs = std::filesystem;
-	try {
-		fs::create_directories(toolsPath + "\\restore");
-	} catch (...) {}
+	if (!fs::exists(contentDir)) {
+		Logger::Get().Log(LogLevel::FATAL, "FATAL: content directory not found: " + contentDir);
+		Utils::ShowError("ERROR: FATAL\ncontent directory not found:\n" + contentDir + "\nEditor will now exit.");
+		std::exit(1);
+	}
+
+	std::string toolsPath = exeDir + "\\content\\tools";
+	if (!fs::exists(toolsPath)) {
+		Logger::Get().Log(LogLevel::FATAL, "FATAL: tools directory not found: " + toolsPath);
+		Utils::ShowError("ERROR: FATAL\ntools directory not found:\n" + toolsPath + "\nEditor will now exit.");
+		std::exit(1);
+	}
 
 	Str_SPrintf(g_folders.res_folder_, 1024, "%s/restore", toolsPath.c_str());
 	Str_SPrintf(g_folders.objects_folder_, 1024, "%s/objects", toolsPath.c_str());

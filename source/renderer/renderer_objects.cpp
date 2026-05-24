@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "renderer_objects.h"
+#include "../config.h"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -441,26 +442,26 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
             b = 0.4f + (float)((hash >> 16) & 0xFF) / 255.0f * 0.4f;
         }
 
-        // Underground building hulls (_01_1 exterior shells) have 0 textures in the
-        // DAT by design — they are never viewed from outside in-game. When such a hull
-        // has textured ATTA interior children, draw it as wireframe so the interior
-        // remains visible from the editor's outside viewpoint.
-        bool drawHullAsWireframe = false;
+        // Hull buildings that have no textures of their own but carry ATTA sub-models are
+        // underground container shells — skip rendering them entirely. The ATTA sub-models
+        // supply all visible geometry; rendering a hash-colored hull on top obscures them.
+        bool skipHullRender = false;
         if (obj.isBuilding) {
-            bool hasAnyTexture = false;
-            for (const auto& sub : mesh.subMeshes) {
-                if (sub.textureID > 0) { hasAnyTexture = true; break; }
+            bool hasAnyTexture = (mesh.textureID > 0);
+            if (!hasAnyTexture) {
+                for (const auto& sub : mesh.subMeshes) {
+                    if (sub.textureID > 0) { hasAnyTexture = true; break; }
+                }
             }
-            if (!hasAnyTexture && mesh.textureID == 0) {
+            if (!hasAnyTexture) {
                 const std::string attKey = std::to_string(current_level_) + ":building:" + obj.modelId;
-                drawHullAsWireframe = attachment_cache_.count(attKey) > 0;
+                skipHullRender = attachment_cache_.count(attKey) > 0;
             }
         }
-        if (drawHullAsWireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
         // Is this a window/glass model? If so, render the whole mesh semi-transparent.
         const bool isWindowModel = window_model_ids_.count(obj.modelId) > 0;
-        if (isWindowModel == isTransparentPass) {
+        if (!skipHullRender && isWindowModel == isTransparentPass) {
             if (isWindowModel) {
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -542,15 +543,17 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
             glDisable(GL_POLYGON_OFFSET_FILL);
         }
 
-        if (drawHullAsWireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-        // Only render interior/attachments when close to the building (LOD/Portal culling)
-        float distToCamera = glm::distance(camera_pos, glm::vec3(obj.pos));
-        float portalDistance = 100.0f; // Default fallback
-        if (portal_distances_.count(obj.modelId)) {
-            portalDistance = portal_distances_[obj.modelId];
+        // Only buildings with portal/ATTA sub-models need distance-based culling.
+        // Non-buildings (AI, static props, containers) never have ATTA records.
+        bool isCloseEnough = true;
+        if (obj.isBuilding && Config::Get().enableLOD) {
+            float distToCamera = glm::distance(camera_pos, glm::vec3(obj.pos));
+            float portalDistance = 100.0f;
+            if (portal_distances_.count(obj.modelId)) {
+                portalDistance = portal_distances_[obj.modelId];
+            }
+            isCloseEnough = (distToCamera <= (portalDistance * WORLD_UNITS_PER_METER));
         }
-        bool isCloseEnough = (distToCamera <= (portalDistance * WORLD_UNITS_PER_METER));
 
         // ── Render ATTA sub-models ────────────────────────────────────────────
         if (obj.isBuilding && isCloseEnough) {
@@ -754,7 +757,7 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
                         if (mesh_cache_.find(subKey) == mesh_cache_.end()) {
                             try {
                                 Mesh subMesh = loadObjModel(subFile, "");
-                                ApplyTexturesToMesh(subMesh, aname);
+                                ApplyTexturesToMesh(subMesh, aname, modelId);
                                 mesh_cache_[subKey] = subMesh;
                                 Logger::Get().Log(LogLevel::INFO,
                                     "[Renderer_Objects] Attachment sub-model loaded: " + aname +
@@ -999,8 +1002,24 @@ GLuint Renderer_Objects::GetOrLoadTexture(const std::string& textureId) {
     return texture;
 }
 
-void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelId) {
-    const std::vector<std::string> textureIds = GetTextureIdsForModel(modelId);
+void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelId, const std::string& parentModelId) {
+    std::vector<std::string> textureIds = GetTextureIdsForModel(modelId);
+
+    // When a sub-model has no DAT entry, GetTextureIdsForModel returns {modelId} as a
+    // self-name fallback. IGI ATTA sub-models commonly share material slots with their
+    // parent building, so inherit the parent's texture list in that case.
+    if (!parentModelId.empty() && textureIds.size() == 1 && textureIds[0] == modelId) {
+        const std::vector<std::string> parentIds = GetTextureIdsForModel(parentModelId);
+        const bool parentHasRealEntry = !parentIds.empty() &&
+            !(parentIds.size() == 1 && parentIds[0] == parentModelId);
+        if (parentHasRealEntry) {
+            Logger::Get().Log(LogLevel::INFO,
+                "[TEX Native] Sub-model '" + modelId + "' has no DAT entry; inheriting " +
+                std::to_string(parentIds.size()) + " texture(s) from parent '" + parentModelId + "'");
+            textureIds = parentIds;
+        }
+    }
+
     if (textureIds.empty()) {
         Logger::Get().Log(LogLevel::INFO, "[TEX Native] No textures mapped for modelId=" + modelId);
         return;
@@ -1033,18 +1052,22 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
             } else if (matSlot >= 0 && static_cast<size_t>(matSlot) < textures.size()) {
                 // Defer to materialSlot lookup from MEF render block data
                 texture = textures[matSlot];
-            } else if (i < textures.size()) {
-                // Fallback to sequential index if materialSlot is invalid/not-assigned (-1)
-                texture = textures[i];
-            } else {
-                // More submeshes than DAT entries: use the last valid texture as fallback, but warn loudly!
-                texture = fallbackTexture;
+            } else if (matSlot > 0 && !textures.empty()) {
+                // materialSlot is out of range — wrap it (handles 1-based MEF slots and
+                // sub-models whose slots reference the parent's texture list by index).
+                texture = textures[static_cast<size_t>(matSlot) % textures.size()];
                 Logger::Get().Log(
                     LogLevel::WARNING,
-                    "[TEX Native] SubMesh/texture count mismatch (materialSlot fallback used) for modelId=" + modelId +
+                    "[TEX Native] materialSlot out of range, wrapping for modelId=" + modelId +
                     " submeshIndex=" + std::to_string(i) +
                     " materialSlot=" + std::to_string(matSlot) +
-                    " textureCount=" + std::to_string(textures.size()));
+                    " textureCount=" + std::to_string(textures.size()) +
+                    " wrappedSlot=" + std::to_string(static_cast<size_t>(matSlot) % textures.size()));
+            } else if (i < textures.size()) {
+                // Sequential index fallback for materialSlot == -1 (not assigned)
+                texture = textures[i];
+            } else {
+                texture = fallbackTexture;
             }
 
             mesh.subMeshes[i].textureID = texture;
