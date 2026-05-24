@@ -90,6 +90,14 @@ void Renderer_Splines::DrawSplineSegment(
     glm::vec3 tan0 = (p1 - p_prev) * 0.5f;
     glm::vec3 tan1 = (p_next - p0) * 0.5f;
 
+    // Clamp tangent magnitude to interval length to prevent Hermite overshoot/looping
+    // at waypoints where adjacent segments have very different lengths or directions.
+    float intervalLen2 = glm::length(p1 - p0);
+    float t0len = glm::length(tan0);
+    float t1len = glm::length(tan1);
+    if (t0len > intervalLen2) tan0 *= intervalLen2 / t0len;
+    if (t1len > intervalLen2) tan1 *= intervalLen2 / t1len;
+
     // Tile world length at LENGTH_SCALE. Use ceil so tiles slightly overlap
     // at joints, hiding the corner gap that appears at curves.
     float localX = mesh.center.x + mesh.halfExtents.x;
@@ -115,12 +123,15 @@ void Renderer_Splines::DrawSplineSegment(
 
         glm::vec3 tangent = glm::normalize(nextPos - pos);
 
-        // Yaw only: rotate around world Z so local +X aligns with horizontal tangent.
-        // Local Z stays as world up — matching the original correct orientation.
+        // Yaw: align local +X with tangent in the XY plane.
         float gamma = std::atan2(tangent.y, tangent.x);
+        // Pitch: tilt tile up/down to follow slope (around pre-yaw local Y).
+        float horiz = std::sqrt(tangent.x * tangent.x + tangent.y * tangent.y);
+        float pitch  = std::atan2(tangent.z, horiz);
 
         glm::mat4 model = glm::translate(glm::mat4(1.f), pos);
-        model = glm::rotate(model, gamma, glm::vec3(0.f, 0.f, 1.f));
+        model = glm::rotate(model, gamma, glm::vec3(0.f, 0.f, 1.f));   // yaw around world Z
+        model = glm::rotate(model, -pitch, glm::vec3(0.f, 1.f, 0.f));  // pitch around local Y
         model = glm::scale(model, glm::vec3(LENGTH_SCALE, 40.96f, 40.96f));
 
         glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(model));
