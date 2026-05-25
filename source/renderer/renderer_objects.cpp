@@ -687,46 +687,10 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
             }
         }
 
-        // ── Companion body-part models ────────────────────────────────────────
-        // IGI characters split their mesh across _01_1 (body) + _01_2.._01_5
-        // (head, hands, legs, etc.). Render all companion parts at the same
-        // transform as the main model so the full character appears.
-        if (!isTransparentPass && !obj.isBuilding) {
-            const std::string& mid = obj.modelId;
-            const std::string sfx = "_01_1";
-            if (mid.size() > sfx.size() &&
-                mid.compare(mid.size() - sfx.size(), sfx.size(), sfx) == 0) {
-                const std::string base = mid.substr(0, mid.size() - 1);
-                glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(model));
-                glDepthFunc(GL_LEQUAL);
-                glDepthMask(GL_FALSE);
-                for (int part = 2; part <= 5; ++part) {
-                    const std::string partId = base + std::to_string(part);
-                    Mesh partMesh = GetOrLoadMesh(partId, false);
-                    if (partMesh.vertexCount == 0) continue;
-                    for (const auto& sub : partMesh.subMeshes) {
-                        if (sub.VAO == 0 || sub.vertexCount == 0) continue;
-                        if (sub.textureID > 0) {
-                            glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
-                            glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
-                            glUniform1i(loc_useTex, 1);
-                            glActiveTexture(GL_TEXTURE0);
-                            glBindTexture(GL_TEXTURE_2D, sub.textureID);
-                            glUniform1i(loc_tex, 0);
-                        } else {
-                            glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
-                            glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
-                            glUniform1i(loc_useTex, 0);
-                        }
-                        glBindVertexArray(sub.VAO);
-                        glDrawArrays(GL_TRIANGLES, 0, sub.vertexCount);
-                    }
-                    glBindVertexArray(0);
-                }
-                glDepthMask(GL_TRUE);
-                glDepthFunc(GL_LESS);
-            }
-        }
+        // Companion parts (_XX_2.._XX_5) are NOT rendered alongside the main body.
+        // Main body models (_XX_1) already contain a complete character mesh including
+        // the face. Companion parts duplicate the head geometry at a different depth,
+        // which produces a visible double-face overdraw artifact.
     }
     }
 

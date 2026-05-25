@@ -25,13 +25,25 @@ inline std::vector<BoneInfo> GetIgi1HardcodedBones(const std::string& modelName,
         return std::tolower(c);
     });
 
+    // Companion parts (e.g. "012_01_2") must inherit the archetype of their
+    // main model ("012_01_1"). Strip the trailing part digit and replace with
+    // "1" so that the match below sees the base model name.
+    std::string baseName = normName;
+    {
+        size_t lastUnder = baseName.rfind('_');
+        if (lastUnder != std::string::npos && lastUnder + 2 == baseName.size()
+            && baseName.back() >= '2' && baseName.back() <= '9') {
+            baseName = baseName.substr(0, lastUnder + 1) + "1";
+        }
+    }
+
     BoneRigType type = BoneRigType::StandardSoldier; // Default: StandardSoldier
     if (maxBoneIdx == static_cast<uint32_t>(BoneRigType::AdvancedFingerRig)) {
         type = BoneRigType::AdvancedFingerRig;
     } else {
-        if (normName == "000_01_1" || normName == "009_02_1" || normName == "008_01_1") {
+        if (baseName == "000_01_1" || baseName == "009_02_1" || baseName == "008_01_1") {
             type = BoneRigType::JonesCinematic;
-        } else if (normName == "012_01_1" || normName == "015_01_1" || normName == "028_01_1") {
+        } else if (baseName == "012_01_1" || baseName == "015_01_1" || baseName == "028_01_1") {
             type = BoneRigType::HeavySoldier;
         }
     }

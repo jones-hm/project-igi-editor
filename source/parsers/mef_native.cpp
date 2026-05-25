@@ -236,7 +236,7 @@ std::vector<RenderVertex> ParseRenderVertices(const std::vector<uint8_t>& bytes,
         break;
     case 3:
         vertexSize = 40;
-        uvOffset   = 24;  // pos(12) + normal(12) + uv(8) + ...
+        uvOffset   = 24;  // pos(12) + normal(12) + uv(8); same layout as Type 0/1
         break;
     default:
         throw std::runtime_error("Unsupported MEF modelType in XTRV");
@@ -401,10 +401,11 @@ std::vector<std::array<uint32_t, 3>> ParseSplitBoneTriangles(
 
             // Winding order: IGI 1 bone models use CW winding in raw data.
             // Swap to {a, c, b} to match reference dconv OBJ export and OpenGL CCW expectation.
+            // ECAF indices are global (absolute vertex buffer offsets) — do NOT add vertsOffset.
             triangles.push_back({
-                static_cast<uint32_t>(a + vertsOffset),
-                static_cast<uint32_t>(c + vertsOffset),
-                static_cast<uint32_t>(b + vertsOffset)
+                static_cast<uint32_t>(a),
+                static_cast<uint32_t>(c),
+                static_cast<uint32_t>(b)
             });
         }
 

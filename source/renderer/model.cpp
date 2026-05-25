@@ -22,6 +22,11 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
     glm::vec3 min_p(std::numeric_limits<float>::max());
     glm::vec3 max_p(std::numeric_limits<float>::lowest());
 
+    // Type 1 (skeletal) XTRV vertices carry valid per-vertex smooth normals.
+    // Other types (Type 3 lightmap) store UV data in the normal field slot, so we
+    // fall back to the computed face normal for those.
+    const bool useVertexNormals = (geometry.modelType == 1);
+
     Mesh mesh;
 
     auto buildSubMesh = [&](size_t triangleStart, size_t triangleCount) -> std::optional<SubMesh> {
@@ -40,12 +45,12 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
             const glm::vec3 p1 = geometry.vertices[tri[1]].pos;
             const glm::vec3 p2 = geometry.vertices[tri[2]].pos;
 
-            glm::vec3 normal = glm::cross(p1 - p0, p2 - p0);
-            const float len = glm::length(normal);
+            glm::vec3 faceNormal = glm::cross(p1 - p0, p2 - p0);
+            const float len = glm::length(faceNormal);
             if (len > 1e-6f) {
-                normal /= len;
+                faceNormal /= len;
             } else {
-                normal = glm::vec3(0.0f, 0.0f, 1.0f);
+                faceNormal = glm::vec3(0.0f, 0.0f, 1.0f);
             }
 
             auto addVertex = [&](uint32_t index) {
@@ -62,9 +67,10 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
                 max_p.y = std::max(max_p.y, src.pos.y);
                 max_p.z = std::max(max_p.z, src.pos.z);
 
-                verts.push_back(normal.x);
-                verts.push_back(normal.y);
-                verts.push_back(normal.z);
+                const glm::vec3& n = useVertexNormals ? src.normal : faceNormal;
+                verts.push_back(n.x);
+                verts.push_back(n.y);
+                verts.push_back(n.z);
 
                 verts.push_back(src.uv.x);
                 verts.push_back(1.0f - src.uv.y);
@@ -135,12 +141,12 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
                     const glm::vec3 p1 = geometry.vertices[tri[1]].pos;
                     const glm::vec3 p2 = geometry.vertices[tri[2]].pos;
 
-                    glm::vec3 normal = glm::cross(p1 - p0, p2 - p0);
-                    const float len = glm::length(normal);
+                    glm::vec3 faceNormal = glm::cross(p1 - p0, p2 - p0);
+                    const float len = glm::length(faceNormal);
                     if (len > 1e-6f) {
-                        normal /= len;
+                        faceNormal /= len;
                     } else {
-                        normal = glm::vec3(0.0f, 0.0f, 1.0f);
+                        faceNormal = glm::vec3(0.0f, 0.0f, 1.0f);
                     }
 
                     auto addVertex = [&](uint32_t index) {
@@ -157,9 +163,10 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
                         max_p.y = std::max(max_p.y, src.pos.y);
                         max_p.z = std::max(max_p.z, src.pos.z);
 
-                        verts.push_back(normal.x);
-                        verts.push_back(normal.y);
-                        verts.push_back(normal.z);
+                        const glm::vec3& n = useVertexNormals ? src.normal : faceNormal;
+                        verts.push_back(n.x);
+                        verts.push_back(n.y);
+                        verts.push_back(n.z);
 
                         verts.push_back(src.uv.x);
                         verts.push_back(1.0f - src.uv.y);
