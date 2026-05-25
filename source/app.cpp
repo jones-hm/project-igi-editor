@@ -201,6 +201,19 @@ void App::LoadLevel(int level_no) {
 			// Exit the application safely; destructor will be called automatically
 			std::exit(EXIT_FAILURE);
 		}
+		if (Config::Get().enableBackup) {
+			std::string gameLevelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" + std::to_string(level_no);
+			std::string backupLevelDir = Utils::GetExeDirectory() + "\\content\\backup\\level" + std::to_string(level_no);
+			if (!std::filesystem::exists(backupLevelDir) && std::filesystem::exists(gameLevelDir)) {
+				try {
+					std::filesystem::create_directories(backupLevelDir);
+					std::filesystem::copy(gameLevelDir, backupLevelDir, std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
+					Logger::Get().Log(LogLevel::INFO, "[App] Backup created for level " + std::to_string(level_no) + " at " + backupLevelDir);
+				} catch (const std::exception& e) {
+					Logger::Get().Log(LogLevel::ERR, "[App] Failed to create level backup: " + std::string(e.what()));
+				}
+			}
+		}
 		
 		renderer_.SetLevel(level_no);
 		renderer_.BeginLoadLevel();
@@ -231,9 +244,6 @@ void App::LoadLevel(int level_no) {
 			Logger::Get().Log(LogLevel::ERR, "[App] Failed to load level " + std::to_string(level_no));
 		}
 
-		// Load AI models from JSON for this level
-		Logger::Get().Log(LogLevel::INFO, "[App] Step 2.5: Loading AI models from IGIModelsAllLevel.json...");
-		LoadAIModelsFromFolder(level_no);
 
 		// Always snap objects to terrain after any level load
 		Logger::Get().Log(LogLevel::INFO, "[App] Step 3: Snapping objects to terrain...");
@@ -317,318 +327,7 @@ static bool containsIgnoreCase(const std::string& str, const std::string& substr
 
 
 
-void App::LoadAIModelsFromFolder(int level_no) {
-	Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
-	Logger::Get().Log(LogLevel::INFO, "[App] LoadAIModelsFromFolder() START for level " + std::to_string(level_no));
-	Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 
-	std::string qeditor_path = Utils::GetExeDirectory() + "\\content\\qed";
-	std::string aiFolderPath = qeditor_path + "\\restore\\missions\\location0\\level" + std::to_string(level_no);
-
-	Logger::Get().Log(LogLevel::INFO, "[App] AI folder path: " + aiFolderPath);
-
-	// Get all MEF files in the AI folder if it exists
-	std::vector<std::string> aiModels;
-	if (std::filesystem::exists(aiFolderPath)) {
-		for (const auto& entry : std::filesystem::directory_iterator(aiFolderPath)) {
-			if (entry.path().extension() == ".mef") {
-				aiModels.push_back(entry.path().filename().string());
-			}
-		}
-		Logger::Get().Log(LogLevel::INFO, "[App] Found " + std::to_string(aiModels.size()) + " AI MEF files");
-	} else {
-		Logger::Get().Log(LogLevel::WARNING, "[App] AI folder does not exist: " + aiFolderPath + " (skipping MEF loading, but proceeding with JSON)");
-	}
-
-	// Read JSON file to get AI model positions
-	struct AIData {
-		glm::dvec3 pos;
-		double rotation;
-		std::string type;
-		std::string name;
-		std::string soldierId;
-		std::string modelId;
-		std::string aiId;
-		std::string graphId;
-		std::string graphName;
-		glm::dvec3 graphPos;
-		std::string primaryWeapon;
-		std::string primaryAmmo;
-		std::string secondaryWeapon;
-		std::string secondaryAmmo;
-		int team;
-	};
-	std::vector<AIData> aiDataList;
-	std::string jsonPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModelsAllLevel.json";
-	bool usingBackup = false;
-
-	if (!std::filesystem::exists(jsonPath)) {
-		std::string backupPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModelsAllLevel.json";
-		if (std::filesystem::exists(backupPath)) {
-			jsonPath = backupPath;
-			usingBackup = true;
-			Logger::Get().Log(LogLevel::WARNING, "[App] QEditor not found at APPDATA or configured path. Using backup IGIModelsAllLevel.json from executable directory: " + backupPath);
-		} else {
-			Logger::Get().Log(LogLevel::ERR, "[App] QEditor missing and backup IGIModelsAllLevel.json not found in executable directory!");
-		}
-	} else {
-		Logger::Get().Log(LogLevel::INFO, "[App] Loading AI models from: " + jsonPath);
-	}
-	
-	if (std::filesystem::exists(jsonPath)) {
-		FILE* f = fopen(jsonPath.c_str(), "rb");
-		if (f) {
-			fseek(f, 0, SEEK_END);
-			long fileSize = ftell(f);
-			fseek(f, 0, SEEK_SET);
-			
-			char* buf = new char[fileSize + 1];
-			fread(buf, 1, fileSize, f);
-			buf[fileSize] = '\0';
-			fclose(f);
-			
-			std::string content(buf);
-			delete[] buf;
-			
-			// Find AI array for this level
-			std::string levelKey = "\"Level " + std::to_string(level_no) + "\"";
-			size_t levelPos = content.find(levelKey);
-			if (levelPos != std::string::npos) {
-				size_t aiPos = content.find("\"AI\"", levelPos);
-				if (aiPos != std::string::npos) {
-					size_t arrayStart = content.find("[", aiPos);
-					size_t arrayEnd = content.find("]", arrayStart);
-					if (arrayStart != std::string::npos && arrayEnd != std::string::npos) {
-						std::string aiArray = content.substr(arrayStart, arrayEnd - arrayStart + 1);
-						
-						// Parse each AI entry
-						size_t entryPos = 0;
-						while ((entryPos = aiArray.find("{", entryPos)) != std::string::npos) {
-							size_t entryEnd = aiArray.find("}", aiArray.find("}", aiArray.find("}", aiArray.find("}", entryPos) + 1) + 1) + 1); // skip nested braces (approximate)
-							if (entryEnd == std::string::npos) entryEnd = aiArray.length();
-							
-							// A better way to find the end of the JSON object matching the open brace
-							int braceCount = 0;
-							for (size_t i = entryPos; i < aiArray.length(); ++i) {
-								if (aiArray[i] == '{') braceCount++;
-								else if (aiArray[i] == '}') {
-									braceCount--;
-									if (braceCount == 0) {
-										entryEnd = i;
-										break;
-									}
-								}
-							}
-
-							std::string entry = aiArray.substr(entryPos, entryEnd - entryPos + 1);
-							
-							AIData aiData;
-							aiData.pos = glm::dvec3(0,0,0);
-							aiData.graphPos = glm::dvec3(0,0,0);
-							aiData.rotation = 0.0;
-							aiData.team = 0;
-							
-							// Helper lambda to extract string
-							auto extractString = [](const std::string& str, const std::string& key) -> std::string {
-								size_t pos = str.find("\"" + key + "\"");
-								if (pos == std::string::npos) return "";
-								size_t colon = str.find(":", pos);
-								size_t qStart = str.find("\"", colon);
-								size_t qEnd = str.find("\"", qStart + 1);
-								if (qStart != std::string::npos && qEnd != std::string::npos) {
-									return str.substr(qStart + 1, qEnd - qStart - 1);
-								}
-								return "";
-							};
-							
-							// Helper lambda to extract number as string
-							auto extractNumStr = [](const std::string& str, const std::string& key) -> std::string {
-								size_t pos = str.find("\"" + key + "\"");
-								if (pos == std::string::npos) return "";
-								size_t colon = str.find(":", pos);
-								size_t end = str.find_first_of(",}\n\r", colon + 1);
-								if (colon != std::string::npos && end != std::string::npos) {
-									std::string val = str.substr(colon + 1, end - colon - 1);
-									val.erase(0, val.find_first_not_of(" \t")); // ltrim
-									val.erase(val.find_last_not_of(" \t") + 1); // rtrim
-									return val;
-								}
-								return "";
-							};
-
-							aiData.type = extractString(entry, "Type");
-							aiData.name = extractString(entry, "Name");
-							aiData.soldierId = extractNumStr(entry, "SoldierId");
-							aiData.aiId = extractNumStr(entry, "AIId");
-							
-							// Extract Team
-							std::string teamStr = extractNumStr(entry, "Team");
-							if (!teamStr.empty()) aiData.team = std::stoi(teamStr);
-
-							// Extract Rotation
-							std::string rotStr = extractNumStr(entry, "Rotation");
-							if (!rotStr.empty()) aiData.rotation = std::stod(rotStr);
-							
-							// Extract positions using blocks
-							size_t posBlock = entry.find("\"Position\"");
-							if (posBlock != std::string::npos) {
-								size_t endBlock = entry.find("}", posBlock);
-								std::string blk = entry.substr(posBlock, endBlock - posBlock);
-								std::string xStr = extractNumStr(blk, "X");
-								std::string yStr = extractNumStr(blk, "Y");
-								std::string zStr = extractNumStr(blk, "Z");
-								if (!xStr.empty()) aiData.pos.x = std::stod(xStr);
-								if (!yStr.empty()) aiData.pos.y = std::stod(yStr);
-								if (!zStr.empty()) aiData.pos.z = std::stod(zStr);
-							}
-							
-							size_t modelBlock = entry.find("\"Model\"");
-							if (modelBlock != std::string::npos) {
-								size_t endBlock = entry.find("}", modelBlock);
-								std::string blk = entry.substr(modelBlock, endBlock - modelBlock);
-								aiData.modelId = extractString(blk, "ID");
-							}
-							
-							size_t graphBlock = entry.find("\"Graph\"");
-							if (graphBlock != std::string::npos) {
-								size_t endBlock = entry.find("}", graphBlock); // wait, graph contains Position, so endBlock must be calculated carefully
-								// actually let's just use the whole graph substring since keys are unique
-								aiData.graphId = extractNumStr(entry.substr(graphBlock), "ID");
-								aiData.graphName = extractString(entry.substr(graphBlock), "Name");
-								
-								size_t graphPosBlock = entry.find("\"Position\"", graphBlock);
-								if (graphPosBlock != std::string::npos) {
-									size_t gEndBlock = entry.find("}", graphPosBlock);
-									std::string blk = entry.substr(graphPosBlock, gEndBlock - graphPosBlock);
-									std::string xStr = extractNumStr(blk, "X");
-									std::string yStr = extractNumStr(blk, "Y");
-									std::string zStr = extractNumStr(blk, "Z");
-									if (!xStr.empty()) aiData.graphPos.x = std::stod(xStr);
-									if (!yStr.empty()) aiData.graphPos.y = std::stod(yStr);
-									if (!zStr.empty()) aiData.graphPos.z = std::stod(zStr);
-								}
-							}
-							
-							size_t weaponBlock = entry.find("\"Weapons\"");
-							if (weaponBlock != std::string::npos) {
-								size_t priBlock = entry.find("\"Primary\"", weaponBlock);
-								if (priBlock != std::string::npos) {
-									size_t endBlock = entry.find("}", priBlock);
-									std::string blk = entry.substr(priBlock, endBlock - priBlock);
-									aiData.primaryWeapon = extractString(blk, "Name");
-									aiData.primaryAmmo = extractNumStr(blk, "Ammo");
-								}
-								size_t secBlock = entry.find("\"Secondary\"", weaponBlock);
-								if (secBlock != std::string::npos) {
-									size_t endBlock = entry.find("}", secBlock);
-									std::string blk = entry.substr(secBlock, endBlock - secBlock);
-									aiData.secondaryWeapon = extractString(blk, "Name");
-									aiData.secondaryAmmo = extractNumStr(blk, "Ammo");
-								}
-							}
-
-							bool isValid = !aiData.soldierId.empty();
-
-							if (isValid) {
-								aiDataList.push_back(aiData);
-							}
-							
-							entryPos = entryEnd + 1;
-						}
-					}
-				}
-			}
-		}
-		Logger::Get().Log(LogLevel::INFO, "[App] Found " + std::to_string(aiDataList.size()) + " valid AI entries in JSON file");
-	}
-
-
-	// Add or update AI models in level objects
-	auto& objects = level_.GetLevelObjects().GetObjects();
-	int addedCount = 0;
-	int updatedCount = 0;
-
-	for (const auto& aiData : aiDataList) {
-		// Search for existing object with this taskId
-		LevelObject* existingObj = nullptr;
-		for (auto& obj : objects) {
-			if (obj.taskId == aiData.soldierId && !obj.taskId.empty()) {
-				existingObj = &obj;
-				break;
-			}
-		}
-
-		if (existingObj) {
-			// Skip sync for Player Jones (000_01_1) to preserve exact QSC position and avoid automated edits
-			if (existingObj->modelId == "000_01_1") {
-				Logger::Get().Log(LogLevel::INFO, "[App] Skipping AI sync for Player Jones: " + aiData.modelId + " taskId=" + aiData.soldierId);
-				continue;
-			}
-			// Update existing object with AI metadata
-			existingObj->modelId = aiData.modelId;
-			existingObj->name = aiData.name;
-			existingObj->aiId = aiData.aiId;
-			existingObj->graphId = aiData.graphId;
-			existingObj->graphName = aiData.graphName;
-			existingObj->graphPos = aiData.graphPos;
-			existingObj->team = aiData.team;
-			existingObj->primaryWeapon = aiData.primaryWeapon;
-			existingObj->primaryAmmo = aiData.primaryAmmo;
-			existingObj->secondaryWeapon = aiData.secondaryWeapon;
-			existingObj->secondaryAmmo = aiData.secondaryAmmo;
-
-			// If the position in JSON differs from QSC, update it
-			// (JSON is usually more up-to-date for AI state)
-			existingObj->pos = aiData.pos;
-			existingObj->modified = true; // Mark as modified so it gets saved
-
-			updatedCount++;
-			Logger::Get().Log(LogLevel::INFO, "[App] Updated existing AI object: " + aiData.modelId + " taskId=" + aiData.soldierId);
-			Logger::Get().Log(LogLevel::INFO, "[LevelLoader] Object Loaded: ModelID=" + aiData.modelId +
-				", Type=" + existingObj->type +
-				", Name=" + aiData.name +
-				", Pos=(" + std::to_string(aiData.pos.x) + ", " + std::to_string(aiData.pos.y) + ", " + std::to_string(aiData.pos.z) + ")" +
-				", Ori=(" + std::to_string(existingObj->rot.x) + ", " + std::to_string(existingObj->rot.y) + ", " + std::to_string(existingObj->rot.z) + ")");
-		} else {
-			// Create new LevelObject for this AI entry
-			LevelObject newObj;
-			newObj.name = aiData.name; // Use JSON name
-			newObj.modelId = aiData.modelId;
-			newObj.taskId = aiData.soldierId;
-			newObj.aiId = aiData.aiId;
-			newObj.graphId = aiData.graphId;
-			newObj.type = aiData.type;
-			newObj.graphName = aiData.graphName;
-			newObj.graphPos = aiData.graphPos;
-			newObj.team = aiData.team;
-			newObj.modified = true; // New AI objects are definitely modified
-			newObj.rot.z = aiData.rotation;
-			newObj.primaryWeapon = aiData.primaryWeapon;
-			newObj.primaryAmmo = aiData.primaryAmmo;
-			newObj.secondaryWeapon = aiData.secondaryWeapon;
-			newObj.secondaryAmmo = aiData.secondaryAmmo;
-			newObj.pos = aiData.pos;
-			newObj.original_pos = newObj.pos;
-			newObj.rot = glm::dvec3(0.0, 0.0, aiData.rotation);
-			newObj.original_rot = newObj.rot;
-			newObj.isBuilding = false;
-			newObj.snap_z_offset = 0.0;
-			newObj.scale = 1.0f;
-
-			objects.push_back(newObj);
-			addedCount++;
-			Logger::Get().Log(LogLevel::INFO, "[App] Added new AI model: " + aiData.modelId + " (" + aiData.type + ") at (" + 
-				std::to_string(aiData.pos.x) + ", " + std::to_string(aiData.pos.y) + ", " + std::to_string(aiData.pos.z) + ")");
-		}
-	}
-
-	Logger::Get().Log(LogLevel::INFO, "[App] AI sync: " + std::to_string(updatedCount) + " updated, " + std::to_string(addedCount) + " added.");
-
-	Logger::Get().Log(LogLevel::INFO, "[App] Added " + std::to_string(addedCount) + " new AI models to level " + std::to_string(level_no));
-	Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
-	Logger::Get().Log(LogLevel::INFO, "[App] LoadAIModelsFromFolder() COMPLETE");
-	Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
-}
 
 void App::SaveCurrentLevel() {
 	try {
@@ -1829,7 +1528,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 void App::ResetLevel() {
 	int levelNo = level_.GetLevelNo();
 
-	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Level " + std::to_string(levelNo) + " - restore objects.qvm from content/tools/restore to IGIPath");
+	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Level " + std::to_string(levelNo));
 
 	// Force kill any running game instance to release file locks on objects.qvm
 #ifdef _WIN32
@@ -1855,36 +1554,24 @@ void App::ResetLevel() {
 	}
 #endif
 
-	std::string toolsDir = Utils::GetExeDirectory() + "\\content\\tools";
-
-	// Copy objects.qvm from content/tools/restore to IGIPath
-	char srcQvm[1024];
-	Str_SPrintf(srcQvm, 1024, "%s\\restore\\missions\\location0\\level%d\\objects.qvm", toolsDir.c_str(), levelNo);
-
-	char dstQvm[1024];
-	Str_SPrintf(dstQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", Utils::GetIGIRootPath().c_str(), levelNo);
-
-	Logger::Get().Log(LogLevel::INFO, "[App] Copying objects.qvm from " + std::string(srcQvm) + " to " + std::string(dstQvm));
-
-	try {
-		if (std::filesystem::exists(srcQvm)) {
-			std::filesystem::create_directories(std::filesystem::path(dstQvm).parent_path());
-			// Force permissions to allow overwrite/delete
-			if (std::filesystem::exists(dstQvm)) {
-				std::filesystem::permissions(dstQvm, 
-					std::filesystem::perms::owner_all | std::filesystem::perms::group_all | std::filesystem::perms::others_all,
-					std::filesystem::perm_options::replace);
-				std::filesystem::remove(dstQvm);
+	if (Config::Get().enableBackup) {
+		std::string gameLevelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" + std::to_string(levelNo);
+		std::string backupLevelDir = Utils::GetExeDirectory() + "\\content\\backup\\level" + std::to_string(levelNo);
+		
+		Logger::Get().Log(LogLevel::INFO, "[App] Restoring level from backup: " + backupLevelDir + " to " + gameLevelDir);
+		
+		if (std::filesystem::exists(backupLevelDir)) {
+			try {
+				std::filesystem::copy(backupLevelDir, gameLevelDir, std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
+				Logger::Get().Log(LogLevel::INFO, "[App] Level reset successfully from backup.");
+			} catch (const std::exception& e) {
+				Logger::Get().Log(LogLevel::ERR, "[App] Failed to restore from backup: " + std::string(e.what()));
 			}
-			std::filesystem::copy_file(srcQvm, dstQvm, std::filesystem::copy_options::overwrite_existing);
-			Logger::Get().Log(LogLevel::INFO, "[App] QVM copied successfully to game path.");
+		} else {
+			Logger::Get().Log(LogLevel::ERR, "[App] Cannot reset level: No backup found at " + backupLevelDir);
 		}
-		else {
-			Logger::Get().Log(LogLevel::ERR, "[App] Error: Source QVM not found at " + std::string(srcQvm));
-		}
-	}
-	catch (const std::exception& e) {
-		Logger::Get().Log(LogLevel::ERR, "[App] ResetLevel error: " + std::string(e.what()));
+	} else {
+		Logger::Get().Log(LogLevel::INFO, "[App] Reset level skipped because QEDBackup is not enabled in config.");
 	}
 
 	// Remove local objects.qsc so it recompiles fresh from QVM

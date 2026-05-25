@@ -20,208 +20,15 @@
 ================================================================================
 */
 Renderer::Renderer() : ubo_mats_(0), ubo_fog_(0), splines_(objects_) {
-  LoadBuildingNames();
 }
 
 Renderer::~Renderer() { Shutdown(); }
 
-static bool ExtractJsonStringValue(const std::string &text,
-                                   const std::vector<std::string> &keys,
-                                   std::string &value) {
-  for (const auto &key : keys) {
-    size_t keyPos = text.find(key);
-    if (keyPos == std::string::npos)
-      continue;
-    size_t colonPos = text.find(':', keyPos + key.size());
-    if (colonPos == std::string::npos)
-      continue;
-    size_t quoteStart = text.find('"', colonPos + 1);
-    if (quoteStart == std::string::npos)
-      continue;
-    size_t quoteEnd = quoteStart + 1;
-    bool escape = false;
-    while (quoteEnd < text.size()) {
-      char c = text[quoteEnd];
-      if (escape) {
-        escape = false;
-      } else if (c == '\\') {
-        escape = true;
-      } else if (c == '"') {
-        value = text.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
-        return true;
-      }
-      ++quoteEnd;
-    }
-  }
-  return false;
-}
+#include <sstream>
+#include <iomanip>
 
-void Renderer::LoadBuildingNames() {
-  char exePath[MAX_PATH];
-  GetModuleFileNameA(NULL, exePath, MAX_PATH);
-  std::string exeDir(exePath);
-  size_t ls = exeDir.find_last_of("\\/");
-  if (ls != std::string::npos)
-    exeDir = exeDir.substr(0, ls);
-  std::string jsonPath = exeDir + "\\content\\tools\\IGIModelsAllLevel.json";
 
-  FILE *f = fopen(jsonPath.c_str(), "rb");
-  if (!f) {
-    std::cerr << "[Renderer] Failed to open IGIModelsAllLevel.json at: "
-              << jsonPath << std::endl;
-    return;
-  }
 
-  fseek(f, 0, SEEK_END);
-  long fileSize = ftell(f);
-  fseek(f, 0, SEEK_SET);
-
-  char *buf = new char[fileSize + 1];
-  fread(buf, 1, fileSize, f);
-  buf[fileSize] = '\0';
-  fclose(f);
-
-  std::string content(buf);
-  delete[] buf;
-
-  building_names_.clear();
-  task_ids_.clear();
-
-  // Parse IGIModelsAllLevel.json structure
-  size_t pos = 0;
-  while ((pos = content.find("\"Level ", pos)) != std::string::npos) {
-    size_t levelEnd = content.find("\"", pos + 7);
-    if (levelEnd == std::string::npos)
-      break;
-    std::string levelStr = content.substr(pos + 7, levelEnd - pos - 7);
-    int levelNum = 0;
-    try {
-      levelNum = std::stoi(levelStr);
-    } catch (...) {
-      pos = levelEnd + 1;
-      continue;
-    }
-
-    size_t levelBlockStart = content.find('{', levelEnd);
-    if (levelBlockStart == std::string::npos)
-      break;
-    int braceDepth = 0;
-    size_t levelBlockEnd = std::string::npos;
-    for (size_t i = levelBlockStart; i < content.size(); ++i) {
-      if (content[i] == '{')
-        braceDepth++;
-      else if (content[i] == '}') {
-        braceDepth--;
-        if (braceDepth == 0) {
-          levelBlockEnd = i;
-          break;
-        }
-      }
-    }
-    if (levelBlockEnd == std::string::npos)
-      break;
-
-    std::string levelBlock =
-        content.substr(levelBlockStart, levelBlockEnd - levelBlockStart + 1);
-
-    size_t objectsPos = levelBlock.find("\"Objects\"");
-    if (objectsPos != std::string::npos) {
-      size_t arrayStart = levelBlock.find("[", objectsPos);
-      size_t arrayEnd = levelBlock.find("]", arrayStart);
-      if (arrayStart != std::string::npos && arrayEnd != std::string::npos &&
-          arrayEnd > arrayStart) {
-        std::string objectsArray =
-            levelBlock.substr(arrayStart, arrayEnd - arrayStart + 1);
-        ParseLevelObjects(objectsArray, levelNum, false);
-      }
-    }
-
-    size_t buildingsPos = levelBlock.find("\"Buildings\"");
-    if (buildingsPos != std::string::npos) {
-      size_t arrayStart = levelBlock.find("[", buildingsPos);
-      size_t arrayEnd = levelBlock.find("]", arrayStart);
-      if (arrayStart != std::string::npos && arrayEnd != std::string::npos &&
-          arrayEnd > arrayStart) {
-        std::string buildingsArray =
-            levelBlock.substr(arrayStart, arrayEnd - arrayStart + 1);
-        ParseLevelObjects(buildingsArray, levelNum, true);
-      }
-    }
-
-    pos = levelBlockEnd + 1;
-  }
-
-  Logger::Get().Log(
-      LogLevel::INFO,
-      "[Renderer] Loaded " + std::to_string(building_names_.size()) +
-          " building names and " + std::to_string(task_ids_.size()) +
-          " task IDs from IGIModelsAllLevel.json");
-}
-
-void Renderer::ParseLevelObjects(const std::string &arrayContent, int levelNum,
-                                 bool isBuilding) {
-  (void)isBuilding;
-  size_t pos = 0;
-  while ((pos = arrayContent.find('{', pos)) != std::string::npos) {
-    int braceDepth = 0;
-    size_t objectEnd = std::string::npos;
-    for (size_t i = pos; i < arrayContent.size(); ++i) {
-      if (arrayContent[i] == '{')
-        braceDepth++;
-      else if (arrayContent[i] == '}') {
-        braceDepth--;
-        if (braceDepth == 0) {
-          objectEnd = i;
-          break;
-        }
-      }
-    }
-    if (objectEnd == std::string::npos)
-      break;
-
-    std::string objContent = arrayContent.substr(pos, objectEnd - pos + 1);
-    std::string modelId;
-    std::string name;
-    std::string taskId;
-    ExtractJsonStringValue(
-        objContent, {"\"Model ID\"", "\"ModelID\"", "\"ModelId\""}, modelId);
-    ExtractJsonStringValue(objContent, {"\"Name\"", "\"ModelName\""}, name);
-    ExtractJsonStringValue(objContent, {"\"Task ID\"", "\"TaskID\""}, taskId);
-
-    if (!modelId.empty()) {
-      std::string key = std::to_string(levelNum) + "_" + modelId;
-      if (!name.empty())
-        building_names_[key] = name;
-      if (!taskId.empty())
-        task_ids_[key] = taskId;
-    }
-
-    pos = objectEnd + 1;
-  }
-}
-
-std::string Renderer::GetBuildingName(const std::string &modelId) {
-  std::string key = std::to_string(current_level_) + "_" + modelId;
-  auto it = building_names_.find(key);
-  if (it != building_names_.end()) {
-    return it->second;
-  }
-  // Fallback to non-level-specific lookup for compatibility
-  it = building_names_.find(modelId);
-  if (it != building_names_.end()) {
-    return it->second;
-  }
-  return "";
-}
-
-std::string Renderer::GetTaskId(const std::string &modelId) {
-  std::string key = std::to_string(current_level_) + "_" + modelId;
-  auto it = task_ids_.find(key);
-  if (it != task_ids_.end()) {
-    return it->second;
-  }
-  return "0";
-}
 
 bool Renderer::Init() {
   ubo_mats_ = GL_CreateBuffer(GL_UNIFORM_BUFFER, sizeof(ubo_mats_s), nullptr,
@@ -806,9 +613,7 @@ void Renderer::Draw(const draw_params_s &params,
         const auto &obj = objects[info_object_index];
 
         char buf[512];
-        std::string display_name = GetBuildingName(obj.modelId);
-        if (display_name.empty())
-          display_name = obj.name;
+        std::string display_name = obj.name;
         if (display_name.empty())
           display_name = obj.type;
         if (display_name.empty())
@@ -820,12 +625,10 @@ void Renderer::Draw(const draw_params_s &params,
         int text_y = tooltip_y;
 
         bool isAI = !obj.aiId.empty() || obj.type.find("AITYPE") == 0 ||
-                    obj.type == "HumanSoldier" || obj.type == "HumanAI";
+                    obj.type == "HumanSoldier" || obj.type == "HumanAI" || obj.type == "HumanSoldierFemale" || obj.type == "HumanPlayer";
         if (isAI) {
-          // Draw header line with Name and Type
           std::string aiName = obj.name.empty() ? "AI Soldier" : obj.name;
-          snprintf(buf, sizeof(buf), "Name: %s (Type: %s)", aiName.c_str(),
-                   obj.type.c_str());
+          snprintf(buf, sizeof(buf), "Name: %s (Type: %s)", aiName.c_str(), obj.type.c_str());
           draw_text(text_x, text_y, buf, 0.0f, 0.8f, 1.0f); // Sky blue title
           text_y += 15;
 
@@ -865,7 +668,6 @@ void Renderer::Draw(const draw_params_s &params,
             text_y += 15;
           }
         } else {
-          // Standard building / prop tooltip
           snprintf(buf, sizeof(buf), "%s ID: %s", display_name.c_str(),
                    task_id.c_str());
           draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
@@ -877,7 +679,6 @@ void Renderer::Draw(const draw_params_s &params,
           text_y += 15;
         }
 
-        // Always display X, Y, Z coordinates for all objects
         snprintf(buf, sizeof(buf), "Pos: X: %.1f Y: %.1f Z: %.1f", obj.pos.x,
                  obj.pos.y, obj.pos.z);
         draw_text(text_x, text_y, buf, 0.7f, 0.7f, 0.7f);

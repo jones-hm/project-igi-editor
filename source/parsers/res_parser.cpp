@@ -43,14 +43,36 @@ RESFile RES_Parse(const std::string& filepath) {
         return result;
     }
 
-    size_t fileSize = (size_t)file.tellg();
+    std::streampos pos = file.tellg();
+    if (pos == std::streampos(-1)) {
+        result.error = "Could not determine file size (tellg failed): " + filepath;
+        Logger::Get().Log(LogLevel::ERR, "[RES] " + result.error);
+        return result;
+    }
+
+    size_t fileSize = static_cast<size_t>(pos);
     if (fileSize < 20) {
         result.error = "File too small for ILFF header: " + filepath;
         Logger::Get().Log(LogLevel::ERR, "[RES] " + result.error);
         return result;
     }
 
-    std::vector<uint8_t> buf(fileSize);
+    // Protect against insanely large files or failed reads giving large values
+    if (fileSize > 1024 * 1024 * 1024) {
+        result.error = "File is unreasonably large or size read failed (" + std::to_string(fileSize) + " bytes): " + filepath;
+        Logger::Get().Log(LogLevel::ERR, "[RES] " + result.error);
+        return result;
+    }
+
+    std::vector<uint8_t> buf;
+    try {
+        buf.resize(fileSize);
+    } catch (const std::bad_alloc&) {
+        result.error = "Memory allocation failed for file size " + std::to_string(fileSize) + " bytes: " + filepath;
+        Logger::Get().Log(LogLevel::ERR, "[RES] " + result.error);
+        return result;
+    }
+
     file.seekg(0);
     file.read(reinterpret_cast<char*>(buf.data()), fileSize);
     file.close();
@@ -82,7 +104,7 @@ RESFile RES_Parse(const std::string& filepath) {
         uint32_t chunkSkip = ReadU32LE(data + offset + 12);
         
         size_t dataOffset = offset + 16;
-        if (dataOffset + chunkSize > fileSize) {
+        if (chunkSize > fileSize || dataOffset > fileSize - chunkSize) {
             Logger::Get().Log(LogLevel::WARNING, "[RES] Chunk extends beyond file end at offset " +
                 std::to_string(offset));
             break;
@@ -108,8 +130,13 @@ RESFile RES_Parse(const std::string& filepath) {
             else {
                 entry.name = "<unnamed_" + std::to_string(result.entries.size()) + ">";
             }
-            entry.data.assign(data + dataOffset, data + dataOffset + chunkSize);
-            result.entries.push_back(std::move(entry));
+            try {
+                entry.data.assign(data + dataOffset, data + dataOffset + chunkSize);
+                result.entries.push_back(std::move(entry));
+            } catch (const std::bad_alloc&) {
+                Logger::Get().Log(LogLevel::ERR, "[RES] Memory allocation failed while parsing chunk '" + entry.name + "' of size " + std::to_string(chunkSize) + " at offset " + std::to_string(offset));
+                break; // Stop parsing further chunks if memory is exhausted
+            }
         }
 
         if (chunkSkip == 0) break;

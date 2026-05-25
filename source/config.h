@@ -88,6 +88,7 @@ struct ConfigData {
     bool saveConfigOnExit;
     bool runEvent;
     bool cameraLock;
+    bool enableBackup;
     std::string findTaskName;
     std::string findTaskNote;
     std::string findTaskID;

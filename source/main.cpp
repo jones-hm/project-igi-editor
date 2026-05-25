@@ -539,8 +539,6 @@ static void OnMenu(int menu) {
   case MENU_LOAD_AI:
     g_app.SetDrawParts(g_app.GetDrawParts() | Renderer::DRAW_AI);
     g_update_menu_flags |= UPDATE_MENU_SHOW_OPTIONS;
-    // Load AI models from ai\levelX folder
-    g_app.LoadAIModelsFromFolder(g_app.GetCurLevelNo());
     break;
   case MENU_CLOSE:
     glutLeaveMainLoop();

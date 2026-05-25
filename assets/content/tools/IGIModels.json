@@ -20,18 +20,6 @@
     "ModelId": "415_01_1"
   },
   {
-	"ModelName": "CHECKPOINT",
-	"ModelId": "425_01_1",
-  },
-    {
-	"ModelName": "CHECKPOINT_WINDOW",
-	"ModelId": "425_02_1",
-  },
-   {
-	"ModelName": "CHECKPOINT_WINDOW",
-	"ModelId": "425_03_1",
-  },
-  {
     "ModelName": "AIRCONTROL_TOWER_INTERIOR",
     "ModelId": "415_02_1"
   },
@@ -134,6 +122,26 @@
   {
     "ModelName": "AMMOCRATE",
     "ModelId": "306_01_1"
+  },
+  {
+    "ModelName": "AMMO_357_OBJ",
+    "ModelId": "118_01_1"
+  },
+  {
+    "ModelName": "AMMO_44_OBJ",
+    "ModelId": "120_01_1"
+  },
+  {
+    "ModelName": "AMMO_556_OBJ",
+    "ModelId": "115_01_1"
+  },
+  {
+    "ModelName": "AMMO_762_OBJ",
+    "ModelId": "119_01_1"
+  },
+  {
+    "ModelName": "AMMO_919_OBJ",
+    "ModelId": "116_01_1"
   },
   {
     "ModelName": "AMMO_BUILDING",
@@ -368,8 +376,32 @@
     "ModelId": "425_02_1"
   },
   {
+    "ModelName": "CHECKPOINT_WINDOW",
+    "ModelId": "425_03_1"
+  },
+  {
     "ModelName": "CIVILIAN_GUY1",
     "ModelId": "011_01_1"
+  },
+  {
+    "ModelName": "colbox",
+    "ModelId": "colbox"
+  },
+  {
+    "ModelName": "colbox2",
+    "ModelId": "colbox2"
+  },
+  {
+    "ModelName": "colbox3",
+    "ModelId": "colbox3"
+  },
+  {
+    "ModelName": "colbox4",
+    "ModelId": "colbox4"
+  },
+  {
+    "ModelName": "colbox66",
+    "ModelId": "colbox66"
   },
   {
     "ModelName": "COLLISION_BOX",
@@ -436,10 +468,6 @@
     "ModelId": "455_01_1"
   },
   {
-    "ModelName": "COMM_TOWER_WINDOW",
-    "ModelId": "455_04_1"
-  },
-  {
     "ModelName": "COMM_TOWER_INTERIOR",
     "ModelId": "455_05_1"
   },
@@ -458,6 +486,10 @@
   {
     "ModelName": "COMM_TOWER_WINDOW",
     "ModelId": "455_03_1"
+  },
+  {
+    "ModelName": "COMM_TOWER_WINDOW",
+    "ModelId": "455_04_1"
   },
   {
     "ModelName": "COMPOUND",
@@ -764,12 +796,12 @@
     "ModelId": "410_02_1"
   },
   {
-    "ModelName": "GARAGE_WINDOW",
-    "ModelId": "410_03_1"
-  },
-  {
     "ModelName": "GARAGE_SNOW",
     "ModelId": "442_01_1"
+  },
+  {
+    "ModelName": "GARAGE_WINDOW",
+    "ModelId": "410_03_1"
   },
   {
     "ModelName": "GENERATOR_BIG",
@@ -989,7 +1021,27 @@
   },
   {
     "ModelName": "HITZONE",
+    "ModelId": "601_09_1"
+  },
+  {
+    "ModelName": "HITZONE",
     "ModelId": "610_03_1"
+  },
+  {
+    "ModelName": "HITZONE",
+    "ModelId": "614_09_1"
+  },
+  {
+    "ModelName": "HITZONE",
+    "ModelId": "616_04_1"
+  },
+  {
+    "ModelName": "HITZONE",
+    "ModelId": "700_08_1"
+  },
+  {
+    "ModelName": "HITZONE",
+    "ModelId": "700_19_1"
   },
   {
     "ModelName": "HOLDER",
@@ -1038,6 +1090,10 @@
   {
     "ModelName": "KEYCARD",
     "ModelId": "141_01_1"
+  },
+  {
+    "ModelName": "KNIFE_MODEL",
+    "ModelId": "133_01_1"
   },
   {
     "ModelName": "LAMP",
@@ -1204,6 +1260,10 @@
     "ModelId": "310_01_1"
   },
   {
+    "ModelName": "M203_LAUNCHER_OBJ",
+    "ModelId": "108_05_1"
+  },
+  {
     "ModelName": "MAGIC_GLASS",
     "ModelId": "600_05_1"
   },
@@ -1218,6 +1278,10 @@
   {
     "ModelName": "MEDICAL_SIGNBOARD",
     "ModelId": "348_01_1"
+  },
+  {
+    "ModelName": "MEDIPACK_SYRINGE_OBJ",
+    "ModelId": "104_01_1"
   },
   {
     "ModelName": "MEDIUM_LIGHTS",
@@ -1323,18 +1387,6 @@
     "ModelName": "OFFICEBUILDING",
     "ModelId": "409_01_1"
   },
-    {
-    "ModelName": "OFFICEBUILDING_WINDOW",
-    "ModelId": "409_02_1"
-  },
-  {
-    "ModelName": "OFFICEBUILDING_WINDOW",
-    "ModelId": "409_03_1"
-  },
-  {
-    "ModelName": "OFFICEBUILDING_WINDOW",
-    "ModelId": "409_04_1"
-  },
   {
     "ModelName": "OFFICEBUILDING_INTERIOR",
     "ModelId": "409_05_1"
@@ -1362,6 +1414,18 @@
   {
     "ModelName": "OFFICEBUILDING_SNOW",
     "ModelId": "409_11_1"
+  },
+  {
+    "ModelName": "OFFICEBUILDING_WINDOW",
+    "ModelId": "409_02_1"
+  },
+  {
+    "ModelName": "OFFICEBUILDING_WINDOW",
+    "ModelId": "409_03_1"
+  },
+  {
+    "ModelName": "OFFICEBUILDING_WINDOW",
+    "ModelId": "409_04_1"
   },
   {
     "ModelName": "OFFICEBUILDING_WINDOW_AREA",
@@ -1548,6 +1612,10 @@
     "ModelId": "368_01_1"
   },
   {
+    "ModelName": "ROTOR",
+    "ModelId": "712_01_1"
+  },
+  {
     "ModelName": "RUINEDVILARGEHOUSE",
     "ModelId": "416_01_1"
   },
@@ -1624,14 +1692,6 @@
     "ModelId": "400_03_1"
   },
   {
-    "ModelName": "SECURITYBUILDING_WINDOW",
-    "ModelId": "400_15_1"
-  },
-  {
-    "ModelName": "SECURITYBUILDING_WINDOW",
-    "ModelId": "400_16_1"
-  },
-  {
     "ModelName": "SECURITYBUILDING_ROOM1",
     "ModelId": "400_04_1"
   },
@@ -1654,14 +1714,6 @@
   {
     "ModelName": "SECURITYBUILDING_UG_EXTERIOR",
     "ModelId": "490_02_1"
-  },
-  {
-    "ModelName": "SECURITYBUILDING_WINDOW",
-    "ModelId": "490_03_1"
-  },
-  {
-    "ModelName": "SECURITYBUILDING_WINDOW",
-    "ModelId": "490_04_1"
   },
   {
     "ModelName": "SECURITYBUILDING_UG_MAIN",
@@ -1690,6 +1742,22 @@
   {
     "ModelName": "SECURITYBUILDING_UNDERGROUND",
     "ModelId": "490_01_1"
+  },
+  {
+    "ModelName": "SECURITYBUILDING_WINDOW",
+    "ModelId": "400_15_1"
+  },
+  {
+    "ModelName": "SECURITYBUILDING_WINDOW",
+    "ModelId": "400_16_1"
+  },
+  {
+    "ModelName": "SECURITYBUILDING_WINDOW",
+    "ModelId": "490_03_1"
+  },
+  {
+    "ModelName": "SECURITYBUILDING_WINDOW",
+    "ModelId": "490_04_1"
   },
   {
     "ModelName": "SENTRY_GUN_MODEL",
@@ -1816,6 +1884,14 @@
     "ModelId": "402_02_1"
   },
   {
+    "ModelName": "STAIRS",
+    "ModelId": "423_02_1"
+  },
+  {
+    "ModelName": "STATIONARY_GUN",
+    "ModelId": "456_13_1"
+  },
+  {
     "ModelName": "STRAIGHT_UPWARDS",
     "ModelId": "473_01_1"
   },
@@ -1932,6 +2008,10 @@
     "ModelId": "239_02_1"
   },
   {
+    "ModelName": "TANK_TURRET",
+    "ModelId": "614_10_1"
+  },
+  {
     "ModelName": "TANK_WHEEL",
     "ModelId": "601_06_1"
   },
@@ -1946,6 +2026,14 @@
   {
     "ModelName": "THREE_STOREY_BUILDING",
     "ModelId": "458_01_1"
+  },
+  {
+    "ModelName": "THREE_STOREY_BUILDING_GLASS_FRONT1",
+    "ModelId": "458_12_1"
+  },
+  {
+    "ModelName": "THREE_STOREY_BUILDING_GLASS_FRONT2",
+    "ModelId": "458_13_1"
   },
   {
     "ModelName": "THREE_STOREY_BUILDING_GLASS_LEFT",
@@ -1986,14 +2074,6 @@
   {
     "ModelName": "THREE_STOREY_BUILDING_GLASS_TOP3_RIGHT",
     "ModelId": "458_10_1"
-  },
-  {
-    "ModelName": "THREE_STOREY_BUILDING_GLASS_FRONT1",
-    "ModelId": "458_12_1"
-  },
-  {
-    "ModelName": "THREE_STOREY_BUILDING_GLASS_FRONT2",
-    "ModelId": "458_13_1"
   },
   {
     "ModelName": "THREE_STOREY_BUILDING_WINDOW",
@@ -2416,6 +2496,10 @@
     "ModelId": "426_06_1"
   },
   {
+    "ModelName": "WINDOW",
+    "ModelId": "403_10_1"
+  },
+  {
     "ModelName": "WIRE",
     "ModelId": "320_01_1"
   },
@@ -2438,77 +2522,5 @@
   {
     "ModelName": "WOODEN_PLANK",
     "ModelId": "362_01_1"
-  },
-  {
-    "ModelName": "M203_LAUNCHER_OBJ",
-    "ModelId": "108_05_1"
-  },
-  {
-    "ModelName": "AMMO_556_OBJ",
-    "ModelId": "115_01_1"
-  },
-  {
-    "ModelName": "MEDIPACK_SYRINGE_OBJ",
-    "ModelId": "104_01_1"
-  },
-  {
-    "ModelName": "AMMO_44_OBJ",
-    "ModelId": "120_01_1"
-  },
-  {
-    "ModelName": "AMMO_357_OBJ",
-    "ModelId": "118_01_1"
-  },
-  {
-    "ModelName": "AMMO_762_OBJ",
-    "ModelId": "119_01_1"
-  },
-  {
-    "ModelName": "AMMO_919_OBJ",
-    "ModelId": "116_01_1"
-  },
-  {
-    "ModelName": "STAIRS",
-    "ModelId": "423_02_1"
-  },
-  {
-    "ModelName": "ROTOR",
-    "ModelId": "712_01_1"
-  },
-  {
-    "ModelName": "WINDOW",
-    "ModelId": "403_10_1"
-  },
-  {
-    "ModelName": "KNIFE_MODEL",
-    "ModelId": "133_01_1"
-  },
-  {
-    "ModelName": "HITZONE",
-    "ModelId": "700_08_1"
-  },
-  {
-    "ModelName": "HITZONE",
-    "ModelId": "616_04_1"
-  },
-  {
-    "ModelName": "HITZONE",
-    "ModelId": "614_09_1"
-  },
-  {
-    "ModelName": "HITZONE",
-    "ModelId": "601_09_1"
-  },
-  {
-    "ModelName": "HITZONE",
-    "ModelId": "700_19_1"
-  },
-  {
-    "ModelName": "TANK_TURRET",
-    "ModelId": "614_10_1"
-  },
-  {
-    "ModelName": "STATIONARY_GUN",
-    "ModelId": "456_13_1"
   }
 ]

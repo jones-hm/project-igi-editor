@@ -78,13 +78,6 @@ public:
 	Renderer();
 	~Renderer();
 
-	// Load building names from IGIModelsLevel.json
-	void LoadBuildingNames();
-	void SetCurrentLevel(int level) { current_level_ = level; }
-	std::string GetBuildingName(const std::string& modelId);
-	std::string GetTaskId(const std::string& modelId);
-	void ParseLevelObjects(const std::string& arrayContent, int levelNum, bool isBuilding);
-
 	bool					Init();
 	void					Shutdown();
 
@@ -116,9 +109,7 @@ public:
 	float					GetMeshZOffset(const std::string& modelId, bool isBuilding) { return objects_.GetMeshZOffset(modelId, isBuilding); }
 
 private:
-	int current_level_ = 1;
-	std::unordered_map<std::string, std::string> building_names_;
-	std::unordered_map<std::string, std::string> task_ids_;
+
 
 	struct ubo_mats_s {
 		glm::mat4			mvp_mat_follow_view_;
