@@ -113,8 +113,16 @@ void Renderer_Splines::DrawSplineSegment(
     if (t0len > intervalLen2) tan0 *= intervalLen2 / t0len;
     if (t1len > intervalLen2) tan1 *= intervalLen2 / t1len;
 
-    float localX = mesh.center.x + mesh.halfExtents.x;
-    if (localX < 0.1f) localX = 0.1f;
+    // Detect forward axis: Z-forward models (e.g. track rails) have halfExtents.z >> halfExtents.x
+    const bool forwardIsZ = (mesh.halfExtents.z > mesh.halfExtents.x * 1.5f);
+
+    float localLength;
+    if (forwardIsZ) {
+        localLength = mesh.center.z + mesh.halfExtents.z;
+    } else {
+        localLength = mesh.center.x + mesh.halfExtents.x;
+    }
+    if (localLength < 0.1f) localLength = 0.1f;
 
     int steps = parent.splineSegmentCount;
     if (steps <= 0) steps = 20;
@@ -134,19 +142,34 @@ void Renderer_Splines::DrawSplineSegment(
 
         glm::vec3 tangent = glm::normalize(nextPos - pos);
 
-        // Yaw: align local +X with tangent in the XY plane.
-        float gamma = std::atan2(tangent.y, tangent.x);
-        // Pitch: tilt tile up/down to follow slope (around pre-yaw local Y).
-        float horiz = std::sqrt(tangent.x * tangent.x + tangent.y * tangent.y);
-        float pitch  = std::atan2(tangent.z, horiz);
-
         float dist = glm::distance(pos, nextPos);
-        float scaleX = dist / localX;
+        float scaleLen = dist / localLength;
 
         glm::mat4 model = glm::translate(glm::mat4(1.f), pos);
-        model = glm::rotate(model, gamma, glm::vec3(0.f, 0.f, 1.f));   // yaw around world Z
-        model = glm::rotate(model, -pitch, glm::vec3(0.f, 1.f, 0.f));  // pitch around local Y
-        model = glm::scale(model, glm::vec3(scaleX, 40.96f, 40.96f));
+
+        if (forwardIsZ) {
+            // Build lookAt-style rotation: local +Z → tangent direction
+            const glm::vec3 worldUp(0.f, 0.f, 1.f);
+            glm::vec3 right = glm::cross(worldUp, tangent);
+            if (glm::length(right) < 0.001f) right = glm::vec3(1.f, 0.f, 0.f);
+            right = glm::normalize(right);
+            glm::vec3 newUp = glm::normalize(glm::cross(tangent, right));
+            glm::mat4 lookRot(
+                glm::vec4(right,   0.f),
+                glm::vec4(newUp,   0.f),
+                glm::vec4(tangent, 0.f),
+                glm::vec4(0.f, 0.f, 0.f, 1.f));
+            model = model * lookRot;
+            model = glm::scale(model, glm::vec3(40.96f, 40.96f, scaleLen));
+        } else {
+            // X-forward: yaw then pitch
+            float gamma = std::atan2(tangent.y, tangent.x);
+            float horiz = std::sqrt(tangent.x * tangent.x + tangent.y * tangent.y);
+            float pitch  = std::atan2(tangent.z, horiz);
+            model = glm::rotate(model, gamma, glm::vec3(0.f, 0.f, 1.f));
+            model = glm::rotate(model, -pitch, glm::vec3(0.f, 1.f, 0.f));
+            model = glm::scale(model, glm::vec3(scaleLen, 40.96f, 40.96f));
+        }
 
         glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(model));
 

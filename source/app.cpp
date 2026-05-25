@@ -231,10 +231,6 @@ void App::LoadLevel(int level_no) {
 			Logger::Get().Log(LogLevel::ERR, "[App] Failed to load level " + std::to_string(level_no));
 		}
 
-		// Load AI models from JSON for this level
-		Logger::Get().Log(LogLevel::INFO, "[App] Step 2.5: Loading AI models from IGIModelsAllLevel.json...");
-		LoadAIModelsFromFolder(level_no);
-
 		// Always snap objects to terrain after any level load
 		Logger::Get().Log(LogLevel::INFO, "[App] Step 3: Snapping objects to terrain...");
 		SnapObjectsToTerrain();
@@ -1821,137 +1817,16 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 }
 
 
-#ifdef _WIN32
-#include <windows.h>
-#include <tlhelp32.h>
-#endif
-
 void App::ResetLevel() {
-	int levelNo = level_.GetLevelNo();
-
-	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Level " + std::to_string(levelNo) + " - restore objects.qvm from content/tools/restore to IGIPath");
-
-	// Force kill any running game instance to release file locks on objects.qvm
-#ifdef _WIN32
-	{
-		HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-		if (hSnap != INVALID_HANDLE_VALUE) {
-			PROCESSENTRY32 pe;
-			pe.dwSize = sizeof(pe);
-			if (Process32First(hSnap, &pe)) {
-				do {
-					if (_wcsicmp(pe.szExeFile, L"igi.exe") == 0) {
-						HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
-						if (hProc) {
-							TerminateProcess(hProc, 0);
-							CloseHandle(hProc);
-							Logger::Get().Log(LogLevel::INFO, "[App] Terminated running game instance 'igi.exe' to unlock files.");
-						}
-					}
-				} while (Process32Next(hSnap, &pe));
-			}
-			CloseHandle(hSnap);
-		}
-	}
-#endif
-
-	std::string toolsDir = Utils::GetExeDirectory() + "\\content\\tools";
-
-	// Copy objects.qvm from content/tools/restore to IGIPath
-	char srcQvm[1024];
-	Str_SPrintf(srcQvm, 1024, "%s\\restore\\missions\\location0\\level%d\\objects.qvm", toolsDir.c_str(), levelNo);
-
-	char dstQvm[1024];
-	Str_SPrintf(dstQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", Utils::GetIGIRootPath().c_str(), levelNo);
-
-	Logger::Get().Log(LogLevel::INFO, "[App] Copying objects.qvm from " + std::string(srcQvm) + " to " + std::string(dstQvm));
-
-	try {
-		if (std::filesystem::exists(srcQvm)) {
-			std::filesystem::create_directories(std::filesystem::path(dstQvm).parent_path());
-			// Force permissions to allow overwrite/delete
-			if (std::filesystem::exists(dstQvm)) {
-				std::filesystem::permissions(dstQvm, 
-					std::filesystem::perms::owner_all | std::filesystem::perms::group_all | std::filesystem::perms::others_all,
-					std::filesystem::perm_options::replace);
-				std::filesystem::remove(dstQvm);
-			}
-			std::filesystem::copy_file(srcQvm, dstQvm, std::filesystem::copy_options::overwrite_existing);
-			Logger::Get().Log(LogLevel::INFO, "[App] QVM copied successfully to game path.");
-		}
-		else {
-			Logger::Get().Log(LogLevel::ERR, "[App] Error: Source QVM not found at " + std::string(srcQvm));
-		}
-	}
-	catch (const std::exception& e) {
-		Logger::Get().Log(LogLevel::ERR, "[App] ResetLevel error: " + std::string(e.what()));
-	}
-
-	// Remove local objects.qsc so it recompiles fresh from QVM
-	std::string exeDir = Utils::GetExeDirectory();
-	std::string dstQsc = exeDir + "\\objects.qsc";
-	try {
-		if (std::filesystem::exists(dstQsc)) {
-			std::filesystem::remove(dstQsc);
-		}
-	}
-	catch (...) {}
-
-	// Reload level after reset
-	LoadLevel(levelNo);
-	// Snap objects to terrain after level reset
-	SnapObjectsToTerrain();
+	// Not implemented — restore from backup is disabled to prevent reading stale data.
+	Logger::Get().Log(LogLevel::INFO, "[App] ResetLevel: not implemented");
+	Utils::ShowError("Reset Level is not implemented yet.", "IGI Editor");
 }
 
 void App::ResetScript() {
-	int levelNo = level_.GetLevelNo();
-
-	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Script for Level " + std::to_string(levelNo) + " - restore objects.qvm from content/tools/restore to IGIPath");
-
-	std::string toolsDir = Utils::GetExeDirectory() + "\\content\\tools";
-
-	// Copy objects.qvm from content/tools/restore to IGIPath
-	char srcQvm[1024];
-	Str_SPrintf(srcQvm, 1024, "%s\\restore\\missions\\location0\\level%d\\objects.qvm", toolsDir.c_str(), levelNo);
-
-	char dstQvm[1024];
-	Str_SPrintf(dstQvm, 1024, "%s\\missions\\location0\\level%d\\objects.qvm", Utils::GetIGIRootPath().c_str(), levelNo);
-
-	Logger::Get().Log(LogLevel::INFO, "[App] Copying objects.qvm from " + std::string(srcQvm) + " to " + std::string(dstQvm));
-
-	try {
-		if (std::filesystem::exists(srcQvm)) {
-			std::filesystem::create_directories(std::filesystem::path(dstQvm).parent_path());
-			// Force permissions to allow overwrite/delete
-			if (std::filesystem::exists(dstQvm)) {
-				std::filesystem::permissions(dstQvm, 
-					std::filesystem::perms::owner_all | std::filesystem::perms::group_all | std::filesystem::perms::others_all,
-					std::filesystem::perm_options::replace);
-				std::filesystem::remove(dstQvm);
-			}
-			std::filesystem::copy_file(srcQvm, dstQvm, std::filesystem::copy_options::overwrite_existing);
-			Logger::Get().Log(LogLevel::INFO, "[App] QVM copied successfully to game path.");
-		}
-		else {
-			Logger::Get().Log(LogLevel::ERR, "[App] Error: Source QVM not found at " + std::string(srcQvm));
-		}
-	}
-	catch (const std::exception& e) {
-		Logger::Get().Log(LogLevel::ERR, "[App] ResetScript error: " + std::string(e.what()));
-	}
-
-	// Remove local objects.qsc so it recompiles fresh from QVM
-	std::string exeDir = Utils::GetExeDirectory();
-	std::string dstQsc = exeDir + "\\objects.qsc";
-	try {
-		if (std::filesystem::exists(dstQsc)) {
-			std::filesystem::remove(dstQsc);
-		}
-	}
-	catch (...) {}
-
-	// Reload the level to apply changes
-	LoadLevel(levelNo);
+	// Not implemented — restore from backup is disabled to prevent reading stale data.
+	Logger::Get().Log(LogLevel::INFO, "[App] ResetScript: not implemented");
+	Utils::ShowError("Reset Script is not implemented yet.", "IGI Editor");
 }
 
 
@@ -2999,8 +2874,13 @@ int App::PickObjectAtScreenPos(int screen_x, int screen_y) {
 	glm::mat4 mvp_base = proj * view * glm::scale(glm::mat4(1.0f), glm::vec3(RENDERER_MODEL_SCALE_DOWN));
 	constexpr float BASE_SCALE = 40.96f;
 
+	// Read depth buffer at the cursor pixel to filter occluded objects.
+	// glReadPixels Y is bottom-up; GLUT mouse Y is top-down.
+	float depth_at_cursor = 1.0f;
+	glReadPixels(screen_x, height - screen_y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &depth_at_cursor);
+
 	// Pass 1: collect every object whose screen AABB covers the cursor
-	struct Candidate { int index; float min_depth; };
+	struct Candidate { int index; float min_depth; float min_ndc_depth; };
 	std::vector<Candidate> candidates;
 
 	for (size_t i = 0; i < objects.size(); ++i) {
@@ -3025,6 +2905,7 @@ int App::PickObjectAtScreenPos(int screen_x, int screen_y) {
 		float min_px = FLT_MAX, max_px = -FLT_MAX;
 		float min_py = FLT_MAX, max_py = -FLT_MAX;
 		float min_depth = FLT_MAX;
+		float min_ndc_depth = FLT_MAX;
 		bool any_front = false;
 
 		for (int cx = -1; cx <= 1; cx += 2) {
@@ -3035,6 +2916,7 @@ int App::PickObjectAtScreenPos(int screen_x, int screen_y) {
 					any_front = true;
 					float ndc_x = clip.x / clip.w;
 					float ndc_y = clip.y / clip.w;
+					float ndc_z = clip.z / clip.w;
 					float px = (ndc_x * 0.5f + 0.5f) * (float)width;
 					float py = (1.0f - (ndc_y * 0.5f + 0.5f)) * (float)height;
 					min_px = std::min(min_px, px);
@@ -3042,16 +2924,20 @@ int App::PickObjectAtScreenPos(int screen_x, int screen_y) {
 					min_py = std::min(min_py, py);
 					max_py = std::max(max_py, py);
 					min_depth = std::min(min_depth, clip.w);
+					min_ndc_depth = std::min(min_ndc_depth, ndc_z);
 				}
 			}
 		}
 
 		if (!any_front) continue;
 
-		constexpr float margin = 6.0f;
+		constexpr float margin = 2.0f;
 		if ((float)screen_x >= min_px - margin && (float)screen_x <= max_px + margin &&
 			(float)screen_y >= min_py - margin && (float)screen_y <= max_py + margin) {
-			candidates.push_back({ (int)i, min_depth });
+			// Convert min NDC z to depth-buffer value [0,1] and skip if clearly occluded.
+			float cand_depth = min_ndc_depth * 0.5f + 0.5f;
+			if (cand_depth > depth_at_cursor + 0.02f) continue;
+			candidates.push_back({ (int)i, min_depth, cand_depth });
 		}
 	}
 
@@ -3240,7 +3126,8 @@ void App::ProcessTreeViewClick(int mx, int my) {
 
             if (y >= start_y && y < window_state_.viewport_height_ - 50) {
                 // Check if interaction was on the node area (including [+] and label)
-                if (mx >= x - 20 && mx <= x + 300 && my >= y && my <= y + row_h) {
+                // Offset -2 matches the highlight quad drawn at (y-2)..(y+row_h-2) in renderer.
+                if (mx >= x - 20 && mx <= x + 300 && my >= y - 2 && my <= y + row_h - 2) {
                     found = true;
                     if (mx <= x + 5) { // Clicked on toggle area
                         if (obj.isContainer && !obj.childrenIndices.empty()) {
@@ -3295,7 +3182,7 @@ void App::ProcessTreeViewClick(int mx, int my) {
             int y = start_y + (current_row - tree_scroll_offset_) * row_h;
             current_row++;
             if (y >= start_y && y < window_state_.viewport_height_ - 50) {
-                if (mx >= tree_x - 20 && mx <= tree_x + 300 && my >= y && my <= y + row_h) {
+                if (mx >= tree_x - 20 && mx <= tree_x + 300 && my >= y - 2 && my <= y + row_h - 2) {
                     found = true;
                     if (mx <= tree_x + 5) {
                         tree_decl_expanded_ = !tree_decl_expanded_;
@@ -3338,7 +3225,7 @@ void App::ProcessTreeViewHover(int mx, int my) {
         current_row++;
 
         if (y >= start_y && y < window_state_.viewport_height_ - 50) {
-            if (mx >= x - 20 && mx <= x + 300 && my >= y && my <= y + row_h) {
+            if (mx >= x - 20 && mx <= x + 300 && my >= y - 2 && my <= y + row_h - 2) {
                 hover_tree_index_ = idx;
                 found = true;
             }
@@ -3364,7 +3251,7 @@ void App::ProcessTreeViewHover(int mx, int my) {
         int y = start_y + (current_row - tree_scroll_offset_) * row_h;
         current_row++;
         if (y >= start_y && y < window_state_.viewport_height_ - 50) {
-            if (mx >= tree_x - 20 && mx <= tree_x + 300 && my >= y && my <= y + row_h) {
+            if (mx >= tree_x - 20 && mx <= tree_x + 300 && my >= y - 2 && my <= y + row_h - 2) {
                 found = true;
                 hover_tree_index_ = -1;
             }

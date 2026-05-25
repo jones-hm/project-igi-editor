@@ -232,6 +232,7 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
     bool isSCameraCtrl = (typeStr == "SCameraControl");
     bool isExplode = (typeStr == "ExplodeObject");
     bool isAmbient = (typeStr == "AmbientArea");
+    bool isTrain = (typeStr == "Train");
 
     bool isDecl = (typeStr == "Task_DeclareParameters");
     bool isGrouping = (typeStr == "Container" || typeStr == "Static" || typeStr == "Game" || typeStr == "Level" || typeStr == "Flow" || typeStr == "Task" || typeStr == "Folder" ||
@@ -405,6 +406,14 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
                 case 7: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.y = cur_a->dbl_; obj.original_rot.y = cur_a->dbl_; } break;
                 case 8: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.z = cur_a->dbl_; obj.original_rot.z = cur_a->dbl_; } break;
                 case 15: if (cur_a->type_ == QSC::arg_s::type_t::STR) obj.modelId = cur_a->str_; break;
+            }
+        } else if (isTrain) {
+            // Train: Task_New(id, "Train", name, railPos, thrust, railroadID, "model", ...)
+            // No world XYZ position — placed along a rail spline by the engine.
+            switch (arg_idx) {
+                case 0: obj.taskId = TaskIdFromArg(cur_a); break;
+                case 2: if (cur_a->type_ == QSC::arg_s::type_t::STR) { obj.name = cur_a->str_; obj.original_name = cur_a->str_; obj.has_original_name = true; } break;
+                case 6: if (cur_a->type_ == QSC::arg_s::type_t::STR) obj.modelId = Utils::Trim(cur_a->str_); break;
             }
         } else if (isAmbient) {
             switch (arg_idx) {

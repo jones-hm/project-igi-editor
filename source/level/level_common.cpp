@@ -205,7 +205,14 @@ static void ConvertTex24ToPic(
 			dst_pixel[0] = src_pixel[2]; // R
 			dst_pixel[1] = src_pixel[1]; // G
 			dst_pixel[2] = src_pixel[0]; // B
-			dst_pixel[3] = 255;
+			// IGI uses two chroma keys in 24bpp textures:
+			//   pure white (255,255,255) for billboard/tree sprites
+			//   pure black (0,0,0)       for fence/wire meshes
+			{
+				const bool isWhite = (src_pixel[0] == 255 && src_pixel[1] == 255 && src_pixel[2] == 255);
+				const bool isBlack = (src_pixel[0] == 0   && src_pixel[1] == 0   && src_pixel[2] == 0);
+				dst_pixel[3] = (isWhite || isBlack) ? 0 : 255;
+			}
 		}
 	}
 }

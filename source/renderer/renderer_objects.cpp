@@ -543,28 +543,17 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
             glDisable(GL_POLYGON_OFFSET_FILL);
         }
 
-        // Only buildings with portal/ATTA sub-models need distance-based culling.
-        // Non-buildings (AI, static props, containers) never have ATTA records.
-        bool isCloseEnough = true;
-        if (obj.isBuilding && Config::Get().enableLOD) {
-            float distToCamera = glm::distance(camera_pos, glm::vec3(obj.pos));
-            float portalDistance = 100.0f;
-            if (portal_distances_.count(obj.modelId)) {
-                portalDistance = portal_distances_[obj.modelId];
-            }
-            isCloseEnough = (distToCamera <= (portalDistance * WORLD_UNITS_PER_METER));
-        }
-
         // ── Render ATTA sub-models ────────────────────────────────────────────
-        if (obj.isBuilding && isCloseEnough) {
-            std::string attCacheKey = std::to_string(current_level_) + ":building:" + obj.modelId;
+        {
+            const std::string attPrefix = obj.isBuilding ? "building:" : "object:";
+            std::string attCacheKey = std::to_string(current_level_) + ":" + attPrefix + obj.modelId;
             auto ait = attachment_cache_.find(attCacheKey);
             if (ait != attachment_cache_.end()) {
                 glEnable(GL_POLYGON_OFFSET_FILL);
                 glPolygonOffset(-2.0f, -2.0f); // Prevent z-fighting with hull walls
 
                 for (const auto &att : ait->second) {
-                    std::string subKey = std::to_string(current_level_) + ":building:" + att.modelId;
+                    std::string subKey = std::to_string(current_level_) + ":" + attPrefix + att.modelId;
                     auto sit = mesh_cache_.find(subKey);
                     if (sit == mesh_cache_.end() || sit->second.vertexCount == 0) continue;
                     const Mesh &subMesh = sit->second;
@@ -656,6 +645,53 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 }
                 
                 glDisable(GL_POLYGON_OFFSET_FILL);
+            }
+        }
+
+        // ── Companion body-part models ────────────────────────────────────────
+        // IGI characters split their mesh across _01_1 (body) + _01_2.._01_5
+        // (head, hands, legs, etc.). Render all companion parts at the same
+        // transform as the main model so the full character appears.
+        if (!isTransparentPass && !obj.isBuilding) {
+            const std::string& mid = obj.modelId;
+            const std::string sfx = "_01_1";
+            if (mid.size() > sfx.size() &&
+                mid.compare(mid.size() - sfx.size(), sfx.size(), sfx) == 0) {
+                // e.g. "013_01_1" -> base = "013_01_"
+                const std::string base = mid.substr(0, mid.size() - 1);
+                // Restore main model matrix (ATTA block may have changed it)
+                glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(model));
+                // Companion parts (face, hands, legs) share the same world position as
+                // the body. Use GL_LEQUAL so equal-depth pixels resolve in draw order
+                // (later companion part wins over body). Disable depth writes so these
+                // overlay-only parts don't corrupt depth for other objects.
+                glDepthFunc(GL_LEQUAL);
+                glDepthMask(GL_FALSE);
+                for (int part = 2; part <= 5; ++part) {
+                    const std::string partId = base + std::to_string(part);
+                    Mesh partMesh = GetOrLoadMesh(partId, false);
+                    if (partMesh.vertexCount == 0) continue;
+                    for (const auto& sub : partMesh.subMeshes) {
+                        if (sub.VAO == 0 || sub.vertexCount == 0) continue;
+                        if (sub.textureID > 0) {
+                            glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
+                            glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                            glUniform1i(loc_useTex, 1);
+                            glActiveTexture(GL_TEXTURE0);
+                            glBindTexture(GL_TEXTURE_2D, sub.textureID);
+                            glUniform1i(loc_tex, 0);
+                        } else {
+                            glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
+                            glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                            glUniform1i(loc_useTex, 0);
+                        }
+                        glBindVertexArray(sub.VAO);
+                        glDrawArrays(GL_TRIANGLES, 0, sub.vertexCount);
+                    }
+                    glBindVertexArray(0);
+                }
+                glDepthMask(GL_TRUE);
+                glDepthFunc(GL_LESS);
             }
         }
     }
@@ -809,96 +845,130 @@ std::string Renderer_Objects::GetLevelTextureDatPath() const {
         "\\level" + std::to_string(current_level_) + ".dat";
 }
 
-void Renderer_Objects::EnsureTextureMapLoaded() {
-    if (texture_map_level_ == current_level_) {
-        return;
+void Renderer_Objects::LoadDatIntoMap(const std::string& datPath,
+    std::map<std::string, std::vector<std::string>>& outMap)
+{
+    std::ifstream file(datPath);
+    if (!file.is_open()) return;
+
+    std::vector<std::string> tokens;
+    std::string line;
+    while (std::getline(file, line)) {
+        line = Utils::Trim(line);
+        if (line.empty() || line.rfind("***", 0) == 0) continue;
+        tokens.push_back(line);
     }
+
+    if (tokens.empty()) return;
+
+    size_t cursor = 1; // token 0 is total count
+    while (cursor + 1 < tokens.size()) {
+        const std::string modelId = tokens[cursor++];
+        int textureCount = 0;
+        try { textureCount = std::stoi(tokens[cursor++]); } catch (...) { break; }
+        if (textureCount > 64) break;
+
+        std::vector<std::string> textureIds;
+        textureIds.reserve(textureCount);
+        for (int i = 0; i < textureCount && cursor < tokens.size(); ++i)
+            textureIds.push_back(tokens[cursor++]);
+
+        outMap.emplace(modelId, textureIds);
+    }
+}
+
+void Renderer_Objects::EnsureTextureMapLoaded() {
+    if (texture_map_level_ == current_level_) return;
 
     model_texture_map_cache_.clear();
     texture_map_level_ = current_level_;
 
     const std::string datPath = GetLevelTextureDatPath();
     Logger::Get().Log(LogLevel::INFO, "[TEX Native] Loading DAT map from " + datPath);
-
-    std::ifstream file(datPath);
-    if (!file.is_open()) {
-        Logger::Get().Log(LogLevel::WARNING, "[TEX Native] Failed to open DAT map: " + datPath);
-        return;
-    }
-
-    std::vector<std::string> tokens;
-    std::string line;
-    while (std::getline(file, line)) {
-        line = Utils::Trim(line);
-        if (line.empty()) {
-            continue;
-        }
-        if (line.rfind("***", 0) == 0) {
-            continue;
-        }
-        tokens.push_back(line);
-    }
-
-    if (tokens.empty()) {
-        Logger::Get().Log(LogLevel::WARNING, "[TEX Native] DAT map was empty: " + datPath);
-        return;
-    }
-
-    size_t cursor = 1; // token 0 is the total texture entry count
-    size_t parsedModels = 0;
-    while (cursor + 1 < tokens.size()) {
-        const std::string modelId = tokens[cursor++];
-        int textureCount = 0;
-        try {
-            textureCount = std::stoi(tokens[cursor++]);
-        } catch (...) {
-            Logger::Get().Log(LogLevel::ERR, "[TEX Native] Invalid texture count for model '" + modelId + "' in " + datPath);
-            break;
-        }
-
-        // A count > 64 means the cursor has drifted into the DAT texture-list section
-        // (e.g. "waypoint/0/393" causes "393" to be read as a model with count=stoi("207_01_1")=207).
-        // Stop parsing — everything after this point is the texture manifest, not model entries.
-        if (textureCount > 64) {
-            Logger::Get().Log(LogLevel::INFO,
-                "[TEX Native] DAT parse stopped at model='" + modelId +
-                "' count=" + std::to_string(textureCount) +
-                " — entered texture-list section");
-            break;
-        }
-
-        std::vector<std::string> textureIds;
-        textureIds.reserve(textureCount);
-        for (int i = 0; i < textureCount && cursor < tokens.size(); ++i) {
-            textureIds.push_back(tokens[cursor++]);
-        }
-
-        // Use emplace so the first (correct) entry for a model is never overwritten
-        // by a later stale parse of the same model name appearing as a texture ID.
-        model_texture_map_cache_.emplace(modelId, textureIds);
-        ++parsedModels;
-    }
-
-    Logger::Get().Log(
-        LogLevel::INFO,
+    LoadDatIntoMap(datPath, model_texture_map_cache_);
+    Logger::Get().Log(LogLevel::INFO,
         "[TEX Native] DAT map loaded level=" + std::to_string(current_level_) +
-        " models=" + std::to_string(parsedModels) +
-        " tokenCount=" + std::to_string(tokens.size()));
+        " models=" + std::to_string(model_texture_map_cache_.size()));
+}
+
+void Renderer_Objects::EnsureGlobalTextureMapLoaded() {
+    if (global_texture_map_loaded_) return;
+    global_texture_map_loaded_ = true;
+
+    const std::string igiRoot = Utils::GetIGIRootPath();
+    const std::string exeDir  = Utils::GetExeDirectory();
+
+    for (int lvl = 1; lvl <= 14; ++lvl) {
+        // Try local extracted DAT first, then game path
+        std::string localDat = exeDir + "\\content\\textures\\level" + std::to_string(lvl) +
+                               "\\level" + std::to_string(lvl) + ".dat";
+        std::string gameDat  = igiRoot + "\\missions\\location0\\level" + std::to_string(lvl) +
+                               "\\level" + std::to_string(lvl) + ".dat";
+
+        if (std::filesystem::exists(localDat)) LoadDatIntoMap(localDat, global_texture_map_);
+        else if (std::filesystem::exists(gameDat)) LoadDatIntoMap(gameDat, global_texture_map_);
+    }
+
+    Logger::Get().Log(LogLevel::INFO,
+        "[TEX Native] Global DAT map loaded: " + std::to_string(global_texture_map_.size()) + " models across all levels");
 }
 
 std::vector<std::string> Renderer_Objects::GetTextureIdsForModel(const std::string& modelId) {
     EnsureTextureMapLoaded();
 
-    auto it = model_texture_map_cache_.find(modelId);
-    if (it != model_texture_map_cache_.end()) {
-        Logger::Get().Log(
-            LogLevel::DEBUG,
-            "[TEX Native] DAT hit modelId=" + modelId +
-            " textureCount=" + std::to_string(it->second.size()));
-        return it->second;
+    // 1. Current level exact match
+    {
+        auto it = model_texture_map_cache_.find(modelId);
+        if (it != model_texture_map_cache_.end()) {
+            return it->second;
+        }
     }
 
-    Logger::Get().Log(LogLevel::DEBUG, "[TEX Native] DAT miss for modelId=" + modelId + ", falling back to same-id texture");
+    // 2. Variant fallback within current level: NNN_XX_N → NNN_01_1
+    //    e.g. "790_02_1" → try "790_01_1" so vehicle sub-objects share main body textures.
+    {
+        size_t p1 = modelId.find('_');
+        if (p1 != std::string::npos && p1 + 4 < modelId.size()) {
+            std::string primary = modelId.substr(0, p1) + "_01_1";
+            if (primary != modelId) {
+                auto it = model_texture_map_cache_.find(primary);
+                if (it != model_texture_map_cache_.end()) {
+                    Logger::Get().Log(LogLevel::DEBUG,
+                        "[TEX Native] variant fallback '" + modelId + "' → '" + primary + "'");
+                    return it->second;
+                }
+            }
+        }
+    }
+
+    // 3. Global DAT search across all other levels (e.g. Jones model in non-Jones level)
+    EnsureGlobalTextureMapLoaded();
+    {
+        auto it = global_texture_map_.find(modelId);
+        if (it != global_texture_map_.end()) {
+            Logger::Get().Log(LogLevel::DEBUG,
+                "[TEX Native] global DAT hit modelId=" + modelId);
+            return it->second;
+        }
+    }
+
+    // 4. Variant fallback in global DAT
+    {
+        size_t p1 = modelId.find('_');
+        if (p1 != std::string::npos && p1 + 4 < modelId.size()) {
+            std::string primary = modelId.substr(0, p1) + "_01_1";
+            if (primary != modelId) {
+                auto it = global_texture_map_.find(primary);
+                if (it != global_texture_map_.end()) {
+                    Logger::Get().Log(LogLevel::DEBUG,
+                        "[TEX Native] global variant fallback '" + modelId + "' → '" + primary + "'");
+                    return it->second;
+                }
+            }
+        }
+    }
+
+    Logger::Get().Log(LogLevel::DEBUG, "[TEX Native] DAT miss (all sources) for modelId=" + modelId);
     return { modelId };
 }
 
@@ -1309,6 +1379,18 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
         // Exact match
         std::filesystem::path exactPath = modelsPath / (modelId + ".mef");
         if (std::filesystem::exists(exactPath)) return exactPath.string();
+
+        // Companion-part guard: IDs ending in _2 .. _9 (face, hands, legs, etc.)
+        // must match exactly or not at all. The fuzzy fallback would otherwise
+        // return the main body mesh (_01_1) for any missing companion part,
+        // causing double-body / double-face rendering.
+        {
+            const size_t lastUs = modelId.rfind('_');
+            if (lastUs != std::string::npos && lastUs + 1 < modelId.size()) {
+                const char lastCh = modelId[lastUs + 1];
+                if (lastCh >= '2' && lastCh <= '9') return "";
+            }
+        }
 
         // Fuzzy scan
         std::string bestMatch;
