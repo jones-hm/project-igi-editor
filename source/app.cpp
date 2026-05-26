@@ -184,6 +184,11 @@ bool App::Init(int argc, char** argv) {
 }
 
 void App::Shutdown() {
+	if (game_process_.running) {
+		CloseHandle(game_process_.hProcess);
+		CloseHandle(game_process_.hThread);
+		game_process_ = {};
+	}
 	bridge_.Stop();
 	level_.Unload();
 	level_.FreeTerrainCubeDataPools();
