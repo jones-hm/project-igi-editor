@@ -2868,6 +2868,57 @@ void App::DecompileFromGame(int level_no) {
 	}
 }
 
+void App::LaunchGame() {
+	if (game_process_.running) {
+		Logger::Get().Log(LogLevel::INFO, "[App] LaunchGame: game already running, ignoring");
+		return;
+	}
+
+	SaveCurrentLevel();
+
+	std::string workDir = Utils::GetIGIRootPath();
+	std::string cmdLine = workDir + "\\igi.exe level" + std::to_string(level_.GetLevelNo());
+	Logger::Get().Log(LogLevel::INFO, "[App] LaunchGame: " + cmdLine);
+
+	STARTUPINFOA si = {};
+	si.cb = sizeof(si);
+	PROCESS_INFORMATION pi = {};
+
+	std::vector<char> cmdBuf(cmdLine.begin(), cmdLine.end());
+	cmdBuf.push_back('\0');
+
+	if (!CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE,
+	                    0, nullptr, workDir.c_str(), &si, &pi)) {
+		DWORD err = GetLastError();
+		std::string errMsg = "Failed to launch igi.exe. Error code: " + std::to_string(err);
+		Logger::Get().Log(LogLevel::ERR, "[App] LaunchGame: " + errMsg);
+		Utils::LogAndShowError(errMsg, "IGI Editor - Launch Error");
+		return;
+	}
+
+	Sleep(600);
+
+	HANDLE hGame = Utils::FindProcess("igi");
+	if (!hGame) {
+		Logger::Get().Log(LogLevel::ERR, "[App] LaunchGame: FindProcess(\"igi\") returned null");
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+		return;
+	}
+
+	game_process_.hProcess = hGame;
+	game_process_.hThread  = pi.hThread;
+	game_process_.pid      = Utils::GetProcessId();
+	game_process_.running  = true;
+
+	CloseHandle(pi.hProcess);
+
+	Logger::Get().Log(LogLevel::INFO, "[App] LaunchGame: game started PID=" +
+	                  std::to_string(game_process_.pid));
+
+	if (editor_hwnd_) ShowWindow(editor_hwnd_, SW_MINIMIZE);
+}
+
 void App::SaveAndCompile() {
 	namespace fs = std::filesystem;
 
