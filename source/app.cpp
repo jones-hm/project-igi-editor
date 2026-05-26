@@ -3633,8 +3633,8 @@ void App::EvaluateTrainTrackPositions() {
 		double t = (segLen > 0.0) ? (clamped - sd.cumDist[seg]) / segLen : 0.0;
 		outPos = sd.pts[seg] + t * (sd.pts[segNext] - sd.pts[seg]);
 		glm::dvec3 fwd = glm::normalize(sd.pts[segNext] - sd.pts[seg]);
-		outRot.z = atan2(fwd.y, fwd.x);
-		outRot.x = asin(glm::clamp(fwd.z, -1.0, 1.0));
+		outRot.z = atan2(-fwd.y, -fwd.x); // face opposite to arc direction (cab toward trainyard)
+		outRot.x = asin(glm::clamp(-fwd.z, -1.0, 1.0));
 		outRot.y = 0.0;
 	};
 
