@@ -172,6 +172,10 @@ private:
 
 	bool					skip_input_on_motion_once_;
 
+	bool					orbit_active_ = false;
+	glm::vec3				orbit_target_pos_ = glm::vec3(0.0f);
+	float					orbit_distance_ = 0.0f;
+
 	// viewer
 	struct viewer_s {
 		glm::vec3			pos_;

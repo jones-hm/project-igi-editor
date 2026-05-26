@@ -468,6 +468,8 @@ void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 }
 
 void App::Input_OnMouse(int button, int state, int x, int y) {
+	bool enableCameraMode = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera);
+
 	// Update mouse position first so EditorProcessClick uses correct coords
 	mouse_state_.prior_x_ = x;
 	mouse_state_.prior_y_ = y;
@@ -475,6 +477,26 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 	if (button == GLUT_LEFT_BUTTON) {
 		if (GLUT_DOWN == state) {
 			mouse_state_.left_button_down_ = true;
+			
+			if (enableCameraMode) {
+				int cx = window_state_.viewport_width_ >> 1;
+				int cy = window_state_.viewport_height_ >> 1;
+				int targetIdx = hover_object_index_;
+				if (targetIdx < 0) targetIdx = selected_object_index_;
+				if (targetIdx < 0) targetIdx = PickObjectAtScreenPos(cx, cy);
+
+				if (targetIdx >= 0) {
+					const auto& obj = level_.GetLevelObjects().GetObjects()[targetIdx];
+					orbit_active_ = true;
+					orbit_target_pos_ = glm::vec3(obj.pos);
+					orbit_distance_ = glm::distance(viewer_.pos_, orbit_target_pos_);
+					if (orbit_distance_ < 0.1f) orbit_distance_ = 1.0f;
+					Logger::Get().Log(LogLevel::INFO, "[App] Orbit mode activated around object: " + obj.type);
+				} else {
+					orbit_active_ = false;
+				}
+				return;
+			}
 			
 			if (task_editor_open_) {
 				int box_x = (window_state_.viewport_width_ - edit_box_w_) / 2;
@@ -551,11 +573,11 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			}
 
 			// Priority: TreeView HUD interaction
-			if (show_hud_ && x < 350) { // Tree is on the left
+			if (show_hud_ && x < 350 && !enableCameraMode) { // Tree is on the left
 				ProcessTreeViewClick(x, y);
 
 			}
-			else if (edit_mode_) {
+			else if (edit_mode_ && !enableCameraMode) {
 				EditorProcessClick(); 
 				// Update manipulation data AFTER selection, so we get the newly selected object
 				marker_manip_.start_x_ = x;
@@ -570,12 +592,18 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 		else if (GLUT_UP == state) {
 			mouse_state_.left_button_down_ = false;
 			edit_dragging_ = false;
+			orbit_active_ = false;
 
 			if (window_state_.cursor_visible_) {
 				input_.mouse_delta_x_ = 0;
 				input_.mouse_delta_y_ = 0;
 			}
 		}
+	}
+
+	// Update cursor instantly on click/release
+	if (window_state_.cursor_visible_ && !pause_mode_) {
+		glutSetCursor(enableCameraMode ? GLUT_CURSOR_NONE : GLUT_CURSOR_LEFT_ARROW);
 	}
 }
 
@@ -1827,8 +1855,26 @@ void App::ProcessInput(float delta_seconds) {
 	}
 
 	if (!edit_mode_ || enableCameraMode) {
-		viewer_.yaw_ += -input_.mouse_delta_x_ * MOUSE_SENSITIVE;
-		viewer_.pitch_ += -input_.mouse_delta_y_ * MOUSE_SENSITIVE;
+		if (orbit_active_) {
+			// Orbit rotation around fixed target axis
+			viewer_.yaw_ += -input_.mouse_delta_x_ * MOUSE_SENSITIVE;
+			viewer_.pitch_ += -input_.mouse_delta_y_ * MOUSE_SENSITIVE;
+
+			// Clamp pitch to avoid flipping
+			if (viewer_.pitch_ < -89.0f) viewer_.pitch_ = -89.0f;
+			if (viewer_.pitch_ > 89.0f) viewer_.pitch_ = 89.0f;
+
+			glm::vec3 new_forward;
+			glm::vec3 dummy_right, dummy_up;
+			AngleToVectors(viewer_.yaw_, viewer_.pitch_, viewer_.roll_, new_forward, dummy_right, dummy_up);
+
+			// Recalculate position based on distance and new forward vector
+			viewer_.pos_ = orbit_target_pos_ - new_forward * orbit_distance_;
+		} else {
+			// Standard free-look camera movement in-place
+			viewer_.yaw_ += -input_.mouse_delta_x_ * MOUSE_SENSITIVE;
+			viewer_.pitch_ += -input_.mouse_delta_y_ * MOUSE_SENSITIVE;
+		}
 	}
 
 	input_.mouse_delta_x_ = 0;

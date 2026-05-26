@@ -585,16 +585,6 @@ void Renderer::Draw(const draw_params_s &params,
         task_tree_view.selected_object_index_ >= 0) {
       info_object_index = task_tree_view.selected_object_index_;
     }
-    int tooltip_x = task_tree_view.mouse_x_;
-    int tooltip_y = task_tree_view.mouse_y_ + 25;
-    if (tooltip_x < 0)
-      tooltip_x = 0;
-    if (tooltip_x > params.view_define_->viewport_width_ - 260)
-      tooltip_x = params.view_define_->viewport_width_ - 260;
-    if (tooltip_y < 0)
-      tooltip_y = 0;
-    if (tooltip_y > params.view_define_->viewport_height_ - 100)
-      tooltip_y = params.view_define_->viewport_height_ - 100;
 
     if (info_object_index >= 0 && task_tree_view.level_objects_) {
       const auto &objects = task_tree_view.level_objects_->GetObjects();
@@ -607,6 +597,33 @@ void Renderer::Draw(const draw_params_s &params,
         }
       }
     }
+
+    int tooltip_x = task_tree_view.mouse_x_;
+    int tooltip_y = task_tree_view.mouse_y_ + 25;
+
+    if (info_object_index >= 0 && task_tree_view.level_objects_) {
+      const auto &objects = task_tree_view.level_objects_->GetObjects();
+      if (info_object_index < (int)objects.size()) {
+        const auto &obj = objects[info_object_index];
+        // Project 3D position to 2D screen coordinate
+        glm::vec4 clip_pos = mat_proj_ * mat_view_ * glm::vec4(glm::vec3(obj.pos) * RENDERER_MODEL_SCALE_DOWN, 1.0f);
+        if (clip_pos.w > 0.0f) {
+          float ndc_x = clip_pos.x / clip_pos.w;
+          float ndc_y = clip_pos.y / clip_pos.w;
+          tooltip_x = (int)((ndc_x * 0.5f + 0.5f) * params.view_define_->viewport_width_);
+          tooltip_y = (int)((1.0f - (ndc_y * 0.5f + 0.5f)) * params.view_define_->viewport_height_) + 15;
+        }
+      }
+    }
+
+    if (tooltip_x < 10)
+      tooltip_x = 10;
+    if (tooltip_x > params.view_define_->viewport_width_ - 260)
+      tooltip_x = params.view_define_->viewport_width_ - 260;
+    if (tooltip_y < 10)
+      tooltip_y = 10;
+    if (tooltip_y > params.view_define_->viewport_height_ - 100)
+      tooltip_y = params.view_define_->viewport_height_ - 100;
 
     if (info_object_index >= 0 && task_tree_view.level_objects_) {
       const auto &objects = task_tree_view.level_objects_->GetObjects();
