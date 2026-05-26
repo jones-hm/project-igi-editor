@@ -53,6 +53,7 @@ struct ConfigData {
     KeyBinding keySnapToObject;
     KeyBinding keySnapToGround;
     KeyBinding keyClipMode;
+    KeyBinding keyToggleGame;
 
     // NEW: Task Controls
     KeyBinding keyCreateNewTask;

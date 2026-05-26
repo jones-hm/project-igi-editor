@@ -91,6 +91,7 @@ void Config::CreateDefault() {
     data_.keyQuit = {0x51, true, false, false};    
     data_.keyResetScript = {0x52, false, true, false}; 
     data_.keyClipMode = {VK_F3, false, false, false};
+    data_.keyToggleGame = {VK_F3, false, false, false};
     data_.keyDeleteTask = {VK_DELETE, false, false, false};
     data_.enableLogging = true;
     data_.debugLogging = false;
@@ -228,6 +229,7 @@ void Config::Load() {
                 else if (eventName == "CameraSnapToObject") data_.keySnapToObject = ParseKeyBinding(binding);
                 else if (eventName == "CameraSnapToGround") data_.keySnapToGround = ParseKeyBinding(binding);
                 else if (eventName == "ToggleDisplay") data_.keyClipMode = ParseKeyBinding(binding);
+                else if (eventName == "ToggleGame")    data_.keyToggleGame = ParseKeyBinding(binding);
                 else if (eventName == "TaskNew") data_.keyCreateNewTask = ParseKeyBinding(binding);
                 else if (eventName == "TaskCopy") data_.keyCopyTask = ParseKeyBinding(binding);
                 else if (eventName == "TaskPaste") data_.keyPasteTask = ParseKeyBinding(binding);
