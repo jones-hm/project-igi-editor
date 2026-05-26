@@ -78,10 +78,11 @@ static std::string ArgTokenFromArg(const QSC::arg_s* a) {
             return "\"" + std::string(a->str_ ? a->str_ : "") + "\"";
         case QSC::arg_s::type_t::DBL: {
             double v = a->dbl_;
-            // If the value is a whole number, write it as a plain integer token
-            // (matching original QSC style: 0, 1, 128 not 0.0, 1.0, 128.0).
+            // Only write as a plain integer when the original token was an integer
+            // literal (no '.' or 'e'). Float literals like 24316832.0 must keep
+            // their decimal point so a re-serialized line matches the source format.
             double intPart;
-            if (std::modf(v, &intPart) == 0.0 &&
+            if (!a->is_float_ && std::modf(v, &intPart) == 0.0 &&
                 v >= -2147483648.0 && v <= 2147483647.0) {
                 return std::to_string((long long)intPart);
             }

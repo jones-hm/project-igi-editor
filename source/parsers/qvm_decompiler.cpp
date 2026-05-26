@@ -10,23 +10,24 @@
 #include <cstdint>
 #include <memory>
 
-// Float formatting helper — matches legacy GConv's decimal output.
-// Use 10-digit fixed precision. Legacy GConv does not support 
-// scientific notation (e/p), but it can parse long decimal strings.
-// This provides enough resolution to capture the 32-bit float bits.
+// Float formatting helper — reproduces the full-precision decimal output of the
+// original GConv tool (e.g. 0.30000001192092896, not truncated 0.3000000119).
+// %.17g gives the shortest 17-significant-digit representation, which is the
+// exact double value of the 32-bit float and round-trips through strtof/strtod.
 static std::string FloatStr(float v) {
-    char buf[128];
-    int len = snprintf(buf, sizeof(buf), "%.10f", (double)v);
-    std::string s(buf, len);
-    
-    // Trim trailing zeros but keep .0
-    size_t last = s.find_last_not_of('0');
-    if (last != std::string::npos) {
-        if (s[last] == '.') {
-            s = s.substr(0, last + 2);
-        } else {
-            s = s.substr(0, last + 1);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%.17g", (double)v);
+    std::string s(buf);
+
+    // For fixed notation (no exponent), trim trailing zeros but keep at least one
+    // decimal digit so the token is always recognizable as a float.
+    if (s.find('e') == std::string::npos && s.find('E') == std::string::npos) {
+        if (s.find('.') != std::string::npos) {
+            while (!s.empty() && s.back() == '0') s.pop_back();
+            if (!s.empty() && s.back() == '.') s.pop_back();
         }
+        // Ensure the value has a '.' so the QSC parser treats it as a float token.
+        if (s.find('.') == std::string::npos) s += ".0";
     }
     return s;
 }

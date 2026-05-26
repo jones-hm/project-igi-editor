@@ -644,6 +644,7 @@ QSC::arg_s* QSC::AllocArg() {
 		arg_s* new_arg = arg_pool_ + allocated_args_++;
 
 		new_arg->next_ = nullptr;
+		new_arg->is_float_ = false;
 		new_arg->type_ = arg_s::type_t::STR;
 		new_arg->str_ = "";
 
@@ -865,6 +866,12 @@ bool QSC::ParseArgs(func_s* func) {
 			char backup_c = *pc_;
 			*pc_ = '\0';
 
+			// Detect whether the original token was a float literal (had '.' or 'e').
+			bool token_is_float = false;
+			for (const char* p = num_start; *p; ++p) {
+				if (*p == '.' || *p == 'e' || *p == 'E') { token_is_float = true; break; }
+			}
+
 			double num = atof(num_start);
 
 			*pc_ = backup_c;
@@ -877,6 +884,7 @@ bool QSC::ParseArgs(func_s* func) {
 			new_arg->next_ = nullptr;
 			new_arg->type_ = arg_s::type_t::DBL;
 			new_arg->dbl_ = num;
+			new_arg->is_float_ = token_is_float;
 
 			AddArgToFunc(func, new_arg);
 

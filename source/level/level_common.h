@@ -180,6 +180,7 @@ public:
 	struct arg_s {
 
 		arg_s* next_;
+		bool is_float_;  // true when the original QSC token was a float literal (contained '.' or 'e')
 
 		enum class type_t {
 			STR,
