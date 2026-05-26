@@ -175,7 +175,11 @@ bool App::Init(int argc, char** argv) {
 
 	// Set initial cursor state
 	glutSetCursor(GLUT_CURSOR_LEFT_ARROW);
-	
+
+	// Cache editor HWND for minimize/restore around game launch
+	editor_hwnd_ = Utils::FindWindow("IGI Editor v" + Utils::GetVersionString());
+	if (!editor_hwnd_) editor_hwnd_ = GetActiveWindow();
+
 	return true;
 }
 
