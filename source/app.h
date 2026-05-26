@@ -225,6 +225,7 @@ private:
 	void					UpdateMarkerManipulation();
 	void					PropagateTransformToChildren(int parentIdx, const glm::dvec3& deltaPos, const glm::dmat3& deltaWorld, const glm::dvec3& pivot);
 	void					PushUndoState();
+	void					SaveAndReloadObjects();
 	void					Undo();
 	void					Redo();
 	void					PushTaskEditorUndoState();

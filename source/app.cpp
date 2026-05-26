@@ -488,10 +488,11 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 				if (targetIdx >= 0) {
 					const auto& obj = level_.GetLevelObjects().GetObjects()[targetIdx];
 					orbit_active_ = true;
-					orbit_target_pos_ = glm::vec3(obj.pos);
+					orbit_target_pos_ = glm::vec3(obj.pos) * RENDERER_MODEL_SCALE_DOWN;
 					orbit_distance_ = glm::distance(viewer_.pos_, orbit_target_pos_);
 					if (orbit_distance_ < 0.1f) orbit_distance_ = 1.0f;
 					Logger::Get().Log(LogLevel::INFO, "[App] Orbit mode activated around object: " + obj.type);
+					Logger::Get().Log(LogLevel::WARNING, "[App] Orbit target pos: " + std::to_string(orbit_target_pos_.x) + ", " + std::to_string(orbit_target_pos_.y) + ", " + std::to_string(orbit_target_pos_.z) + " | Dist: " + std::to_string(orbit_distance_));
 				} else {
 					orbit_active_ = false;
 				}
@@ -522,7 +523,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 						level_.GetLevelObjects().ParseTaskLine(obj.qscLine, obj);
 						
 						int savedIndex = selected_object_index_;
-						level_.SaveAndReloadObjects();
+						SaveAndReloadObjects();
 						auto& objects = level_.GetLevelObjects().GetObjects();
 						if (objects.empty()) selected_object_index_ = -1;
 						else selected_object_index_ = std::min(savedIndex, (int)objects.size() - 1);
@@ -593,6 +594,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			mouse_state_.left_button_down_ = false;
 			edit_dragging_ = false;
 			orbit_active_ = false;
+			status_message_.clear(); // Clear movement telemetry status when mouse is released
 
 			if (window_state_.cursor_visible_) {
 				input_.mouse_delta_x_ = 0;
@@ -1165,7 +1167,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 				}
 				
 				selected_object_index_ = startIdxInObjects;
-				level_.SaveAndReloadObjects();
+				SaveAndReloadObjects();
 				
 				auto& reloaded = level_.GetLevelObjects().GetObjects();
 				if (!reloaded.empty()) {
@@ -2499,13 +2501,24 @@ void App::UpdateMarkerManipulation() {
 	int fdx = input_.mouse_delta_x_;
 	int fdy = input_.mouse_delta_y_;
 
-	if (shift && ctrl) marker_manip_.mode_ = ManipulationMode::MoveXZ;
-	else if (shift)    marker_manip_.mode_ = ManipulationMode::MoveXY;
-	else if (ctrl)     marker_manip_.mode_ = ManipulationMode::MoveXZ;
-	else if (input_.keys_ & MK_MANIP_A) marker_manip_.mode_ = ManipulationMode::RotateAlpha;
-	else if (input_.keys_ & MK_MANIP_B) marker_manip_.mode_ = ManipulationMode::RotateBeta;
-	else if (input_.keys_ & MK_MANIP_G) marker_manip_.mode_ = ManipulationMode::RotateGamma;
-	else               marker_manip_.mode_ = ManipulationMode::None;
+	ManipulationMode current_mode = ManipulationMode::None;
+	if (shift && ctrl) current_mode = ManipulationMode::MoveXZ;
+	else if (shift)    current_mode = ManipulationMode::MoveXY;
+	else if (ctrl)     current_mode = ManipulationMode::MoveXZ;
+	else if (input_.keys_ & MK_MANIP_A) current_mode = ManipulationMode::RotateAlpha;
+	else if (input_.keys_ & MK_MANIP_B) current_mode = ManipulationMode::RotateBeta;
+	else if (input_.keys_ & MK_MANIP_G) current_mode = ManipulationMode::RotateGamma;
+	else               current_mode = ManipulationMode::None;
+
+	// Detect mid-drag transition between MoveXY and MoveXZ to prevent resetting coordinate updates in the other plane
+	if (marker_manip_.mode_ != ManipulationMode::None && current_mode != ManipulationMode::None &&
+	    current_mode != marker_manip_.mode_) {
+		marker_manip_.start_pos_ = obj.pos;
+		marker_manip_.start_x_ = mouse_state_.prior_x_;
+		marker_manip_.start_y_ = mouse_state_.prior_y_;
+	}
+
+	marker_manip_.mode_ = current_mode;
 
 	// Push undo state once at the start of each new manipulation gesture
 	if (marker_manip_.mode_ != ManipulationMode::None) {
@@ -2641,13 +2654,19 @@ void App::PushUndoState() {
 		object_undo_stack_.erase(object_undo_stack_.begin());
 }
 
+void App::SaveAndReloadObjects() {
+	level_.SaveAndReloadObjects();
+	EvaluateTrainTrackPositions();
+	SnapObjectsToTerrain();
+}
+
 void App::Undo() {
 	if (object_undo_stack_.empty()) { status_message_ = "Nothing to undo"; return; }
 	auto& objects = level_.GetLevelObjects().GetObjects();
 	object_redo_stack_.push_back(objects);
 	objects = object_undo_stack_.back();
 	object_undo_stack_.pop_back();
-	level_.SaveAndReloadObjects();
+	SaveAndReloadObjects();
 	status_message_ = "Undo";
 }
 
@@ -2657,7 +2676,7 @@ void App::Redo() {
 	object_undo_stack_.push_back(objects);
 	objects = object_redo_stack_.back();
 	object_redo_stack_.pop_back();
-	level_.SaveAndReloadObjects();
+	SaveAndReloadObjects();
 	status_message_ = "Redo";
 }
 
@@ -3110,7 +3129,7 @@ void App::CreateNewTask() {
         objects.push_back(newObj);
         selected_object_index_ = 0;
         level_.GetLevelObjects().UpdateCoordinatesInLine(objects.back());
-        level_.SaveAndReloadObjects();
+        SaveAndReloadObjects();
         return;
     }
 
@@ -3137,7 +3156,7 @@ void App::DeleteSelectedTask() {
     };
 
     delete_recurse(selected_object_index_);
-    level_.SaveAndReloadObjects();
+    SaveAndReloadObjects();
     auto& reloaded = level_.GetLevelObjects().GetObjects();
     if (reloaded.empty()) selected_object_index_ = -1;
     else if (parentIndex >= 0 && parentIndex < (int)reloaded.size()) selected_object_index_ = parentIndex;
@@ -3216,7 +3235,7 @@ void App::PasteTask() {
     }
 
     selected_object_index_ = startIdxInObjects;
-    level_.SaveAndReloadObjects();
+    SaveAndReloadObjects();
     auto& reloaded = level_.GetLevelObjects().GetObjects();
     if (!reloaded.empty()) selected_object_index_ = std::min(selected_object_index_, (int)reloaded.size() - 1);
     
@@ -3241,7 +3260,7 @@ void App::AssignTaskID() {
     objects[selected_object_index_].taskId = std::to_string(maxId + 1);
     objects[selected_object_index_].modified = true;
     level_.GetLevelObjects().UpdateCoordinatesInLine(objects[selected_object_index_]);
-    level_.SaveAndReloadObjects();
+    SaveAndReloadObjects();
     auto& reloaded = level_.GetLevelObjects().GetObjects();
     if (!reloaded.empty()) selected_object_index_ = std::min(selected_object_index_, (int)reloaded.size() - 1);
     
