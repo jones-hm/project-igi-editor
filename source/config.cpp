@@ -355,6 +355,7 @@ void Config::Save() {
         WriteBind("CameraSnapToObject", data_.keySnapToObject);
         WriteBind("CameraSnapToGround", data_.keySnapToGround);
         WriteBind("ToggleDisplay", data_.keyClipMode);
+        WriteBind("ToggleGame", data_.keyToggleGame);
         WriteBind("TaskNew", data_.keyCreateNewTask);
         WriteBind("TaskCopy", data_.keyCopyTask);
         WriteBind("TaskPaste", data_.keyPasteTask);
