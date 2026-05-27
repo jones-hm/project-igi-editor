@@ -42,6 +42,23 @@ static DWORD WINAPI GameMonitorProc(LPVOID param) {
 	return 0;
 }
 
+// ── Global hotkey support ────────────────────────────────────────────────────
+// We subclass GLUT's window so WM_HOTKEY messages reach our code even when
+// the editor is iconified and the game has keyboard focus.
+constexpr int HOTKEY_ID_TOGGLE_GAME = 0x47; // arbitrary non-conflicting ID
+
+static WNDPROC g_origEditorWndProc = nullptr;
+static App*    g_appForHotkey      = nullptr;
+
+static LRESULT CALLBACK EditorSubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+	if (msg == WM_HOTKEY && static_cast<int>(wParam) == HOTKEY_ID_TOGGLE_GAME) {
+		Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Global hotkey fired");
+		if (g_appForHotkey) g_appForHotkey->LaunchGame();
+		return 0;
+	}
+	return CallWindowProc(g_origEditorWndProc, hwnd, msg, wParam, lParam);
+}
+
 /*
 ================================================================================
  App
@@ -199,6 +216,19 @@ bool App::Init(int argc, char** argv) {
 	// Cache editor HWND for minimize/restore around game launch
 	editor_hwnd_ = Utils::FindWindow("IGI Editor v" + Utils::GetVersionString());
 	if (!editor_hwnd_) editor_hwnd_ = GetActiveWindow();
+
+	// Subclass GLUT's window so WM_HOTKEY messages reach EditorSubclassWndProc
+	// even when the editor is iconified and the game holds keyboard focus.
+	if (editor_hwnd_) {
+		g_appForHotkey     = this;
+		g_origEditorWndProc = reinterpret_cast<WNDPROC>(
+			SetWindowLongPtr(editor_hwnd_, GWLP_WNDPROC,
+			                 reinterpret_cast<LONG_PTR>(EditorSubclassWndProc)));
+		Logger::Get().Log(LogLevel::INFO, "[App] Editor window subclassed for global hotkey (HWND=" +
+		                  std::to_string(reinterpret_cast<uintptr_t>(editor_hwnd_)) + ")");
+	} else {
+		Logger::Get().Log(LogLevel::WARNING, "[App] editor_hwnd_ is NULL — global hotkey will not work");
+	}
 
 	return true;
 }
@@ -515,14 +545,14 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			if (enableCameraMode) {
 				int cx = window_state_.viewport_width_ >> 1;
 				int cy = window_state_.viewport_height_ >> 1;
-				int targetIdx = hover_object_index_;
-				if (targetIdx < 0) targetIdx = selected_object_index_;
+				int targetIdx = selected_object_index_;
+				if (targetIdx < 0) targetIdx = hover_object_index_;
 				if (targetIdx < 0) targetIdx = PickObjectAtScreenPos(cx, cy);
 
 				if (targetIdx >= 0) {
 					const auto& obj = level_.GetLevelObjects().GetObjects()[targetIdx];
 					orbit_active_ = true;
-					orbit_target_pos_ = glm::vec3(obj.pos) * RENDERER_MODEL_SCALE_DOWN;
+					orbit_target_pos_ = glm::vec3(obj.pos);
 					orbit_distance_ = glm::distance(viewer_.pos_, orbit_target_pos_);
 					if (orbit_distance_ < 0.1f) orbit_distance_ = 1.0f;
 					Logger::Get().Log(LogLevel::INFO, "[App] Orbit mode activated around object: " + obj.type);
@@ -1408,9 +1438,17 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 
 	// Global shortcuts (work in both pause and normal mode)
 
-	// Save
-	if (Utils::IsKeyBindingPressed(config.keySave)) {
+	// Save (Ctrl+S = SaveObjectFile, Ctrl+W = SaveState — both do the same thing)
+	if (Utils::IsKeyBindingPressed(config.keySave) || Utils::IsKeyBindingPressed(config.keySaveState)) {
 		SaveCurrentLevel();
+		return;
+	}
+
+	// Toggle save-on-exit (Ctrl+A)
+	if (Utils::IsKeyBindingPressed(config.keyToggleSaveStateOnExit)) {
+		Config::Get().saveConfigOnExit = !Config::Get().saveConfigOnExit;
+		status_message_ = Config::Get().saveConfigOnExit ? "Save on exit: ON" : "Save on exit: OFF";
+		return;
 	}
 
 	// Undo / Redo
@@ -1510,7 +1548,13 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
         input_.keys_ &= ~MK_MANIP_O;
         return;
     }
-	if (key == ' ') { input_.keys_ |= MK_MANIP_SPACE; return; }
+	if (key == ' ') {
+        PushUndoState();
+        input_.keys_ |= MK_MANIP_SPACE;
+        if (selected_object_index_ >= 0) UpdateMarkerManipulation();
+        input_.keys_ &= ~MK_MANIP_SPACE;
+        return;
+    }
 
 	if (key == 't' || key == 'T') {
 		level_.TeleportToHMP(viewer_.pos_);
@@ -1726,36 +1770,68 @@ void App::Input_OnKeyboardUp(unsigned char key, int x, int y) {
 	if (toupper(key) == toupper(config.keyRotateGamma)) { input_.keys_ &= ~MK_MANIP_G; undo_state_pushed_for_manip_ = false; }
 	if (toupper(key) == toupper(config.keySnapGround))  { input_.keys_ &= ~MK_MANIP_S; }
 	if (toupper(key) == toupper(config.keySnapObject))  { input_.keys_ &= ~MK_MANIP_O; }
-	if (key == ' ') { input_.keys_ &= ~MK_MANIP_SPACE; }
 }
 
 // idle
 void App::OnIdle() {
+	// freeglut pumps messages with a window-handle filter and misses WM_HOTKEY,
+	// which is a thread message only retrievable via PeekMessage(NULL, ...).
+	// Poll it here so F3 works while the game is running and editor is iconified.
+	if (game_process_.running) {
+		MSG msg = {};
+		while (PeekMessage(&msg, NULL, WM_HOTKEY, WM_HOTKEY, PM_REMOVE)) {
+			if (static_cast<int>(msg.wParam) == HOTKEY_ID_TOGGLE_GAME) {
+				Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Global hotkey received — stopping game");
+				LaunchGame();
+			}
+		}
+	}
+
+	// Check game exit before the frame-rate throttle so it fires on every call,
+	// even when GLUT is running slowly while the editor is iconified.
+	if (game_process_.running && game_process_.hProcess) {
+		bool exited = game_exited_.load(std::memory_order_acquire);
+		if (!exited) {
+			// Direct non-blocking poll as fallback in case monitor thread signal was missed
+			DWORD waitResult = WaitForSingleObject(game_process_.hProcess, 0);
+			exited = (waitResult == WAIT_OBJECT_0);
+		}
+		if (exited) {
+			Logger::Get().Log(LogLevel::INFO, "[App] Game process exited (PID=" +
+			                  std::to_string(game_process_.pid) + "), restoring editor");
+			CloseHandle(game_process_.hProcess);
+			CloseHandle(game_process_.hThread);
+			if (game_process_.hMonitorThread) {
+				WaitForSingleObject(game_process_.hMonitorThread, 1000);
+				CloseHandle(game_process_.hMonitorThread);
+			}
+			game_exited_.store(false, std::memory_order_relaxed);
+			game_process_ = {};
+			prior_frame_time_ = Sys_Milliseconds();
+			glutShowWindow();
+			glutPostRedisplay();
+			if (editor_hwnd_) {
+				ShowWindow(editor_hwnd_, SW_RESTORE);
+				SetForegroundWindow(editor_hwnd_);
+				BringWindowToTop(editor_hwnd_);
+			}
+			if (editor_hwnd_) {
+				KillTimer(editor_hwnd_, 1);
+				UnregisterHotKey(editor_hwnd_, HOTKEY_ID_TOGGLE_GAME);
+			}
+			Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Global hotkey unregistered — editor restored");
+			return;
+		}
+	}
+
+	// While the game is running the editor window is iconified.
+	// glutSwapBuffers() deadlocks on minimized windows, so skip rendering entirely.
+	if (game_process_.running) return;
+
 	int64_t cur_time = Sys_Milliseconds();
 	int64_t delta_time = cur_time - prior_frame_time_;
 	if (delta_time < 16) {
 		return;
-	}
-
-	if (game_process_.running && game_exited_.load(std::memory_order_acquire)) {
-		Logger::Get().Log(LogLevel::INFO, "[App] Game process exited (PID=" +
-		                  std::to_string(game_process_.pid) + "), restoring editor");
-		CloseHandle(game_process_.hProcess);
-		CloseHandle(game_process_.hThread);
-		if (game_process_.hMonitorThread) {
-			WaitForSingleObject(game_process_.hMonitorThread, 1000);
-			CloseHandle(game_process_.hMonitorThread);
-		}
-		game_exited_.store(false, std::memory_order_relaxed);
-		game_process_ = {};
-		prior_frame_time_ = Sys_Milliseconds();	// reset so next Frame() gets a normal delta
-		glutShowWindow();
-		glutPostRedisplay();
-		if (editor_hwnd_) {
-			ShowWindow(editor_hwnd_, SW_RESTORE);
-			SetForegroundWindow(editor_hwnd_);
-			BringWindowToTop(editor_hwnd_);
-		}
 	}
 
 	Frame(delta_time * 0.001f);	// convert to seconds
@@ -1919,13 +1995,8 @@ void App::ProcessInput(float delta_seconds) {
 
 	if (!edit_mode_ || enableCameraMode) {
 		if (orbit_active_) {
-			// Orbit rotation around fixed target axis
+			// Horizontal orbit (yaw only) around selected object
 			viewer_.yaw_ += -input_.mouse_delta_x_ * MOUSE_SENSITIVE;
-			viewer_.pitch_ += -input_.mouse_delta_y_ * MOUSE_SENSITIVE;
-
-			// Clamp pitch to avoid flipping
-			if (viewer_.pitch_ < -89.0f) viewer_.pitch_ = -89.0f;
-			if (viewer_.pitch_ > 89.0f) viewer_.pitch_ = 89.0f;
 
 			glm::vec3 new_forward;
 			glm::vec3 dummy_right, dummy_up;
@@ -2637,7 +2708,7 @@ void App::UpdateMarkerManipulation() {
 		}
 	}
 
-	// Apply snap-to-nearest-object BEFORE computing delta so children get the full displacement
+	// Apply snap-to-top-of-nearest-object: place selected on top of nearest object's upper surface
 	if (input_.keys_ & MK_MANIP_O) {
 		int nearestIdx = -1;
 		double minDist = 1e10;
@@ -2648,9 +2719,18 @@ void App::UpdateMarkerManipulation() {
 			if (d < minDist) { minDist = d; nearestIdx = i; }
 		}
 		if (nearestIdx >= 0) {
-			obj.pos = objects[nearestIdx].pos;
+			const LevelObject& tgt = objects[nearestIdx];
+			// Top of target in world Z: pos.z + (2*halfExtents.z - zOffset) * 40.96 * scale
+			// (zOffset = -min_p.z, so top = pos.z + max_p.z * scale = pos.z + (-zOffset + 2*halfExt.z) * 40.96 * scale)
+			float tgtZOff = renderer_.GetMeshZOffset(tgt.modelId, tgt.isBuilding);
+			glm::vec3 tgtExt = renderer_.GetMeshExtents(tgt.modelId, tgt.isBuilding);
+			double tgtTop = tgt.pos.z + (double)((-tgtZOff + 2.0f * tgtExt.z) * 40.96f * tgt.scale);
+			// Place selected object so its bottom rests on that top surface
+			float selZOff = renderer_.GetMeshZOffset(obj.modelId, obj.isBuilding);
+			obj.snap_z_offset = (double)(selZOff * 40.96f * obj.scale);
+			obj.pos.z = tgtTop + obj.snap_z_offset;
 			obj.modified = true;
-			Logger::Get().Log(LogLevel::INFO, "[App] Snapped object to nearest object: " + objects[nearestIdx].type);
+			Logger::Get().Log(LogLevel::INFO, "[App] Snapped object on top of: " + tgt.type);
 		}
 	}
 
@@ -2927,15 +3007,50 @@ void App::DecompileFromGame(int level_no) {
 
 void App::LaunchGame() {
 	if (game_process_.running) {
-		Logger::Get().Log(LogLevel::INFO, "[App] LaunchGame: game already running, ignoring");
+		// ── Toggle OFF: stop the running game ──────────────────────────────────
+		Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Game is running (PID=" +
+		                  std::to_string(game_process_.pid) + ") — stopping...");
+
+		// 1. Post WM_CLOSE to every window owned by the game (graceful request)
+		int closedWindows = 0;
+		struct CloseCtx { DWORD pid; int* count; };
+		CloseCtx ctx{ game_process_.pid, &closedWindows };
+		EnumWindows([](HWND hwnd, LPARAM lp) -> BOOL {
+			DWORD wndPid = 0;
+			GetWindowThreadProcessId(hwnd, &wndPid);
+			auto* c = reinterpret_cast<CloseCtx*>(lp);
+			if (wndPid == c->pid) {
+				PostMessage(hwnd, WM_CLOSE, 0, 0);
+				(*c->count)++;
+			}
+			return TRUE;
+		}, reinterpret_cast<LPARAM>(&ctx));
+		Logger::Get().Log(LogLevel::INFO, "[ToggleGame] WM_CLOSE posted to " +
+		                  std::to_string(closedWindows) + " window(s)");
+
+		// 2. Force-terminate immediately so we don't block the main thread.
+		//    Old DirectX full-screen games rarely honour WM_CLOSE anyway.
+		BOOL killed = TerminateProcess(game_process_.hProcess, 0);
+		Logger::Get().Log(LogLevel::INFO, "[ToggleGame] TerminateProcess(" +
+		                  std::to_string(game_process_.pid) + ") = " +
+		                  (killed ? "OK" : "FAILED (err=" + std::to_string(GetLastError()) + ")"));
+
+		// The background monitor thread will detect the process exit and set
+		// game_exited_ = true; OnIdle will then clean up handles and restore the editor.
+		Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Waiting for OnIdle to restore editor...");
 		return;
 	}
 
+	// ── Toggle ON: save level and launch the game ──────────────────────────────
+	Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Game is not running — launching level " +
+	                  std::to_string(level_.GetLevelNo()));
+
 	SaveCurrentLevel();
+	Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Level saved");
 
 	std::string workDir = Utils::GetIGIRootPath();
 	std::string cmdLine = workDir + "\\igi.exe level" + std::to_string(level_.GetLevelNo());
-	Logger::Get().Log(LogLevel::INFO, "[App] LaunchGame: " + cmdLine);
+	Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Launching: " + cmdLine);
 
 	STARTUPINFOA si = {};
 	si.cb = sizeof(si);
@@ -2947,40 +3062,64 @@ void App::LaunchGame() {
 	if (!CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE,
 	                    0, nullptr, workDir.c_str(), &si, &pi)) {
 		DWORD err = GetLastError();
-		std::string errMsg = "Failed to launch igi.exe. Error code: " + std::to_string(err);
-		Logger::Get().Log(LogLevel::ERR, "[App] LaunchGame: " + errMsg);
+		std::string errMsg = "Failed to launch igi.exe (error " + std::to_string(err) + ")";
+		Logger::Get().Log(LogLevel::ERR, "[ToggleGame] " + errMsg);
 		Utils::LogAndShowError(errMsg, "IGI Editor - Launch Error");
 		return;
 	}
+	Logger::Get().Log(LogLevel::INFO, "[ToggleGame] CreateProcess OK — PID=" +
+	                  std::to_string(pi.dwProcessId));
 
+	// Keep our own PROCESS_ALL_ACCESS handle for TerminateProcess / WaitForSingleObject
 	HANDLE hGame = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId);
 	if (!hGame) {
 		DWORD err = GetLastError();
-		Logger::Get().Log(LogLevel::ERR, "[App] LaunchGame: OpenProcess failed, error=" + std::to_string(err));
+		Logger::Get().Log(LogLevel::ERR, "[ToggleGame] OpenProcess failed (error=" +
+		                  std::to_string(err) + ") — cannot track game");
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
 		return;
 	}
-
-	CloseHandle(pi.hProcess);
+	CloseHandle(pi.hProcess);  // release the CreateProcess copy; we use hGame
 
 	game_process_.hProcess = hGame;
 	game_process_.hThread  = pi.hThread;
 	game_process_.pid      = pi.dwProcessId;
 	game_process_.running  = true;
 
-	// Spawn background monitor thread — detects game exit via WaitForSingleObject(INFINITE)
-	// and signals game_exited_ so OnIdle restores the editor even if GLUT is iconified
+	// Spawn background monitor — WaitForSingleObject(INFINITE) on the game process.
+	// Sets game_exited_ when the process exits (by any means), so OnIdle can restore.
 	game_exited_.store(false, std::memory_order_relaxed);
 	auto* monParam = new GameMonitorParam{hGame, &game_exited_};
-	DWORD monTid;
+	DWORD monTid = 0;
 	game_process_.hMonitorThread = CreateThread(nullptr, 0, GameMonitorProc, monParam, 0, &monTid);
+	Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Monitor thread started (TID=" +
+	                  std::to_string(monTid) + ")");
 
-	Logger::Get().Log(LogLevel::INFO, "[App] LaunchGame: game started PID=" +
-	                  std::to_string(game_process_.pid));
+	// Register global hotkey so F3 (or whatever keyToggleGame is bound to) fires
+	// even when the game has focus and the editor is iconified.
+	if (editor_hwnd_) {
+		const auto& kb = Config::Get().keyToggleGame;
+		UINT mods = (kb.ctrl  ? MOD_CONTROL : 0)
+		          | (kb.shift ? MOD_SHIFT   : 0)
+		          | (kb.alt   ? MOD_ALT     : 0)
+		          | MOD_NOREPEAT;
+		if (RegisterHotKey(editor_hwnd_, HOTKEY_ID_TOGGLE_GAME, mods, kb.vkCode)) {
+			Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Global hotkey registered (VK=0x" +
+			                  [&]{ std::ostringstream ss; ss << std::hex << kb.vkCode; return ss.str(); }() + ")");
+		} else {
+			Logger::Get().Log(LogLevel::WARNING, "[ToggleGame] RegisterHotKey failed (err=" +
+			                  std::to_string(GetLastError()) + ") — F3 won't work while game runs");
+		}
+	}
 
-	// Use GLUT's iconify so its internal window state stays consistent
+	// Fire WM_TIMER every 100ms while iconified so freeglut's message loop keeps running
+	// (without a timer it blocks in WaitMessage and OnIdle never fires).
+	if (editor_hwnd_) SetTimer(editor_hwnd_, 1, 100, NULL);
+
+	// Iconify via GLUT so its internal state stays consistent (raw ShowWindow breaks the idle loop)
 	glutIconifyWindow();
+	Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Editor iconified — game is now active");
 }
 
 void App::SaveAndCompile() {
