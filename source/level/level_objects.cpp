@@ -188,6 +188,29 @@ void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
         }
     }
 
+    // Resolve WEAPON_ID_*/AMMO_ID_* enum strings to real model IDs for GunPickup/AmmoPickup.
+    // This is the authoritative resolution pass — it runs after all objects are loaded so we
+    // call LoadModelNames() exactly once, and it catches any objects where the per-arg
+    // resolution inside LoadRecursive may have been skipped (e.g. JSON not yet on disk).
+    LoadModelNames();
+    for (auto& obj : objects_) {
+        if (obj.type == "GunPickup" || obj.type == "AmmoPickup") {
+            if (!obj.modelId.empty() &&
+                (obj.modelId.rfind("WEAPON_ID_", 0) == 0 || obj.modelId.rfind("AMMO_ID_", 0) == 0)) {
+                auto it = modelIds_.find(obj.modelId);
+                if (it != modelIds_.end() && !it->second.empty()) {
+                    Logger::Get().Log(LogLevel::INFO,
+                        "[LevelObjects] Resolved pickup enum: " + obj.modelId + " -> " + it->second +
+                        " (task " + obj.taskId + ")");
+                    obj.modelId = it->second;
+                } else {
+                    Logger::Get().Log(LogLevel::WARNING,
+                        "[LevelObjects] No model ID mapping found for pickup enum: " + obj.modelId);
+                }
+            }
+        }
+    }
+
     // Only generate qscLine for objects that didn't get a raw line from the parser
     for (int i = 0; i < (int)objects_.size(); ++i) {
         if (objects_[i].qscLine.empty()) {
@@ -249,6 +272,7 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
                        typeStr == "container" || typeStr == "static" || typeStr == "game" || typeStr == "level" || typeStr == "flow" || typeStr == "task" || typeStr == "folder" || typeStr == "dynamic" || typeStr == "Dynamic" ||
                        typeStr == "ConditionalContainer" || typeStr == "SequenceContainer" || typeStr == "Rooms");
 
+    bool isPickup = (typeStr == "GunPickup" || typeStr == "AmmoPickup");
     bool isMissingGeneric = (typeStr == "AIStationaryGunHolder" || typeStr == "AlarmLight" || typeStr == "Elevator" || typeStr == "Generator" || typeStr == "GenericPickup" || typeStr == "GenericTBA" || typeStr == "Plane" || typeStr == "Radio" || typeStr == "RotatingObject" || typeStr == "Siren" || typeStr == "StationaryGun");
 
     int currentObjIdx = -1;
@@ -312,6 +336,34 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
                 case 7: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.y = cur_a->dbl_; obj.original_rot.y = cur_a->dbl_; } break;
                 case 8: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.z = cur_a->dbl_; obj.original_rot.z = cur_a->dbl_; } break;
                 case 9: if (cur_a->type_ == QSC::arg_s::type_t::STR) obj.modelId = Utils::Trim(cur_a->str_); break;
+            }
+        } else if (isPickup) {
+            // GunPickup: Task_New(id, "GunPickup", name, x, y, z, rx, ry, rz, "WEAPON_ID_*")
+            // AmmoPickup: Task_New(id, "AmmoPickup", name, x, y, z, rx, ry, rz, "AMMO_ID_*", count)
+            switch (arg_idx) {
+                case 0: obj.taskId = TaskIdFromArg(cur_a); break;
+                case 2: if (cur_a->type_ == QSC::arg_s::type_t::STR) { obj.name = cur_a->str_; obj.original_name = cur_a->str_; obj.has_original_name = true; } break;
+                case 3: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.x = cur_a->dbl_; obj.original_pos.x = cur_a->dbl_; } break;
+                case 4: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.y = cur_a->dbl_; obj.original_pos.y = cur_a->dbl_; } break;
+                case 5: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.z = cur_a->dbl_; obj.original_pos.z = cur_a->dbl_; } break;
+                case 6: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.x = cur_a->dbl_; obj.original_rot.x = cur_a->dbl_; } break;
+                case 7: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.y = cur_a->dbl_; obj.original_rot.y = cur_a->dbl_; } break;
+                case 8: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.z = cur_a->dbl_; obj.original_rot.z = cur_a->dbl_; } break;
+                case 9: {
+                    // Arg 9 is the weapon/ammo enum string (e.g. "WEAPON_ID_UZI", "AMMO_ID_919")
+                    // Resolve it to a model ID for rendering via IGIModels.json
+                    if (cur_a->type_ == QSC::arg_s::type_t::STR) {
+                        std::string enumId = Utils::Trim(cur_a->str_);
+                        LoadModelNames();
+                        auto it = modelIds_.find(enumId);
+                        if (it != modelIds_.end() && !it->second.empty()) {
+                            obj.modelId = it->second;
+                        } else {
+                            obj.modelId = enumId; // fallback: keep raw enum string
+                        }
+                    }
+                    break;
+                }
             }
         } else if (isGrouping) {
             switch (arg_idx) {
@@ -824,6 +876,26 @@ void LevelObjects::ParseTaskLine(const std::string& line, LevelObject& obj) {
         } else if (obj.type == "TextureModifier" || obj.type == "TerrainLightMap" || obj.type == "HeightMap" || obj.type == "DiscardTerrain" || obj.type == "GlobalLight" || obj.type == "GlobalLightKeyframe" || obj.type == "Dirlight" || obj.type == "DirlightKeyframe" || obj.type == "FlatSkyLayer" || obj.type == "FlatSky" || obj.type == "MipMapControl" || obj.type == "LODSettings" || obj.type == "SoundSource") {
             // Do not parse coordinates for environmental/terrain types as they do not follow the generic pos/rot argument layout
 
+        } else if (obj.type == "GunPickup" || obj.type == "AmmoPickup") {
+            // GunPickup/AmmoPickup: pos@3-5, rot@6-8, weapon/ammo enum ID@9, [ammo count@10]
+            readDouble(3, obj.pos.x);
+            readDouble(4, obj.pos.y);
+            readDouble(5, obj.pos.z);
+            readDouble(6, obj.rot.x);
+            readDouble(7, obj.rot.y);
+            readDouble(8, obj.rot.z);
+            if (obj.argTokens.size() > 9) {
+                std::string enumId = unquote(obj.argTokens[9]);
+                // Resolve WEAPON_ID_* / AMMO_ID_* to a render model ID via IGIModels.json
+                LoadModelNames();
+                auto it = modelIds_.find(enumId);
+                if (it != modelIds_.end() && !it->second.empty()) {
+                    obj.modelId = it->second;
+                } else {
+                    obj.modelId = enumId; // fallback: keep raw enum string
+                }
+                // Keep argTokens[9] unchanged so the QSC file preserves the original enum string
+            }
         } else if (obj.type == "AIStationaryGunHolder" || obj.type == "AlarmLight" || obj.type == "Elevator" || obj.type == "Generator" || obj.type == "GenericPickup" || obj.type == "GenericTBA" || obj.type == "Plane" || obj.type == "Radio" || obj.type == "RotatingObject" || obj.type == "Siren" || obj.type == "StationaryGun") {
             readDouble(3, obj.pos.x);
             readDouble(4, obj.pos.y);
@@ -846,7 +918,9 @@ void LevelObjects::ParseTaskLine(const std::string& line, LevelObject& obj) {
             readDouble(6, obj.rot.x);
             readDouble(7, obj.rot.y);
             readDouble(8, obj.rot.z);
-            if (obj.argTokens.size() > 9) obj.modelId = unquote(obj.argTokens[9]);
+            if (obj.argTokens.size() > 9) {
+                obj.modelId = unquote(obj.argTokens[9]);
+            }
         }
     }
 
@@ -955,6 +1029,15 @@ void LevelObjects::UpdateCoordinatesInLine(LevelObject& obj) {
         } else if (obj.type == "TextureModifier" || obj.type == "TerrainLightMap" || obj.type == "HeightMap" || obj.type == "DiscardTerrain" || obj.type == "GlobalLight" || obj.type == "GlobalLightKeyframe" || obj.type == "Dirlight" || obj.type == "DirlightKeyframe" || obj.type == "FlatSkyLayer" || obj.type == "FlatSky" || obj.type == "MipMapControl" || obj.type == "LODSettings" || obj.type == "SoundSource") {
             // Do not update coordinates for environmental/terrain types as they do not follow the generic pos/rot argument layout
 
+        } else if (obj.type == "GunPickup" || obj.type == "AmmoPickup") {
+            // Update position/rotation only; preserve original WEAPON_ID/AMMO_ID string at arg 9
+            setToken(3, FormatQscDouble(obj.pos.x));
+            setToken(4, FormatQscDouble(obj.pos.y));
+            setToken(5, FormatQscDouble(saveZ));
+            setToken(6, FormatQscDouble(obj.rot.x));
+            setToken(7, FormatQscDouble(obj.rot.y));
+            setToken(8, FormatQscDouble(obj.rot.z));
+            // argTokens[9] already holds the original WEAPON_ID_*/AMMO_ID_* string - do not overwrite
         } else if (obj.type == "AIStationaryGunHolder" || obj.type == "AlarmLight" || obj.type == "Elevator" || obj.type == "Generator" || obj.type == "GenericPickup" || obj.type == "GenericTBA" || obj.type == "Plane" || obj.type == "Radio" || obj.type == "RotatingObject" || obj.type == "Siren" || obj.type == "StationaryGun") {
             setToken(3, FormatQscDouble(obj.pos.x));
             setToken(4, FormatQscDouble(obj.pos.y));

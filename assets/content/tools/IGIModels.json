@@ -124,26 +124,6 @@
     "ModelId": "306_01_1"
   },
   {
-    "ModelName": "AMMO_357_OBJ",
-    "ModelId": "118_01_1"
-  },
-  {
-    "ModelName": "AMMO_44_OBJ",
-    "ModelId": "120_01_1"
-  },
-  {
-    "ModelName": "AMMO_556_OBJ",
-    "ModelId": "115_01_1"
-  },
-  {
-    "ModelName": "AMMO_762_OBJ",
-    "ModelId": "119_01_1"
-  },
-  {
-    "ModelName": "AMMO_919_OBJ",
-    "ModelId": "116_01_1"
-  },
-  {
     "ModelName": "AMMO_BUILDING",
     "ModelId": "424_01_1"
   },
@@ -158,10 +138,6 @@
   {
     "ModelName": "AMMO_BUILDING_STAIRS",
     "ModelId": "211_01_1"
-  },
-  {
-    "ModelName": "AMMO_ID_12",
-    "ModelId": "105_01_1"
   },
   {
     "ModelName": "ANTENA",
@@ -313,10 +289,6 @@
   },
   {
     "ModelName": "BUNKER_INTERIOR",
-    "ModelId": "447_01_1"
-  },
-  {
-    "ModelName": "BUNKER_INTERIOR",
     "ModelId": "447_02_1"
   },
   {
@@ -374,10 +346,6 @@
   {
     "ModelName": "CHECKPOINT_WINDOW",
     "ModelId": "425_02_1"
-  },
-  {
-    "ModelName": "CHECKPOINT_WINDOW",
-    "ModelId": "425_03_1"
   },
   {
     "ModelName": "CIVILIAN_GUY1",
@@ -732,10 +700,6 @@
     "ModelId": "487_02_1"
   },
   {
-    "ModelName": "FLASHBANG_PHYSICS_OBJ",
-    "ModelId": "137_01_1"
-  },
-  {
     "ModelName": "FLOODLIGHT",
     "ModelId": "303_04_1"
   },
@@ -814,10 +778,6 @@
   {
     "ModelName": "GENERATOR_SWITCH",
     "ModelId": "201_12_1"
-  },
-  {
-    "ModelName": "GRENADE_PHYSSICS_OBJ",
-    "ModelId": "135_01_1"
   },
   {
     "ModelName": "GUARD_HQ",
@@ -1012,10 +972,6 @@
     "ModelId": "1700_02_1"
   },
   {
-    "ModelName": "HELI_GUN",
-    "ModelId": "700_12_1"
-  },
-  {
     "ModelName": "HIND_MISSILE",
     "ModelId": "700_10_1"
   },
@@ -1090,10 +1046,6 @@
   {
     "ModelName": "KEYCARD",
     "ModelId": "141_01_1"
-  },
-  {
-    "ModelName": "KNIFE_MODEL",
-    "ModelId": "133_01_1"
   },
   {
     "ModelName": "LAMP",
@@ -1260,10 +1212,6 @@
     "ModelId": "310_01_1"
   },
   {
-    "ModelName": "M203_LAUNCHER_OBJ",
-    "ModelId": "108_05_1"
-  },
-  {
     "ModelName": "MAGIC_GLASS",
     "ModelId": "600_05_1"
   },
@@ -1278,10 +1226,6 @@
   {
     "ModelName": "MEDICAL_SIGNBOARD",
     "ModelId": "348_01_1"
-  },
-  {
-    "ModelName": "MEDIPACK_SYRINGE_OBJ",
-    "ModelId": "104_01_1"
   },
   {
     "ModelName": "MEDIUM_LIGHTS",
@@ -1380,10 +1324,6 @@
     "ModelId": "465_02_1"
   },
   {
-    "ModelName": "NUCLEAR_UNDERGROUND_GENRATOR_TOP",
-    "ModelId": "465_02_1"
-  },
-  {
     "ModelName": "OFFICEBUILDING",
     "ModelId": "409_01_1"
   },
@@ -1425,10 +1365,6 @@
   },
   {
     "ModelName": "OFFICEBUILDING_WINDOW",
-    "ModelId": "409_04_1"
-  },
-  {
-    "ModelName": "OFFICEBUILDING_WINDOW_AREA",
     "ModelId": "409_04_1"
   },
   {
@@ -1712,10 +1648,6 @@
     "ModelId": "400_08_1"
   },
   {
-    "ModelName": "SECURITYBUILDING_UG_EXTERIOR",
-    "ModelId": "490_02_1"
-  },
-  {
     "ModelName": "SECURITYBUILDING_UG_MAIN",
     "ModelId": "400_09_1"
   },
@@ -1888,10 +1820,6 @@
     "ModelId": "423_02_1"
   },
   {
-    "ModelName": "STATIONARY_GUN",
-    "ModelId": "456_13_1"
-  },
-  {
     "ModelName": "STRAIGHT_UPWARDS",
     "ModelId": "473_01_1"
   },
@@ -1938,10 +1866,6 @@
   {
     "ModelName": "T80_DESTROYED",
     "ModelId": "614_08_1"
-  },
-  {
-    "ModelName": "T80_LAUNCHER",
-    "ModelId": "614_03_1"
   },
   {
     "ModelName": "T80_STATIONARY",
@@ -2104,10 +2028,6 @@
     "ModelId": "235_01_1"
   },
   {
-    "ModelName": "TRACK",
-    "ModelId": "364_01_1"
-  },
-  {
     "ModelName": "ROAD_TRACK_BRIDGE",
     "ModelId": "325_01_1"
   },
@@ -2212,10 +2132,6 @@
     "ModelId": "453_01_1"
   },
   {
-    "ModelName": "TWO_STOREY_BUILDING",
-    "ModelId": "422_01_1"
-  },
-  {
     "ModelName": "TWO_STOREY_BUILDING_RUINED",
     "ModelId": "422_04_1"
   },
@@ -2302,10 +2218,6 @@
   {
     "ModelName": "UNDERGROUND_TUNNEL_SEGMENT5",
     "ModelId": "452_02_1"
-  },
-  {
-    "ModelName": "UNDERGROUND_TUNNEL_SEGMENT6",
-    "ModelId": "476_02_1"
   },
   {
     "ModelName": "UNDERGROUND_TUNNEL_SEGMENT7",
@@ -2522,5 +2434,157 @@
   {
     "ModelName": "WOODEN_PLANK",
     "ModelId": "362_01_1"
+  },
+  {
+    "ModelName": "AMMO_ID_127",
+    "ModelId": ""
+  },
+  {
+    "ModelName": "WEAPON_ID_GLOCK",
+    "ModelId": "117_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_COLT",
+    "ModelId": "101_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_DESERTEAGLE",
+    "ModelId": "106_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_MP5SD",
+    "ModelId": "103_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_UZI",
+    "ModelId": "111_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_UZIX2",
+    "ModelId": "111_04_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_M16A2",
+    "ModelId": "108_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_AK47",
+    "ModelId": "100_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_MINIMI",
+    "ModelId": "107_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_SPAS12",
+    "ModelId": "109_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_JACKHAMMER",
+    "ModelId": "125_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_DRAGUNOV",
+    "ModelId": "105_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_FLASHBANG",
+    "ModelId": "137_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_GRENADE",
+    "ModelId": "135_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_T80",
+    "ModelId": "614_03_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_SENTRY",
+    "ModelId": "456_13_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_RPG18",
+    "ModelId": "110_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_PROXIMITYMINE",
+    "ModelId": "136_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_MIL",
+    "ModelId": "700_12_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_MEDIPACK",
+    "ModelId": "121_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_KNIFE",
+    "ModelId": "133_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_M2HB",
+    "ModelId": "123_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_BINOCULARS",
+    "ModelId": "102_01_1"
+  },
+  {
+    "ModelName": "WEAPON_ID_APC",
+    "ModelId": "601_05_1"
+  },
+  {
+    "ModelName": "AMMO_ID_1000",
+    "ModelId": "115_01_1"
+  },
+  {
+    "ModelName": "AMMO_ID_12",
+    "ModelId": "114_01_1"
+  },
+  {
+    "ModelName": "AMMO_ID_357",
+    "ModelId": "118_01_1"
+  },
+  {
+    "ModelName": "AMMO_ID_44",
+    "ModelId": "120_01_1"
+  },
+  {
+    "ModelName": "AMMO_ID_556",
+    "ModelId": "115_01_1"
+  },
+  {
+    "ModelName": "AMMO_ID_762",
+    "ModelId": "119_01_1"
+  },
+  {
+    "ModelName": "AMMO_ID_919",
+    "ModelId": "116_01_1"
+  },
+  {
+    "ModelName": "AMMO_ID_DRAGUNOV",
+    "ModelId": "137_01_1"
+  },
+  {
+    "ModelName": "AMMO_ID_FLASHBANG",
+    "ModelId": "137_01_1"
+  },
+  {
+    "ModelName": "AMMO_ID_GRENADE",
+    "ModelId": "135_01_1"
+  },
+  {
+    "ModelName": "AMMO_ID_M203",
+    "ModelId": "108_05_1"
+  },
+  {
+    "ModelName": "AMMO_ID_MEDIPACK",
+    "ModelId": "104_01_1"
+  },
+  {
+    "ModelName": "AMMO_ID_PROXIMITYMINE",
+    "ModelId": "136_01_1"
   }
 ]

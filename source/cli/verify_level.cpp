@@ -854,11 +854,17 @@ static std::map<std::string, TaskSchema> GetBuiltinSchemas() {
     // Generic positioned objects: pos@3, ori@6, model scanned from arg 9+
     for (const char* t : {"AIStationaryGunHolder","AlarmLight","Elevator","Generator",
                            "GenericPickup","GenericTBA","Plane","Radio",
-                           "RotatingObject","Siren","StationaryGun"}) {
+                           "RotatingObject","Siren","StationaryGun", "GunPickup"}) {
         add(s[t], "Position",    "ObjectPos", 3);
         add(s[t], "Orientation", "Real32x9",  6);
         add(s[t], "Model",       "String16",  9);
     }
+    // AmmoPickup: pos@3, ori@6, model@9, ammo@10
+    { auto& sc = s["AmmoPickup"];
+      add(sc, "Position",    "ObjectPos", 3);
+      add(sc, "Orientation", "Real32x9",  6);
+      add(sc, "Model",       "String16",  9);
+      add(sc, "Ammo",        "Int16",     10); }
 
     return s;
 }

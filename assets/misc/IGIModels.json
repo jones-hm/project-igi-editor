@@ -20,12 +20,12 @@
     "ModelId": "415_01_1"
   },
   {
-	"ModelName": "CHECKPOINT",
-	"ModelId": "425_01_1",
+    "ModelName": "CHECKPOINT",
+    "ModelId": "425_01_1"
   },
-    {
-	"ModelName": "CHECKPOINT_WINDOW",
-	"ModelId": "425_02_1",
+  {
+    "ModelName": "CHECKPOINT_WINDOW",
+    "ModelId": "425_02_1"
   },
   {
     "ModelName": "AIRCONTROL_TOWER_INTERIOR",
@@ -348,20 +348,12 @@
     "ModelId": "225_01_1"
   },
   {
-    "ModelName": "CHECKPOINT",
-    "ModelId": "425_01_1"
-  },
-  {
     "ModelName": "CHECKPOINT_FRONT",
     "ModelId": "425_03_1"
   },
   {
     "ModelName": "CHECKPOINT_SNOW",
     "ModelId": "443_01_1"
-  },
-  {
-    "ModelName": "CHECKPOINT_WINDOW",
-    "ModelId": "425_02_1"
   },
   {
     "ModelName": "CIVILIAN_GUY1",
@@ -1319,7 +1311,7 @@
     "ModelName": "OFFICEBUILDING",
     "ModelId": "409_01_1"
   },
-    {
+  {
     "ModelName": "OFFICEBUILDING_WINDOW",
     "ModelId": "409_02_1"
   },
