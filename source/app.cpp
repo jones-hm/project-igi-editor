@@ -1671,7 +1671,7 @@ void App::ResetLevel() {
 
 	// Remove local objects.qsc so it recompiles fresh from QVM
 	std::string exeDir = Utils::GetExeDirectory();
-	std::string dstQsc = exeDir + "\\objects.qsc";
+	std::string dstQsc = exeDir + "\\content\\qed\\temp\\objects.qsc";
 	try {
 		if (std::filesystem::exists(dstQsc)) {
 			std::filesystem::remove(dstQsc);
@@ -1724,7 +1724,7 @@ void App::ResetScript() {
 
 	// Remove local objects.qsc so it recompiles fresh from QVM
 	std::string exeDir = Utils::GetExeDirectory();
-	std::string dstQsc = exeDir + "\\objects.qsc";
+	std::string dstQsc = exeDir + "\\content\\qed\\temp\\objects.qsc";
 	try {
 		if (std::filesystem::exists(dstQsc)) {
 			std::filesystem::remove(dstQsc);
@@ -2862,108 +2862,23 @@ int App::PickObjectAtScreenPos(int screen_x, int screen_y) {
 	const auto& objects = level_.GetLevelObjects().GetObjects();
 	if (objects.empty()) return -1;
 
-	int width = window_state_.viewport_width_;
-	int height = window_state_.viewport_height_;
-	if (width == 0 || height == 0) return -1;
+	int w = window_state_.viewport_width_;
+	int h = window_state_.viewport_height_;
+	if (w == 0 || h == 0) return -1;
 
-	glm::mat4 proj = glm::perspective(view_define_.fovy_,
-		(float)width / (float)height,
-		view_define_.render_z_near_, view_define_.render_z_far_);
-	glm::vec3 scaled_down_pos = view_define_.pos_ * RENDERER_MODEL_SCALE_DOWN;
-	glm::mat4 view = glm::lookAt(
-		scaled_down_pos,
-		scaled_down_pos + view_define_.forward_ * WORLD_UNITS_PER_METER,
-		view_define_.up_);
-	glm::mat4 mvp_base = proj * view * glm::scale(glm::mat4(1.0f), glm::vec3(RENDERER_MODEL_SCALE_DOWN));
-	constexpr float BASE_SCALE = 40.96f;
-
-	// Pass 1: collect every object whose screen AABB covers the cursor
-	struct Candidate { int index; float min_depth; };
-	std::vector<Candidate> candidates;
-
-	for (size_t i = 0; i < objects.size(); ++i) {
-		const auto& obj = objects[i];
-		if (obj.deleted || obj.modelId.empty()) continue;
-
-		glm::vec3 he = renderer_.GetMeshExtents(obj.modelId, obj.isBuilding);
-		float max_he = glm::max(he.x, glm::max(he.y, he.z));
-		if (max_he < 1.0f) {
-			he = glm::vec3(60.0f);
-		}
-
-		glm::mat4 model = glm::mat4(1.0f);
-		model = glm::translate(model, glm::vec3(obj.pos));
-		model = glm::rotate(model, (float)obj.rot.z, glm::vec3(0, 0, 1));
-		model = glm::rotate(model, (float)obj.rot.x, glm::vec3(1, 0, 0));
-		model = glm::rotate(model, (float)obj.rot.y, glm::vec3(0, 1, 0));
-		model = glm::scale(model, glm::vec3(BASE_SCALE * obj.scale));
-		model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1, 0, 0));
-		glm::mat4 mvp = mvp_base * model;
-
-		float min_px = FLT_MAX, max_px = -FLT_MAX;
-		float min_py = FLT_MAX, max_py = -FLT_MAX;
-		float min_depth = FLT_MAX;
-		bool any_front = false;
-
-		for (int cx = -1; cx <= 1; cx += 2) {
-			for (int cy = -1; cy <= 1; cy += 2) {
-				for (int cz = -1; cz <= 1; cz += 2) {
-					glm::vec4 clip = mvp * glm::vec4(he.x * cx, he.y * cy, he.z * cz, 1.0f);
-					if (clip.w <= 0.0f) continue;
-					any_front = true;
-					float ndc_x = clip.x / clip.w;
-					float ndc_y = clip.y / clip.w;
-					float px = (ndc_x * 0.5f + 0.5f) * (float)width;
-					float py = (1.0f - (ndc_y * 0.5f + 0.5f)) * (float)height;
-					min_px = std::min(min_px, px);
-					max_px = std::max(max_px, px);
-					min_py = std::min(min_py, py);
-					max_py = std::max(max_py, py);
-					min_depth = std::min(min_depth, clip.w);
-				}
-			}
-		}
-
-		if (!any_front) continue;
-
-		constexpr float margin = 6.0f;
-		if ((float)screen_x >= min_px - margin && (float)screen_x <= max_px + margin &&
-			(float)screen_y >= min_py - margin && (float)screen_y <= max_py + margin) {
-			candidates.push_back({ (int)i, min_depth });
-		}
-	}
-
-	// Pass 2: build a depth map, then pick the closest candidate that isn't occluded by its parent.
-	// A child is occluded when the camera is outside the parent building: the parent's AABB depth
-	// (closer to camera = smaller clip.w) is less than the child's depth.
-	// When the camera is inside the building the parent's depth will be larger, so the child is allowed.
-	std::unordered_map<int, float> cand_depth;
-	cand_depth.reserve(candidates.size());
-	for (const auto& c : candidates) cand_depth[c.index] = c.min_depth;
-
-	int closest_index = -1;
-	float closest_depth = FLT_MAX;
-	for (const auto& c : candidates) {
-		const auto& obj = objects[c.index];
-		if (obj.parentIndex != -1) {
-			auto it = cand_depth.find(obj.parentIndex);
-			if (it != cand_depth.end() && it->second < c.min_depth)
-				continue; // parent is in front — camera is outside building, skip child
-		}
-		if (c.min_depth < closest_depth) {
-			closest_depth = c.min_depth;
-			closest_index = c.index;
-		}
-	}
-
-	return closest_index;
+	return renderer_.PickObjectAtScreen(
+		screen_x, screen_y, w, h,
+		view_define_,
+		objects,
+		renderer_.DRAW_OBJECTS | renderer_.DRAW_BUILDINGS | renderer_.DRAW_PROPS
+	);
 }
 
 void App::LoadQSCForLevel(int level_no) {
 	try {
 		namespace fs = std::filesystem;
 
-		std::string qsc_dest = Utils::GetExeDirectory() + "\\objects.qsc";
+		std::string qsc_dest = Utils::GetExeDirectory() + "\\content\\qed\\temp\\objects.qsc";
 		std::string qvm_source = Utils::GetLevelQVMPath(level_no);
 		
 		Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] Always reading level objects.qvm directly: " + qvm_source);
@@ -2990,7 +2905,7 @@ void App::DecompileFromGame(int level_no) {
 		namespace fs = std::filesystem;
 
 		std::string qvm_source = Utils::GetLevelQVMPath(level_no);
-		std::string qsc_dest = Utils::GetExeDirectory() + "\\objects.qsc";
+		std::string qsc_dest = Utils::GetExeDirectory() + "\\content\\qed\\temp\\objects.qsc";
 
 		if (!fs::exists(qvm_source)) {
 			std::string errorMsg = "Game QVM not found at:\n" + qvm_source + "\n\nPlease check your IGI game path in qedconfig.txt";
@@ -3141,7 +3056,7 @@ void App::SaveAndCompile() {
 
 	Logger::Get().Log(LogLevel::INFO, "[App] SaveAndCompile() starting");
 
-	std::string qsc_source = Utils::GetExeDirectory() + "\\objects.qsc";
+	std::string qsc_source = Utils::GetExeDirectory() + "\\content\\qed\\temp\\objects.qsc";
 	std::string qvm_dest = Utils::GetLevelQVMPath(level_.GetLevelNo());
 
 	Logger::Get().Log(LogLevel::INFO, "[App] Full QSC path: " + qsc_source);
