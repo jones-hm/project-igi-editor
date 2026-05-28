@@ -108,6 +108,13 @@ public:
 	void					Draw(const draw_params_s& params, const task_tree_view_params_s& task_tree_view);
 	glm::vec3				GetMeshExtents(const std::string& modelId, bool isBuilding) { return objects_.GetMeshExtents(modelId, isBuilding); }
 	float					GetMeshZOffset(const std::string& modelId, bool isBuilding) { return objects_.GetMeshZOffset(modelId, isBuilding); }
+	int						PickObjectAtScreen(int x, int y, int w, int h,
+												const view_define_s& vd,
+												const std::vector<LevelObject>& objects,
+												int draw_parts) {
+		SetupUBOMats(vd);
+		return objects_.PickObjectAtScreen(x, y, w, h, ubo_mats_, objects, draw_parts, vd.pos_);
+	}
 
 private:
 
