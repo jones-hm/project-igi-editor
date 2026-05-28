@@ -693,6 +693,116 @@ void Renderer_Objects::InitPickingFBO(int w, int h) {
     pick_fbo_h_ = h;
 }
 
+// ─── DrawForPicking ───────────────────────────────────────────────────────────
+void Renderer_Objects::DrawForPicking(GLuint ubo_mats,
+                                      const std::vector<LevelObject>& objects,
+                                      int draw_parts,
+                                      const glm::vec3& camera_pos)
+{
+    if (!pick_shader_prog_) return;
+
+    constexpr float BASE_SCALE = 40.96f;
+    const int DRAW_OBJECTS   = 4;
+    const int DRAW_BUILDINGS = 16;
+    const int DRAW_PROPS     = 32;
+
+    // Build set of building indices whose AABB contains the camera
+    std::unordered_set<int> inside_buildings;
+    for (int i = 0; i < (int)objects.size(); ++i) {
+        const auto& obj = objects[i];
+        if (obj.deleted || !obj.isBuilding || obj.modelId.empty()) continue;
+
+        glm::vec3 extents = GetMeshExtents(obj.modelId, true) * BASE_SCALE * obj.scale;
+        glm::vec3 center  = glm::vec3(obj.pos);
+        glm::vec3 delta   = camera_pos - center;
+        if (std::abs(delta.x) <= extents.x &&
+            std::abs(delta.y) <= extents.y &&
+            std::abs(delta.z) <= extents.z) {
+            inside_buildings.insert(i);
+        }
+    }
+
+    // Set picking render state
+    glBindFramebuffer(GL_FRAMEBUFFER, pick_fbo_);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glDisable(GL_BLEND);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+    glUseProgram(pick_shader_prog_);
+    glBindBufferBase(GL_UNIFORM_BUFFER, ubo_binding_point_, ubo_mats);
+
+    GLint loc_model = glGetUniformLocation(pick_shader_prog_, "u_model");
+    GLint loc_id    = glGetUniformLocation(pick_shader_prog_, "u_object_id");
+
+    for (int i = 0; i < (int)objects.size(); ++i) {
+        const auto& obj = objects[i];
+        if (obj.deleted || obj.modelId.empty()) continue;
+        if (obj.isSplineWaypoint || obj.isSplineContainer) continue;
+        if (IsSkippedModelId(obj.modelId)) continue;
+
+        // Selective rendering (mirrors Draw())
+        bool shouldDraw = false;
+        if (draw_parts & DRAW_OBJECTS) {
+            shouldDraw = true;
+        } else {
+            if ((draw_parts & DRAW_BUILDINGS) && obj.isBuilding)  shouldDraw = true;
+            if ((draw_parts & DRAW_PROPS)     && !obj.isBuilding) shouldDraw = true;
+        }
+        if (!shouldDraw) continue;
+
+        // Building interior occlusion: skip children of buildings the camera is outside
+        if (obj.parentIndex >= 0 && obj.parentIndex < (int)objects.size()) {
+            const auto& parent = objects[obj.parentIndex];
+            if (parent.isBuilding && inside_buildings.find(obj.parentIndex) == inside_buildings.end()) {
+                continue; // camera is outside this parent building
+            }
+        }
+
+        Mesh mesh = GetOrLoadMesh(obj.modelId, obj.isBuilding);
+        if (mesh.vertexCount == 0) continue;
+        if (!mesh.fromRenderMesh) continue;
+
+        // Build model matrix (same convention as Draw())
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(obj.pos));
+        model = glm::rotate(model, (float)obj.rot.z, glm::vec3(0.0f, 0.0f, 1.0f));
+        model = glm::rotate(model, (float)obj.rot.x, glm::vec3(1.0f, 0.0f, 0.0f));
+        model = glm::rotate(model, (float)obj.rot.y, glm::vec3(0.0f, 1.0f, 0.0f));
+        if (IsWeaponModel(obj.modelId) || obj.type == "GunPickup" || obj.type == "AmmoPickup") {
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        }
+        model = glm::scale(model, glm::vec3(BASE_SCALE * obj.scale));
+
+        glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(model));
+        glUniform1i(loc_id, i + 1); // ID 0 = background
+
+        // Draw hull submeshes only (ATTA attachments share parent ID via parent hull)
+        if (!mesh.subMeshes.empty()) {
+            for (const auto& sub : mesh.subMeshes) {
+                if (sub.VAO == 0 || sub.vertexCount == 0) continue;
+                glBindVertexArray(sub.VAO);
+                glDrawArrays(GL_TRIANGLES, 0, sub.vertexCount);
+            }
+        } else if (mesh.VAO) {
+            glBindVertexArray(mesh.VAO);
+            glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
+        }
+    }
+
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Restore state
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glDisable(GL_CULL_FACE);
+}
+
 // ─── Draw ─────────────────────────────────────────────────────────────────────
 void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                             const std::vector<LevelObject>& objects, int selected_object_index, int hover_object_index, int draw_parts,
