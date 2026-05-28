@@ -177,6 +177,20 @@ void Renderer_Objects::EnsureDeathZoneIdsLoaded() {
         " TASKTYPE_DEATHZONE model IDs from magicobj.qvm");
 }
 
+static bool IsWeaponModel(const std::string& modelId) {
+    if (modelId.empty()) return false;
+    if (modelId.size() >= 4 && modelId[0] == '1' && 
+        modelId[1] >= '0' && modelId[1] <= '9' && 
+        modelId[2] >= '0' && modelId[2] <= '9' && 
+        modelId[3] == '_') {
+        return true;
+    }
+    if (modelId.rfind("WEAPON_ID_", 0) == 0 || modelId.rfind("AMMO_ID_", 0) == 0) {
+        return true;
+    }
+    return false;
+}
+
 bool Renderer_Objects::IsSkippedModelId(const std::string& modelId) {
     if (modelId.empty()) return false;
     return modelId == "colbox" || modelId == "colbox2" || modelId == "colbox4" || modelId == "colbox66";
@@ -493,6 +507,13 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         model = glm::rotate(model, (float)obj.rot.x, glm::vec3(1.0f, 0.0f, 0.0f)); // Pitch
         model = glm::rotate(model, (float)obj.rot.y, glm::vec3(0.0f, 1.0f, 0.0f)); // Roll
 
+        // For weapons, they are authored with Y-up (legacy OBJ style), so they stand upright.
+        // We rotate them by 90 degrees on Pitch (X axis) to lay them flat on the ground.
+        bool isWeapon = IsWeaponModel(obj.modelId) || obj.type == "GunPickup" || obj.type == "AmmoPickup";
+        if (isWeapon) {
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        }
+
         // 3. Scale
         model = glm::scale(model, glm::vec3(total_scale));
 
@@ -639,7 +660,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         std::string attCacheKey = std::to_string(current_level_) + ":" + prefix + obj.modelId;
         bool hasAttachments = attachment_cache_.find(attCacheKey) != attachment_cache_.end();
         
-        if (hasAttachments && isCloseEnough) {
+        if (hasAttachments && isCloseEnough && !isWeapon) {
             if (attachment_cache_.find(attCacheKey) != attachment_cache_.end()) {
                 glEnable(GL_POLYGON_OFFSET_FILL);
                 glPolygonOffset(-2.0f, -2.0f); // Prevent z-fighting with hull walls
@@ -784,6 +805,8 @@ void Renderer_Objects::DrawAttachmentsRecursive(
     GLint loc_ambient, GLint loc_useTex, GLint loc_tex, GLint loc_alpha,
     std::unordered_set<std::string>& drawn)
 {
+    // Skip rendering attachments for any weapon model
+    if (IsWeaponModel(parentModelId)) return;
     std::string prefix = isBuilding ? "building:" : "object:";
     std::string attCacheKey = std::to_string(current_level_) + ":" + prefix + parentModelId;
     auto ait = attachment_cache_.find(attCacheKey);
@@ -1600,8 +1623,8 @@ Mesh Renderer_Objects::CreateCubeMesh() {
 std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isBuilding) {
     if (modelId.empty()) return "";
 
-    // Helper: search one directory for modelId.mef (exact, then fuzzy by type prefix).
-    auto searchOneDir = [&](const std::string& dirStr) -> std::string {
+    // Helper: search one directory for exact modelId.mef match.
+    auto searchOneDirExact = [&](const std::string& dirStr) -> std::string {
         if (dirStr.empty()) return "";
         std::filesystem::path modelsPath(dirStr);
         if (!std::filesystem::exists(modelsPath)) return "";
@@ -1609,6 +1632,14 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
         // Exact match
         std::filesystem::path exactPath = modelsPath / (modelId + ".mef");
         if (std::filesystem::exists(exactPath)) return exactPath.string();
+        return "";
+    };
+
+    // Helper: search one directory for fuzzy match by type prefix.
+    auto searchOneDirFuzzy = [&](const std::string& dirStr) -> std::string {
+        if (dirStr.empty()) return "";
+        std::filesystem::path modelsPath(dirStr);
+        if (!std::filesystem::exists(modelsPath)) return "";
 
         // Companion-part guard: IDs ending in _2 .. _9 (face, hands, legs, etc.)
         // must match exactly or not at all. The fuzzy fallback would otherwise
@@ -1647,23 +1678,72 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
         return bestMatch;
     };
 
-    // 1. Search local extracted models ({exeDir}\models\level{N})
+    // ─── PHASE 1: EXACT MATCHES ───────────────────────────────────────────────
+    
+    // 1. Search local extracted models for current level
     const std::string exeModels = Utils::GetExeDirectory() + "\\content\\models\\level" + std::to_string(current_level_);
-    std::string result = searchOneDir(exeModels);
+    std::string result = searchOneDirExact(exeModels);
     if (!result.empty()) {
-        Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found locally: " + result);
+        Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found locally (Exact): " + result);
         return result;
     }
 
     // 2. Fall back to game's native models directory for current level
     const std::string igiModels = Utils::GetIGIModelsPath(current_level_);
-    result = searchOneDir(igiModels);
+    result = searchOneDirExact(igiModels);
     if (!result.empty()) {
-        Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in IGI root: " + result);
+        Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in IGI root (Exact): " + result);
         return result;
     }
 
-    // Lazy On-Demand Extraction for cross-level model references
+    // 3. Search other levels for exact match (cross-level references)
+    for (int lvl = 1; lvl <= 14; ++lvl) {
+        if (lvl == current_level_) continue;
+        const std::string lvlLocal = Utils::GetExeDirectory() + "\\content\\models\\level" + std::to_string(lvl);
+        result = searchOneDirExact(lvlLocal);
+        if (!result.empty()) {
+            Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in level" + std::to_string(lvl) + " local (Exact): " + result);
+            return result;
+        }
+        const std::string lvlIgi = Utils::GetIGIModelsPath(lvl);
+        result = searchOneDirExact(lvlIgi);
+        if (!result.empty()) {
+            Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in level" + std::to_string(lvl) + " IGI (Exact): " + result);
+            return result;
+        }
+    }
+
+    // 4. Search common location0 assets
+    const std::string commonLocal = Utils::GetExeDirectory() + "\\content\\models\\common";
+    result = searchOneDirExact(commonLocal);
+    if (!result.empty()) {
+        Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in common local (Exact): " + result);
+        return result;
+    }
+    const std::string commonIgi = Utils::GetIGIRootPath() + "\\missions\\location0\\common\\models";
+    result = searchOneDirExact(commonIgi);
+    if (!result.empty()) {
+        Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in common IGI (Exact): " + result);
+        return result;
+    }
+
+    // ─── PHASE 2: FUZZY FALLBACK (Only run if exact match fails everywhere) ───
+
+    // 1. Current level local
+    result = searchOneDirFuzzy(exeModels);
+    if (!result.empty()) {
+        Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found locally (Fuzzy): " + result);
+        return result;
+    }
+
+    // 2. Current level IGI root
+    result = searchOneDirFuzzy(igiModels);
+    if (!result.empty()) {
+        Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in IGI root (Fuzzy): " + result);
+        return result;
+    }
+
+    // Lazy On-Demand Extraction check
     EnsureGlobalTextureMapLoaded();
     auto mit = model_level_map_.find(modelId);
     if (mit != model_level_map_.end()) {
@@ -1676,39 +1756,32 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
         }
     }
 
-    // 3. Search all other level directories (local extracted, then IGI root) —
-    //    sub-models referenced by ATTA may live in a different level's directory.
+    // 3. Other levels fuzzy
     for (int lvl = 1; lvl <= 14; ++lvl) {
         if (lvl == current_level_) continue;
         const std::string lvlLocal = Utils::GetExeDirectory() + "\\content\\models\\level" + std::to_string(lvl);
-        result = searchOneDir(lvlLocal);
+        result = searchOneDirFuzzy(lvlLocal);
         if (!result.empty()) {
-            Logger::Get().Log(LogLevel::DEBUG,
-                "[Renderer_Objects] Model found in level" + std::to_string(lvl) + " local: " + result);
+            Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in level" + std::to_string(lvl) + " local (Fuzzy): " + result);
             return result;
         }
         const std::string lvlIgi = Utils::GetIGIModelsPath(lvl);
-        result = searchOneDir(lvlIgi);
+        result = searchOneDirFuzzy(lvlIgi);
         if (!result.empty()) {
-            Logger::Get().Log(LogLevel::DEBUG,
-                "[Renderer_Objects] Model found in level" + std::to_string(lvl) + " IGI: " + result);
+            Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in level" + std::to_string(lvl) + " IGI (Fuzzy): " + result);
             return result;
         }
     }
 
-    // 4. Search common location0 assets — extracted cache then raw game dir.
-    const std::string commonLocal = Utils::GetExeDirectory() + "\\content\\models\\common";
-    result = searchOneDir(commonLocal);
+    // 4. Common fuzzy
+    result = searchOneDirFuzzy(commonLocal);
     if (!result.empty()) {
-        Logger::Get().Log(LogLevel::DEBUG,
-            "[Renderer_Objects] Model found in common (local): " + result);
+        Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in common local (Fuzzy): " + result);
         return result;
     }
-    const std::string commonIgi = Utils::GetIGIRootPath() + "\\missions\\location0\\common\\models";
-    result = searchOneDir(commonIgi);
+    result = searchOneDirFuzzy(commonIgi);
     if (!result.empty()) {
-        Logger::Get().Log(LogLevel::DEBUG,
-            "[Renderer_Objects] Model found in common (IGI): " + result);
+        Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in common IGI (Fuzzy): " + result);
         return result;
     }
 
@@ -1811,6 +1884,14 @@ void main() {
     model = glm::rotate(model, static_cast<float>(obj.rot.z), glm::vec3(0.0f, 0.0f, 1.0f));
     model = glm::rotate(model, static_cast<float>(obj.rot.y), glm::vec3(0.0f, 1.0f, 0.0f));
     model = glm::rotate(model, static_cast<float>(obj.rot.x), glm::vec3(1.0f, 0.0f, 0.0f));
+
+    // For weapons, they are authored with Y-up (legacy OBJ style), so they stand upright.
+    // We rotate them by 90 degrees on Pitch (X axis) to lay them flat on the ground.
+    bool isWeapon = IsWeaponModel(obj.modelId) || obj.type == "GunPickup" || obj.type == "AmmoPickup";
+    if (isWeapon) {
+        model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    }
+
     model = glm::scale(model, glm::vec3(obj.scale * 1.2f)); // 20% larger
     
     GLint loc_model = glGetUniformLocation(simple_shader, "u_model");
