@@ -86,6 +86,10 @@ public:
 	void					BeginLoadLevel();
 	void					SetLevel(int level) { objects_.SetLevel(level); }
 
+	// Diagnostics: live object cache occupancy (for level-switch logging).
+	size_t					GetMeshCacheCount() const { return objects_.GetMeshCacheCount(); }
+	size_t					GetTextureCacheCount() const { return objects_.GetTextureCacheCount(); }
+
 	// interface of IRendererLoader
 	void					SetupClearColor(const glm::vec4& color) override;
 	void					SetupFog(const glm::vec4& color, float fog_far) override;

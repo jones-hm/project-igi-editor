@@ -37,12 +37,6 @@ std::string AssetExtractor::ReadFileTimestamp(const std::string& path) {
 // Entry names that contain path separators are flattened to just the filename
 // so they land directly in out_dir without creating unexpected sub-trees.
 bool AssetExtractor::ExtractRes(const std::string& res_path, const std::string& out_dir) {
-    RESFile res = RES_Parse(res_path);
-    if (!res.valid) {
-        Logger::Get().Log(LogLevel::ERR, "[AssetExtractor] Failed to parse: " + res_path + " — " + res.error);
-        return false;
-    }
-
     std::error_code ec;
     fs::create_directories(out_dir, ec);
     if (ec) {
@@ -50,28 +44,40 @@ bool AssetExtractor::ExtractRes(const std::string& res_path, const std::string& 
         return false;
     }
 
+    // Stream each entry straight to disk. This avoids holding the entire (200+ MB)
+    // archive in memory, which fails to allocate in the 32-bit process after the
+    // address space is fragmented by an in-session level switch.
     int written = 0;
-    for (const auto& entry : res.entries) {
-        if (entry.data.empty()) continue;
+    int totalEntries = 0;
+    std::string error;
+    bool ok = RES_ForEachEntry(res_path,
+        [&](const std::string& name, const uint8_t* data, size_t size) {
+            ++totalEntries;
+            if (size == 0) return;
 
-        // Use only the filename portion so we stay flat under out_dir.
-        std::string filename = fs::path(entry.name).filename().string();
-        if (filename.empty()) continue;
+            // Use only the filename portion so we stay flat under out_dir.
+            std::string filename = fs::path(name).filename().string();
+            if (filename.empty()) return;
 
-        std::string dest = out_dir + "\\" + filename;
-        std::ofstream ofs(dest, std::ios::binary | std::ios::trunc);
-        if (!ofs) {
-            Logger::Get().Log(LogLevel::WARNING, "[AssetExtractor] Cannot write: " + dest);
-            continue;
-        }
-        ofs.write(reinterpret_cast<const char*>(entry.data.data()),
-                  static_cast<std::streamsize>(entry.data.size()));
-        ++written;
+            std::string dest = out_dir + "\\" + filename;
+            std::ofstream ofs(dest, std::ios::binary | std::ios::trunc);
+            if (!ofs) {
+                Logger::Get().Log(LogLevel::WARNING, "[AssetExtractor] Cannot write: " + dest);
+                return;
+            }
+            ofs.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(size));
+            ++written;
+        },
+        error);
+
+    if (!ok) {
+        Logger::Get().Log(LogLevel::ERR, "[AssetExtractor] Failed to parse: " + res_path + " — " + error);
+        return false;
     }
 
     Logger::Get().Log(LogLevel::INFO, "[AssetExtractor] Extracted " + std::to_string(written) +
                       " entries from " + res_path + " -> " + out_dir);
-    return written > 0 || res.entries.empty(); // empty archive is still valid
+    return written > 0 || totalEntries == 0; // empty archive is still valid
 }
 
 // Check stamp vs current .res timestamp; extract only when stale.

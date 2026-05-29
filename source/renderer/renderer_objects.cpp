@@ -356,6 +356,14 @@ static bool IsWeaponModel(const std::string& modelId) {
     return false;
 }
 
+// METAL_DOOR_SLIDE_UP (model 506_xx) appears in levels 12/13/14 as an EditRigidObj
+// carrying a genuine multi-axis Euler tuple. It bypasses the engine's special door
+// transform and so needs a different Euler application order than other rigid objects.
+static bool IsMetalSlideUpDoorModel(const std::string& modelId) {
+    if (modelId.empty()) return false;
+    return modelId.rfind("506_", 0) == 0;
+}
+
 bool Renderer_Objects::IsSkippedModelId(const std::string& modelId) {
     if (modelId.empty()) return false;
     return modelId == "colbox" || modelId == "colbox2" || modelId == "colbox4" || modelId == "colbox66";
@@ -574,7 +582,12 @@ bool Renderer_Objects::Init() {
 
 // ─── ClearCaches ──────────────────────────────────────────────────────────────
 void Renderer_Objects::ClearCaches() {
-    Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Clearing all level caches...");
+    Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Clearing all level caches... (meshes=" +
+        std::to_string(mesh_cache_.size()) + " textures=" + std::to_string(texture_cache_.size()) +
+        " attachments=" + std::to_string(attachment_cache_.size()) +
+        " modelTexMap=" + std::to_string(model_texture_map_cache_.size()) +
+        " texMapLevel=" + std::to_string(texture_map_level_) +
+        " globalTexMapLoaded=" + std::to_string(global_texture_map_loaded_ ? 1 : 0) + ")");
     for (auto& pair : mesh_cache_) {
         destroyModel(pair.second);
     }
@@ -951,9 +964,19 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
         // 2. Apply IGI rotations (Yaw, Pitch, Roll)
         // IGI rotation order: Yaw (Z), then Pitch (X), then Roll (Y)
-        model = glm::rotate(model, (float)obj.rot.z, glm::vec3(0.0f, 0.0f, 1.0f)); // Yaw
-        model = glm::rotate(model, (float)obj.rot.x, glm::vec3(1.0f, 0.0f, 0.0f)); // Pitch
-        model = glm::rotate(model, (float)obj.rot.y, glm::vec3(0.0f, 1.0f, 0.0f)); // Roll
+        if (IsMetalSlideUpDoorModel(obj.modelId)) {
+            // Slide-up metal doors (levels 12/13/14) carry genuine multi-axis Euler
+            // tuples and seat correctly only with Z->Y->X order. Yaw-only objects are
+            // order-invariant, so scoping this to the door model regresses nothing else.
+            // FALLBACK if still wrong: try order X->Y->Z, or append a +/-90° spin about Z.
+            model = glm::rotate(model, (float)obj.rot.z, glm::vec3(0.0f, 0.0f, 1.0f)); // Yaw
+            model = glm::rotate(model, (float)obj.rot.y, glm::vec3(0.0f, 1.0f, 0.0f)); // Roll
+            model = glm::rotate(model, (float)obj.rot.x, glm::vec3(1.0f, 0.0f, 0.0f)); // Pitch
+        } else {
+            model = glm::rotate(model, (float)obj.rot.z, glm::vec3(0.0f, 0.0f, 1.0f)); // Yaw
+            model = glm::rotate(model, (float)obj.rot.x, glm::vec3(1.0f, 0.0f, 0.0f)); // Pitch
+            model = glm::rotate(model, (float)obj.rot.y, glm::vec3(0.0f, 1.0f, 0.0f)); // Roll
+        }
 
         // For weapons, they are authored with Y-up (legacy OBJ style), so they stand upright.
         // We rotate them by 90 degrees on Pitch (X axis) to lay them flat on the ground.
@@ -1048,9 +1071,20 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     }
 
                     if (sub.textureID > 0) {
-                        // Textured submesh: neutral lighting so texture looks natural
-                        glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
-                        glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                        if (isWindowModel) {
+                            // Window/glass: flat, orientation-independent lighting. Without this,
+                            // a pane facing the light gets diff+spec added on top of ambient and
+                            // blows out to white, while the opposite bank (ambient only) stays
+                            // gray — so the two banks look different. Killing the directional
+                            // term makes every pane render the same muted gray in all levels.
+                            // (Tune 0.45f for lighter/darker glass.)
+                            glUniform3f(loc_dirlight, 0.0f, 0.0f, 0.0f);
+                            glUniform3f(loc_ambient,  0.45f, 0.45f, 0.45f);
+                        } else {
+                            // Textured submesh: neutral lighting so texture looks natural
+                            glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
+                            glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                        }
                         glUniform1i(loc_useTex, 1);
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, sub.textureID);
@@ -1333,12 +1367,22 @@ void Renderer_Objects::DrawAttachmentsRecursive(
 
         // Skip untextured sub-models (trigger zones, boarding areas, collision triggers)
         // — they'd appear as featureless dark/gray slabs with no visual value.
+        // Exception: small untextured sub-models (e.g. sunglasses and other character
+        // head/body accessories) are legitimate visual geometry — they carry no DAT texture
+        // entry but should still draw via the hash-color fallback path below. Trigger/boarding
+        // slabs span several metres (half-extent in the ~1000s of raw units); accessory
+        // geometry is head-sized (a few hundred units at most), so a max-half-extent threshold
+        // separates them cleanly without re-introducing the slabs.
         {
             bool subHasTex = (subMesh.textureID > 0);
             for (const auto& s : subMesh.subMeshes) {
                 if (s.textureID > 0) { subHasTex = true; break; }
             }
-            if (!subHasTex) {
+            const float kSlabHalfExtent = 700.0f; // ~0.17 m: above any accessory, below any slab
+            const float subMaxHalfExtent = std::max(subMesh.halfExtents.x,
+                std::max(subMesh.halfExtents.y, subMesh.halfExtents.z));
+            const bool isLargeSlab = (subMaxHalfExtent >= kSlabHalfExtent);
+            if (!subHasTex && isLargeSlab) {
                 std::string childKey = parentModelId + ">" + att.modelId;
                 if (drawn.insert(childKey).second) {
                     DrawAttachmentsRecursive(att.modelId, isBuilding, childWorldMat, isTransparentPass,
@@ -1408,15 +1452,28 @@ void Renderer_Objects::DrawAttachmentsRecursive(
                 }
 
                 if (sub.textureID > 0) {
-                    glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
-                    glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                    if (attIsWindow) {
+                        // Flat, orientation-independent lighting for window/glass panes
+                        // (see top-level window path) — prevents white blowout.
+                        glUniform3f(loc_dirlight, 0.0f, 0.0f, 0.0f);
+                        glUniform3f(loc_ambient,  0.45f, 0.45f, 0.45f);
+                    } else {
+                        glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
+                        glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                    }
                     glUniform1i(loc_useTex, 1);
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, sub.textureID);
                     glUniform1i(loc_tex, 0);
                 } else {
-                    glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
-                    glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                    // Untextured accessory (e.g. sunglasses): hash-color fallback, matching
+                    // the untextured submesh path used for top-level objects above.
+                    size_t hash = std::hash<std::string>{}(att.modelId);
+                    float hr = 0.4f + (float)(hash & 0xFF) / 255.0f * 0.4f;
+                    float hg = 0.4f + (float)((hash >> 8) & 0xFF) / 255.0f * 0.4f;
+                    float hb = 0.4f + (float)((hash >> 16) & 0xFF) / 255.0f * 0.4f;
+                    glUniform3f(loc_dirlight, hr * 0.6f, hg * 0.6f, hb * 0.6f);
+                    glUniform3f(loc_ambient,  hr * 0.4f, hg * 0.4f, hb * 0.4f);
                     glUniform1i(loc_useTex, 0);
                 }
                 glBindVertexArray(sub.VAO);

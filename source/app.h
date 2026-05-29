@@ -160,6 +160,7 @@ private:
 
 	bool					sync_from_game_once_;
 	int						last_game_level_;
+	int						last_loaded_level_ = -1;	// level currently loaded; -1 = none yet (first load == fresh process)
 	int						level_root_index_;
 	std::vector<LevelObject> clipboard_;
 

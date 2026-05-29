@@ -25,6 +25,10 @@ public:
     void SetLevel(int level) { current_level_ = level; }
     void ClearCaches();
 
+    // Diagnostics: live cache occupancy (for level-switch logging).
+    size_t GetMeshCacheCount() const { return mesh_cache_.size(); }
+    size_t GetTextureCacheCount() const { return texture_cache_.size(); }
+
     void Draw(GLuint ubo_mats, bool overlay_wireframe, const std::vector<LevelObject>& objects, int selected_object_index, int hover_object_index, int draw_parts, const glm::vec3& camera_pos, bool show_magic_obj_spheres = false);
     int PickObjectAtScreen(int x, int y, int w, int h,
                            GLuint ubo_mats,

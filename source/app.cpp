@@ -259,7 +259,20 @@ void App::LoadLevel(int level_no) {
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 		Logger::Get().Log(LogLevel::INFO, "[App] LoadLevel() START for level " + std::to_string(level_no));
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
-		
+
+		// Track in-session level switches. The FIRST load (last_loaded_level_ < 0) is
+		// equivalent to a fresh process; any later load is a MENU/RELOAD switch whose
+		// only difference from a fresh process is leftover per-level state.
+		const bool is_switch = (last_loaded_level_ >= 0 && last_loaded_level_ != level_no);
+		if (is_switch) {
+			Logger::Get().Log(LogLevel::INFO, "[App] MENU/RELOAD switch from level " +
+				std::to_string(last_loaded_level_) + " to " + std::to_string(level_no) +
+				" — performing full previous-level teardown");
+		} else {
+			Logger::Get().Log(LogLevel::INFO, "[App] Initial level load (level " +
+				std::to_string(level_no) + ")");
+		}
+
 		// Verify level number is valid
 		if (level_no < MIN_LEVEL_NO || level_no > MAX_LEVEL_NO) {
 			std::string errorMsg = "Invalid level number: " + std::to_string(level_no) + " (valid range: " + std::to_string(MIN_LEVEL_NO) + "-" + std::to_string(MAX_LEVEL_NO) + ")";
@@ -286,8 +299,17 @@ void App::LoadLevel(int level_no) {
 		hover_object_index_ = -1;
 		status_message_.clear();
 
+		// NOTE: We must NOT purge the previous level's extracted assets here. The
+		// texture/model resolver (FindTextureFile step 6 + lazy cross-level extraction)
+		// deliberately searches *other* levels' extracted folders to resolve cross-level
+		// references (e.g. a level-6 object using a level-14 texture). Deleting them on
+		// switch removes legitimate fallback sources. The renderer caches are still fully
+		// torn down by BeginLoadLevel()/ClearCaches() below.
 		renderer_.SetLevel(level_no);
 		renderer_.BeginLoadLevel();
+		Logger::Get().Log(LogLevel::INFO, "[App] After BeginLoadLevel teardown: renderer meshCache=" +
+			std::to_string(renderer_.GetMeshCacheCount()) + " textureCache=" +
+			std::to_string(renderer_.GetTextureCacheCount()) + " (both should be 0)");
 		renderer_.SetSplineTerrainQuery([this](double x, double y, float& z) {
 			return level_.GetTerrainZ(x, y, z);
 		});
@@ -319,6 +341,7 @@ void App::LoadLevel(int level_no) {
 
 			UpdateViewerVectors();
 			Logger::Get().Log(LogLevel::INFO, "[App] Level " + std::to_string(level_no) + " loaded. Viewer start=(" + std::to_string(viewer_.pos_.x) + "," + std::to_string(viewer_.pos_.y) + "," + std::to_string(viewer_.pos_.z) + ") yaw=" + std::to_string(viewer_.yaw_));
+			last_loaded_level_ = level_no;
 		}
 		else {
 			std::string errorMsg = "Failed to load level " + std::to_string(level_no) + "\n\nPlease check if the terrain files exist in the correct location.";
