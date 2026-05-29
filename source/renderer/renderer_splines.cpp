@@ -29,8 +29,7 @@ void Renderer_Splines::Draw(
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
+    glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
 
     for (const auto& obj : objects) {
@@ -167,8 +166,14 @@ void Renderer_Splines::DrawSplineSegment(
 
         // Draw ATTA sub-models (rails, details) for this tile position.
         // DrawAttachmentsForSpline switches to the objects shader internally and
-        // leaves program 0 on exit, so restore the spline shader afterwards.
+        // leaves program 0 on exit, so restore the spline shader and all GL state
+        // that the attachment rendering may have dirtied.
         obj_renderer_.DrawAttachmentsForSpline(segModelId, /*isBuilding=*/false, unscaledModel, ubo_mats);
         glUseProgram(shader_program);
+        glBindBufferBase(GL_UNIFORM_BUFFER, 0, ubo_mats);
+        glDepthFunc(GL_LESS);
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        glDisable(GL_POLYGON_OFFSET_FILL);
     }
 }

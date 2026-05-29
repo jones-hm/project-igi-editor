@@ -306,6 +306,11 @@ std::vector<std::array<uint32_t, 3>> ParsePackedRenderTriangles(
             ? ReadValue<uint16_t>(bytes, base + 22)
             : ReadValue<uint16_t>(bytes, base + 20);
         (void)vertsCount; // used for diagnostics only
+        // rawOpacity: non-zero means this render block uses alpha blending.
+        // type 3 (buildings): at byte 24; type 0/1 (objects/characters): at byte 22.
+        const uint16_t rawOpacity = (modelType == 3)
+            ? ReadValue<uint16_t>(bytes, base + 24)
+            : ReadValue<uint16_t>(bytes, base + 22);
         const size_t indexBytes    = static_cast<size_t>(indexCount) * sizeof(uint16_t);
 
         if (cursor + headerSize + indexBytes > chunk.size) {
@@ -328,7 +333,9 @@ std::vector<std::array<uint32_t, 3>> ParsePackedRenderTriangles(
 
         const size_t blockTriangleCount = triangles.size() - blockTriangleStart;
         if (blockTriangleCount > 0) {
-            outBlocks.push_back({ blockTriangleStart, blockTriangleCount, materialSlot, 1.0f });
+            // opacity < 1.0f signals alpha blending needed for this block
+            const float blockOpacity = (rawOpacity != 0) ? 0.5f : 1.0f;
+            outBlocks.push_back({ blockTriangleStart, blockTriangleCount, materialSlot, blockOpacity });
         }
 
         ++blockCount;

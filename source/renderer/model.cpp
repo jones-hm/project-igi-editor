@@ -128,6 +128,16 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
             const auto& blockIndices = groupedBlocks[materialSlot];
             std::vector<float> verts;
 
+            // Propagate alpha-blend flag: if any block in this material group
+            // has opacity < 1.0, the whole submesh needs alpha blending.
+            bool materialHasAlpha = false;
+            for (size_t bi : blockIndices) {
+                if (geometry.renderBlocks[bi].opacity < 1.0f) {
+                    materialHasAlpha = true;
+                    break;
+                }
+            }
+
             for (size_t blockIndex : blockIndices) {
                 const auto& block = geometry.renderBlocks[blockIndex];
                 if (block.triangleCount == 0) {
@@ -191,7 +201,7 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
             sub.textureID = 0;
             sub.vertexCount = static_cast<int>(verts.size() / 8);
             sub.baseColorFactor = glm::vec4(1.0f);
-            sub.alphaMode = 0;
+            sub.alphaMode = materialHasAlpha ? 2 : 0;
             sub.materialSlot = materialSlot;
 
             glGenVertexArrays(1, &sub.VAO);

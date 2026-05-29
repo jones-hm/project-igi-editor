@@ -1302,10 +1302,10 @@ void Renderer_Objects::DrawAttachmentsRecursive(
             0.f,      0.f,      0.f,      1.f
         );
 
-        // ATTA px/py/pz are in raw game units (same scale as REIH bone pivots — NOT
-        // pre-divided by 40.96). The parentWorldMat has no scale factor, so we must
-        // convert to world units before transforming through it.
-        glm::vec3 localOff(att.px * 40.96f, att.py * 40.96f, att.pz * 40.96f);
+        // ATTA px/py/pz are raw floats from the MEF file, in the same coordinate
+        // space as obj.pos (raw game units). parentWorldMat is also in raw game units
+        // (translate=obj.pos, no scale), so no conversion needed.
+        glm::vec3 localOff(att.px, att.py, att.pz);
         glm::vec3 worldPos = glm::vec3(parentWorldMat * glm::vec4(localOff, 1.f));
 
         // Extract parent rotation (upper-left 3x3 of the unscaled parent mat)
@@ -1353,10 +1353,26 @@ void Renderer_Objects::DrawAttachmentsRecursive(
 
         glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(attModel));
 
-        // Window/glass transparency check
+        // Determine rendering pass requirements:
+        //   attIsWindow: named "WINDOW"/"GLASS" → transparent pass only
+        //   attHasAlpha: any submesh has alphaMode==2 (DNER rawOpacity non-zero)
+        //                → draw in BOTH passes (opaque pass discards α<0.5 pixels,
+        //                  transparent pass blends the rest)
         const bool attIsWindow = window_model_ids_.count(att.modelId) > 0;
-        if (attIsWindow != isTransparentPass) {
-            // Still recurse into children — they may be non-window
+        bool attHasAlpha = false;
+        for (const auto& s : subMesh.subMeshes) {
+            if (s.alphaMode == 2) { attHasAlpha = true; break; }
+        }
+
+        // Skip this sub-model if it doesn't belong in the current pass:
+        //   Windows: transparent pass only
+        //   Alpha attachments: both passes
+        //   Opaque attachments: opaque pass only
+        const bool drawInThisPass = attIsWindow
+            ? isTransparentPass
+            : (!isTransparentPass || attHasAlpha);
+        if (!drawInThisPass) {
+            // Still recurse into children — they may need a different pass
             std::string childKey = parentModelId + ">" + att.modelId;
             if (drawn.insert(childKey).second) {
                 DrawAttachmentsRecursive(att.modelId, isBuilding, childWorldMat, isTransparentPass,
@@ -1379,7 +1395,12 @@ void Renderer_Objects::DrawAttachmentsRecursive(
             for (const auto &sub : subMesh.subMeshes) {
                 if (sub.VAO == 0 || sub.vertexCount == 0) continue;
 
-                if (sub.alphaMode == 2) {
+                // In the transparent pass, only draw alpha submeshes (with blending).
+                // In the opaque pass, draw everything — the shader discards α<0.5 pixels.
+                const bool subNeedsBlend = (sub.alphaMode == 2);
+                if (isTransparentPass && !attIsWindow && !subNeedsBlend) continue;
+
+                if (subNeedsBlend) {
                     glEnable(GL_BLEND);
                     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                     glUniform1f(loc_alpha, sub.baseColorFactor.a);
@@ -1400,7 +1421,7 @@ void Renderer_Objects::DrawAttachmentsRecursive(
                 glBindVertexArray(sub.VAO);
                 glDrawArrays(GL_TRIANGLES, 0, sub.vertexCount);
 
-                if (sub.alphaMode == 2) {
+                if (subNeedsBlend) {
                     glDisable(GL_BLEND);
                     glUniform1f(loc_alpha, 1.0f);
                 }
