@@ -345,12 +345,23 @@ void App::DrawCustomCursor() {
 	int w  = cursor_tex_ws_[idx];
 	int h  = cursor_tex_hs_[idx];
 
+	// Match the renderer's fixed-function HUD state: a shader/VAO left bound from
+	// the 3D pass makes immediate-mode textured quads draw nothing.
+	glUseProgram(0);
+	glBindVertexArray(0);
+	glBindBufferBase(GL_UNIFORM_BUFFER, 0, 0);
+	glActiveTexture(GL_TEXTURE0);
+
 	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_LIGHTING);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
 	glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
-	glOrtho(0, vw, vh, 0, -1, 1);
+	glOrtho(0, vw, vh, 0, -1, 1);   // y=0 at top (top-down to match mouse coords)
 	glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+
 	glEnable(GL_TEXTURE_2D);
 	glBindTexture(GL_TEXTURE_2D, cursor_tex_ids_[idx]);
 	glColor4f(1.f, 1.f, 1.f, 1.f);
@@ -360,7 +371,9 @@ void App::DrawCustomCursor() {
 	  glTexCoord2f(1, 1); glVertex2i(mx + w, my + h);
 	  glTexCoord2f(0, 1); glVertex2i(mx,     my + h);
 	glEnd();
+	glBindTexture(GL_TEXTURE_2D, 0);
 	glDisable(GL_TEXTURE_2D);
+
 	glMatrixMode(GL_MODELVIEW);  glPopMatrix();
 	glMatrixMode(GL_PROJECTION); glPopMatrix();
 	glEnable(GL_DEPTH_TEST);
