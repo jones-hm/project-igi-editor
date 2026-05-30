@@ -16,6 +16,9 @@
 #include "parsers/qvm_decompiler.h"
 #include "cli/asset_extractor.h"
 #include "parsers/dat_parser.h"
+#include "parsers/tex_parser.h"
+#include "renderer/gl_helper.h"
+#include "level/task_schema.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -212,7 +215,8 @@ bool App::Init(int argc, char** argv) {
 
 
 	// Set initial cursor state
-	glutSetCursor(GLUT_CURSOR_LEFT_ARROW);
+	LoadCustomCursor("content\\qed\\TerrainEditIcon_Pointer.spr");
+	glutSetCursor(custom_cursor_loaded_ ? GLUT_CURSOR_NONE : GLUT_CURSOR_LEFT_ARROW);
 
 	// Cache editor HWND for minimize/restore around game launch
 	editor_hwnd_ = Utils::FindWindow("IGI Editor v" + Utils::GetVersionString());
@@ -253,6 +257,73 @@ void App::Shutdown() {
 		AssetExtractor::CleanupExtractedAssets(Utils::GetExeDirectory());
 	}
 }
+
+// ── C1: Custom SPR cursor ─────────────────────────────────────────────────────
+
+void App::LoadCustomCursor(const char* spr_path) {
+	TEXFile tex = TEX_Parse(spr_path);
+	if (!tex.valid || tex.images.empty()) return;
+	const TEXImage& img = tex.images[0];
+
+	std::vector<uint8_t> rgba;
+	if (img.mode == 2) { // RGB565 — no alpha channel
+		rgba.reserve(img.width * img.height * 4);
+		for (size_t i = 0; i + 1 < img.pixels.size(); i += 2) {
+			uint16_t p = img.pixels[i] | (img.pixels[i + 1] << 8);
+			rgba.push_back(((p >> 11) & 0x1F) << 3);
+			rgba.push_back(((p >> 5)  & 0x3F) << 2);
+			rgba.push_back( (p        & 0x1F) << 3);
+			rgba.push_back(255);
+		}
+	} else { // ARGB8888 (modes 3, 67) — swizzle BGRA → RGBA
+		rgba.resize(img.pixels.size());
+		for (size_t i = 0; i + 3 < img.pixels.size(); i += 4) {
+			rgba[i + 0] = img.pixels[i + 2]; // R
+			rgba[i + 1] = img.pixels[i + 1]; // G
+			rgba[i + 2] = img.pixels[i + 0]; // B
+			rgba[i + 3] = img.pixels[i + 3]; // A
+		}
+	}
+
+	pic_s pic;
+	pic.width_  = (int)img.width;
+	pic.height_ = (int)img.height;
+	pic.pixels_ = rgba.data();
+	cursor_tex_id_ = GL_RegisterTexture(&pic, GL_CLAMP_TO_EDGE, GL_LINEAR, GL_LINEAR, false);
+	cursor_tex_w_  = (int)img.width;
+	cursor_tex_h_  = (int)img.height;
+	custom_cursor_loaded_ = true;
+}
+
+void App::DrawCustomCursor() {
+	if (!custom_cursor_loaded_ || !cursor_tex_id_) return;
+	int mx = mouse_state_.prior_x_;
+	int my = mouse_state_.prior_y_;
+	int vw = window_state_.viewport_width_;
+	int vh = window_state_.viewport_height_;
+
+	glDisable(GL_DEPTH_TEST);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
+	glOrtho(0, vw, vh, 0, -1, 1);
+	glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, cursor_tex_id_);
+	glColor4f(1, 1, 1, 1);
+	glBegin(GL_QUADS);
+	  glTexCoord2f(0, 0); glVertex2i(mx,               my);
+	  glTexCoord2f(1, 0); glVertex2i(mx + cursor_tex_w_, my);
+	  glTexCoord2f(1, 1); glVertex2i(mx + cursor_tex_w_, my + cursor_tex_h_);
+	  glTexCoord2f(0, 1); glVertex2i(mx,               my + cursor_tex_h_);
+	glEnd();
+	glDisable(GL_TEXTURE_2D);
+	glMatrixMode(GL_MODELVIEW);  glPopMatrix();
+	glMatrixMode(GL_PROJECTION); glPopMatrix();
+	glEnable(GL_DEPTH_TEST);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 void App::LoadLevel(int level_no) {
 	try {
@@ -644,6 +715,83 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 				}
 			}
 
+			// C2: Property editor click handling
+			if (prop_editor_open_ && selected_object_index_ >= 0) {
+				const auto& objects = level_.GetLevelObjects().GetObjects();
+				if (selected_object_index_ < (int)objects.size()) {
+					const auto& obj = objects[selected_object_index_];
+					const auto& schemas = GetBuiltinSchemas();
+					auto it = schemas.find(obj.type);
+					if (it != schemas.end()) {
+						const TaskSchema& schema = it->second;
+						int vw = window_state_.viewport_width_;
+						int vh = window_state_.viewport_height_;
+						int panel_w = 250;
+						int row_h   = 16;
+						int header_h = 20;
+						int total_rows = 0;
+						for (const auto& fd : schema) {
+							if (fd.typeName == "ObjectPos" || fd.typeName == "Real32x9" ||
+							    fd.typeName == "Real32x3"  || fd.typeName == "Real64x3" ||
+							    fd.typeName == "RGB"       || fd.typeName == "Colour")
+								total_rows += 3;
+							else
+								total_rows += 1;
+						}
+						int panel_h = header_h + total_rows * row_h + 8;
+						int panel_x = vw - panel_w - 5;
+						int panel_y = vh - panel_h - 5; // top-down y
+
+						if (x >= panel_x && x <= panel_x + panel_w &&
+						    y >= panel_y && y <= panel_y + panel_h) {
+							int row_clicked = (y - panel_y - header_h) / row_h;
+							// Map row to field/component
+							int row_idx = 0;
+							for (int fi = 0; fi < (int)schema.size(); ++fi) {
+								const FieldDef& fd = schema[fi];
+								bool is_multi = (fd.typeName == "ObjectPos" || fd.typeName == "Real32x9" ||
+								                 fd.typeName == "Real32x3"  || fd.typeName == "Real64x3" ||
+								                 fd.typeName == "RGB"       || fd.typeName == "Colour");
+								int sub = is_multi ? 3 : 1;
+								if (row_clicked >= row_idx && row_clicked < row_idx + sub) {
+									int comp = row_clicked - row_idx;
+									int argIdx = fd.argOffset + comp;
+									bool is_string = (fd.typeName.find("String") != std::string::npos ||
+									                  fd.typeName == "VarString" ||
+									                  fd.typeName == "EnumString32" ||
+									                  fd.typeName == "DropDownCombo");
+									bool is_bool = (fd.typeName == "bool8" || fd.typeName == "PushButton");
+									if (is_bool && argIdx < (int)obj.argTokens.size()) {
+										auto& mobj = level_.GetLevelObjects().GetObjects()[selected_object_index_];
+										if (argIdx < (int)mobj.argTokens.size()) {
+											int cur = 0;
+											try { cur = std::stoi(mobj.argTokens[argIdx]); } catch(...) {}
+											mobj.argTokens[argIdx] = (cur == 0) ? "1" : "0";
+											mobj.modified = true;
+											level_.GetLevelObjects().UpdateCoordinatesInLine(mobj);
+										}
+									} else if (is_string) {
+										prop_text_edit_field_ = fi * 3 + comp;
+										prop_text_buf_ = (argIdx < (int)obj.argTokens.size()) ? obj.argTokens[argIdx] : "";
+									} else {
+										// Numeric drag
+										prop_field_index_    = fi * 3 + comp;
+										prop_drag_start_x_   = x;
+										float cur_val = 0.f;
+										if (argIdx < (int)obj.argTokens.size()) {
+											try { cur_val = std::stof(obj.argTokens[argIdx]); } catch(...) {}
+										}
+										prop_drag_start_val_ = cur_val;
+									}
+									return;
+								}
+								row_idx += sub;
+							}
+						}
+					}
+				}
+			}
+
 			if (pause_mode_) {
 				// *** MUST match renderer.cpp pause menu constants exactly ***
 				const int menu_w = 380;
@@ -690,6 +838,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			mouse_state_.left_button_down_ = false;
 			edit_dragging_ = false;
 			orbit_active_ = false;
+			prop_field_index_ = -1; // C2: stop dragging property field
 			status_message_.clear(); // Clear movement telemetry status when mouse is released
 
 			if (window_state_.cursor_visible_) {
@@ -768,6 +917,37 @@ void App::Input_OnMotion(int x, int y) {
 		int char_w = 9;
 		edit_cursor_pos_ = std::max(0, std::min((int)edit_string_.size(), edit_scroll_x_ + (rel_x / char_w)));
 		edit_selection_end_ = edit_cursor_pos_;
+	}
+
+	// C2: Property editor drag
+	if (prop_field_index_ >= 0 && !enableCameraMode && selected_object_index_ >= 0) {
+		auto& objects = level_.GetLevelObjects().GetObjects();
+		if (selected_object_index_ < (int)objects.size()) {
+			auto& obj = objects[selected_object_index_];
+			const auto& schemas = GetBuiltinSchemas();
+			auto it = schemas.find(obj.type);
+			if (it != schemas.end()) {
+				const TaskSchema& schema = it->second;
+				// Decode prop_field_index_ back to field/component
+				int fi    = prop_field_index_ / 3;
+				int comp  = prop_field_index_ % 3;
+				if (fi < (int)schema.size()) {
+					const FieldDef& fd = schema[fi];
+					bool is_ori = (fd.typeName == "Real32x9");
+					float sensitivity = is_ori ? 0.01f : 0.1f;
+					int delta = x - prop_drag_start_x_;
+					float new_val = prop_drag_start_val_ + delta * sensitivity;
+					int argIdx = fd.argOffset + comp;
+					if (argIdx < (int)obj.argTokens.size()) {
+						char buf[64];
+						snprintf(buf, sizeof(buf), "%.4f", new_val);
+						obj.argTokens[argIdx] = buf;
+						obj.modified = true;
+						level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -1163,6 +1343,91 @@ static constexpr movement_key_s MOVEMENT_KEYS[] = {
 void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	auto& config = Config::Get();
 
+	// C2: Property text editor input
+	if (prop_text_edit_field_ >= 0) {
+		if (key == 27) { // ESC — cancel
+			prop_text_edit_field_ = -1;
+			return;
+		}
+		if (key == 13) { // Enter — commit
+			if (selected_object_index_ >= 0) {
+				auto& objects = level_.GetLevelObjects().GetObjects();
+				if (selected_object_index_ < (int)objects.size()) {
+					auto& obj = objects[selected_object_index_];
+					const auto& schemas = GetBuiltinSchemas();
+					auto it = schemas.find(obj.type);
+					if (it != schemas.end()) {
+						const TaskSchema& schema = it->second;
+						int fi   = prop_text_edit_field_ / 3;
+						int comp = prop_text_edit_field_ % 3;
+						if (fi < (int)schema.size()) {
+							int argIdx = schema[fi].argOffset + comp;
+							if (argIdx < (int)obj.argTokens.size()) {
+								obj.argTokens[argIdx] = prop_text_buf_;
+								obj.modified = true;
+								level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
+							}
+						}
+					}
+				}
+			}
+			prop_text_edit_field_ = -1;
+			return;
+		}
+		if (key == 8) { // Backspace
+			if (!prop_text_buf_.empty())
+				prop_text_buf_.pop_back();
+			return;
+		}
+		if (key >= 32 && key <= 126) {
+			prop_text_buf_ += (char)key;
+			return;
+		}
+		return;
+	}
+
+	// C3: Find bar input
+	if (find_open_) {
+		if (key == 27) { // ESC — close
+			find_open_ = false;
+			find_query_.clear();
+			find_result_idx_ = -1;
+			return;
+		}
+		if (key == 13) { // Enter — confirm
+			if (find_result_idx_ >= 0) {
+				selected_object_index_ = find_result_idx_;
+			}
+			find_open_ = false;
+			return;
+		}
+		if (key == 8) { // Backspace
+			if (!find_query_.empty())
+				find_query_.pop_back();
+		} else if (key >= 32 && key <= 126) {
+			find_query_ += (char)key;
+		}
+		// Search
+		if (!find_query_.empty()) {
+			std::string q_lower = find_query_;
+			std::transform(q_lower.begin(), q_lower.end(), q_lower.begin(), [](unsigned char c){ return std::tolower(c); });
+			const auto& objects = level_.GetLevelObjects().GetObjects();
+			find_result_idx_ = -1;
+			for (int i = 0; i < (int)objects.size(); ++i) {
+				if (objects[i].deleted) continue;
+				std::string label = objects[i].type + " " + objects[i].name + " " + objects[i].taskId;
+				std::transform(label.begin(), label.end(), label.begin(), [](unsigned char c){ return std::tolower(c); });
+				if (label.find(q_lower) != std::string::npos) {
+					find_result_idx_ = i;
+					break;
+				}
+			}
+		} else {
+			find_result_idx_ = -1;
+		}
+		return;
+	}
+
 	if (task_picker_open_) {
 		if (key == 27) { // ESC - Cancel and close
 			task_picker_open_ = false;
@@ -1389,6 +1654,14 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		}
 
 		return; // Consume all other keys while editor is open
+	}
+
+	// C3: Ctrl+F — toggle find bar (key 6 = Ctrl+F)
+	if (key == 6) {
+		find_open_       = !find_open_;
+		find_query_.clear();
+		find_result_idx_ = -1;
+		return;
 	}
 
 	// Task Controls (CTRL+C, CTRL+V, CTRL+I, etc.)
@@ -2089,13 +2362,21 @@ void App::Frame(float delta_seconds) {
 			.task_picker_selected_idx_ = task_picker_selected_idx_,
 			.task_picker_scroll_offset_ = task_picker_scroll_offset_,
 			.task_picker_search_ = task_picker_search_,
-			.enable_camera_mode_ = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera)
+			.enable_camera_mode_ = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera),
+			.prop_editor_open_     = prop_editor_open_,
+			.prop_field_index_     = prop_field_index_,
+			.prop_text_edit_field_ = prop_text_edit_field_,
+			.prop_text_buf_        = prop_text_buf_,
+			.find_open_            = find_open_,
+			.find_query_           = find_query_,
+			.find_result_idx_      = find_result_idx_,
 		};
 		draw_params_.level_objects_ = &level_.GetLevelObjects();
 		draw_params_.selected_object_index_ = selected_object_index_;
 		draw_params_.show_magic_obj_spheres_ = show_magic_obj_spheres_;
 		renderer_.Draw(draw_params_, task_tree_view);
 
+		DrawCustomCursor();
 		glutSwapBuffers();
 		return;
 	}
@@ -2186,13 +2467,19 @@ void App::Frame(float delta_seconds) {
 		.task_picker_selected_idx_ = task_picker_selected_idx_,
 		.task_picker_scroll_offset_ = task_picker_scroll_offset_,
 		.task_picker_search_ = task_picker_search_,
-		.enable_camera_mode_ = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera)
+		.enable_camera_mode_ = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera),
+		.prop_editor_open_     = prop_editor_open_,
+		.prop_field_index_     = prop_field_index_,
+		.prop_text_edit_field_ = prop_text_edit_field_,
+		.prop_text_buf_        = prop_text_buf_,
+		.find_open_            = find_open_,
+		.find_query_           = find_query_,
+		.find_result_idx_      = find_result_idx_,
 	};
-
 
 	renderer_.Draw(draw_params_, task_tree_view);
 
-
+	DrawCustomCursor();
 	glutSwapBuffers();
 }
 

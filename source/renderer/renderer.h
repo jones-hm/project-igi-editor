@@ -74,6 +74,17 @@ public:
 		int task_picker_scroll_offset_;
 		std::string task_picker_search_;
 		bool enable_camera_mode_;
+
+		// C2: Property editor
+		bool prop_editor_open_     = false;
+		int  prop_field_index_     = -1;
+		int  prop_text_edit_field_ = -1;
+		std::string prop_text_buf_;
+
+		// C3: Find bar
+		bool find_open_       = false;
+		std::string find_query_;
+		int  find_result_idx_ = -1;
 	};
 
 
