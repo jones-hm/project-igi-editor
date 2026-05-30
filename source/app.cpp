@@ -19,6 +19,7 @@
 #include "parsers/tex_parser.h"
 #include "renderer/gl_helper.h"
 #include "level/task_schema.h"
+using namespace TaskSchemaNS;
 #include <filesystem>
 #include <fstream>
 #include <sstream>

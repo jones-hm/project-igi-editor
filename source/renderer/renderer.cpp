@@ -15,6 +15,7 @@
 
 #include <freeglut.h>
 #include "../level/task_schema.h"
+using namespace TaskSchemaNS;
 
 /*
 ================================================================================
