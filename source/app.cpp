@@ -1398,8 +1398,30 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		if (key == 13) { // Enter — confirm
 			if (find_result_idx_ >= 0) {
 				selected_object_index_ = find_result_idx_;
+				// Scroll the tree to make the found item visible
+				auto visibleList = GetVisibleTreeNodes();
+				int current_row = -1;
+				for (int i = 0; i < (int)visibleList.size(); ++i) {
+					if (visibleList[i] == find_result_idx_) {
+						current_row = i;
+						break;
+					}
+				}
+				if (current_row >= 0) {
+					int row_h = 16;
+					int start_y = 30;
+					int max_rows = (window_state_.viewport_height_ - 50 - start_y) / row_h;
+					if (max_rows > 0) {
+						if (current_row < tree_scroll_offset_)
+							tree_scroll_offset_ = current_row;
+						else if (current_row >= tree_scroll_offset_ + max_rows)
+							tree_scroll_offset_ = current_row - max_rows + 1;
+					}
+				}
 			}
 			find_open_ = false;
+			find_query_.clear();
+			find_result_idx_ = -1;
 			return;
 		}
 		if (key == 8) { // Backspace

@@ -1430,101 +1430,145 @@ void Renderer::Draw(const draw_params_s &params,
           const TaskSchema& schema = schema_it->second;
           int vw = params.view_define_->viewport_width_;
           int vh = params.view_define_->viewport_height_;
-          int panel_w = 250;
-          int row_h   = 16;
-          int header_h = 20;
 
-          // Count total rows
-          int total_rows = 0;
+          // Layout constants
+          const int panel_w   = 260;
+          const int val_row_h = 16;   // height of each value row
+          const int hdr_row_h = 15;   // height of each field-header row
+          const int top_hdr_h = 32;   // panel header (type + note)
+          const int pad        = 6;
+          const int slider_sz  = 6;
+
+          // Count rows: each field gets 1 header line + N value rows
+          int total_content_h = top_hdr_h;
           for (const auto& fd : schema) {
             bool is_multi = (fd.typeName == "ObjectPos" || fd.typeName == "Real32x9" ||
                              fd.typeName == "Real32x3"  || fd.typeName == "Real64x3" ||
                              fd.typeName == "RGB"       || fd.typeName == "Colour");
-            total_rows += is_multi ? 3 : 1;
+            int nsub = is_multi ? 3 : 1;
+            total_content_h += hdr_row_h + nsub * val_row_h;
           }
-          int panel_h = header_h + total_rows * row_h + 8;
-          int panel_x = vw - panel_w - 5;
-          int panel_y_top = vh - panel_h - 5;  // screen-space top (top-down)
-          // GL bottom-up coords
-          int gl_bottom = 5;
-          int gl_left   = panel_x;
+          total_content_h += pad;
 
-          // Semi-transparent background
+          int panel_h   = total_content_h;
+          int gl_left   = vw - panel_w - 10;
+          int gl_bottom = 10;  // GL bottom-up from bottom edge
+
+          // Semi-transparent dark background
           glEnable(GL_BLEND);
           glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-          glColor4f(0.05f, 0.05f, 0.1f, 0.88f);
+          glColor4f(0.0f, 0.0f, 0.0f, 0.75f);
           glBegin(GL_QUADS);
-          glVertex2i(gl_left,            gl_bottom);
-          glVertex2i(gl_left + panel_w,  gl_bottom);
-          glVertex2i(gl_left + panel_w,  gl_bottom + panel_h);
-          glVertex2i(gl_left,            gl_bottom + panel_h);
+          glVertex2i(gl_left,           gl_bottom);
+          glVertex2i(gl_left + panel_w, gl_bottom);
+          glVertex2i(gl_left + panel_w, gl_bottom + panel_h);
+          glVertex2i(gl_left,           gl_bottom + panel_h);
           glEnd();
 
-          // Border
-          glColor4f(0.4f, 0.6f, 1.0f, 0.9f);
-          glLineWidth(1.5f);
-          glBegin(GL_LINE_LOOP);
-          glVertex2i(gl_left,            gl_bottom);
-          glVertex2i(gl_left + panel_w,  gl_bottom);
-          glVertex2i(gl_left + panel_w,  gl_bottom + panel_h);
-          glVertex2i(gl_left,            gl_bottom + panel_h);
-          glEnd();
+          // Blue-grey border
+          glColor4f(0.3f, 0.3f, 0.6f, 1.0f);
           glLineWidth(1.0f);
+          glBegin(GL_LINE_LOOP);
+          glVertex2i(gl_left,           gl_bottom);
+          glVertex2i(gl_left + panel_w, gl_bottom);
+          glVertex2i(gl_left + panel_w, gl_bottom + panel_h);
+          glVertex2i(gl_left,           gl_bottom + panel_h);
+          glEnd();
           glDisable(GL_BLEND);
 
-          // Header: type + task ID
-          char hdr[128];
-          snprintf(hdr, sizeof(hdr), "[ %s ] ID:%s", obj.type.c_str(), obj.taskId.empty() ? "-1" : obj.taskId.c_str());
-          // draw_text uses top-down y internally (it flips via viewport_h - y)
-          int hdr_y = panel_y_top + 13; // screen top-down
-          draw_text(gl_left + 4, hdr_y, hdr, 1.0f, 1.0f, 1.0f);
+          // Cursor position in screen top-down coordinates
+          // draw_text(x, screen_y, ...) => renders at GL y = vh - screen_y
+          // Panel top (screen-top-down) = vh - (gl_bottom + panel_h)
+          int screen_top = vh - (gl_bottom + panel_h);
 
-          // Rows
-          int row_screen_y = panel_y_top + header_h; // top-down y of first row
-          int row_idx = 0;
+          // Panel header: type + ID
+          char hdr[160];
+          snprintf(hdr, sizeof(hdr), "QTasktype: %s", obj.type.c_str());
+          draw_text(gl_left + pad, screen_top + 12, hdr, 1.0f, 1.0f, 1.0f);
+
+          // Note line (name)
+          if (!obj.name.empty()) {
+            char note_hdr[128];
+            snprintf(note_hdr, sizeof(note_hdr), "Note: %s", obj.name.c_str());
+            draw_text(gl_left + pad, screen_top + 24, note_hdr, 0.7f, 0.9f, 0.7f);
+          }
+
+          // Separator line under header
+          {
+            int sep_gl_y = gl_bottom + panel_h - top_hdr_h;
+            glColor4f(0.3f, 0.3f, 0.6f, 0.7f);
+            glBegin(GL_LINES);
+            glVertex2i(gl_left + 2,           sep_gl_y);
+            glVertex2i(gl_left + panel_w - 2, sep_gl_y);
+            glEnd();
+          }
+
+          // Field rows — track current GL y from top
+          int cur_gl_y = gl_bottom + panel_h - top_hdr_h; // starts just below separator
+
           for (int fi = 0; fi < (int)schema.size(); ++fi) {
             const FieldDef& fd = schema[fi];
-            bool is_multi = (fd.typeName == "ObjectPos" || fd.typeName == "Real32x9" ||
-                             fd.typeName == "Real32x3"  || fd.typeName == "Real64x3" ||
-                             fd.typeName == "RGB"       || fd.typeName == "Colour");
+            bool is_multi  = (fd.typeName == "ObjectPos" || fd.typeName == "Real32x9" ||
+                              fd.typeName == "Real32x3"  || fd.typeName == "Real64x3" ||
+                              fd.typeName == "RGB"       || fd.typeName == "Colour");
             bool is_string = (fd.typeName.find("String") != std::string::npos ||
-                              fd.typeName == "VarString" || fd.typeName == "EnumString32" || fd.typeName == "DropDownCombo");
+                              fd.typeName == "VarString" || fd.typeName == "EnumString32" ||
+                              fd.typeName == "DropDownCombo");
             bool is_bool   = (fd.typeName == "bool8" || fd.typeName == "PushButton");
-            bool is_ro     = (fd.typeName == "Graph" || fd.typeName == "AnimData" || fd.typeName == "TrainPos1D");
-            int sub = is_multi ? 3 : 1;
-            const char* sub_labels[3] = {"X","Y","Z"};
-            if (fd.typeName == "Real32x9") { sub_labels[0]="α"; sub_labels[1]="β"; sub_labels[2]="γ"; }
-            if (fd.typeName == "RGB" || fd.typeName == "Colour") { sub_labels[0]="R"; sub_labels[1]="G"; sub_labels[2]="B"; }
+            bool is_ro     = (fd.typeName == "Graph" || fd.typeName == "AnimData" ||
+                              fd.typeName == "TrainPos1D");
+            int nsub = is_multi ? 3 : 1;
 
-            for (int c = 0; c < sub; ++c) {
-              int this_row_y = row_screen_y + (row_idx + c) * row_h;
-              bool active = (task_tree_view.prop_field_index_ == fi * 3 + c) ||
+            // Sub-type annotation for field header
+            const char* sub_type = "";
+            if (fd.typeName == "ObjectPos")     sub_type = "(Real64x3)";
+            else if (fd.typeName.find("String") != std::string::npos ||
+                     fd.typeName == "VarString" || fd.typeName == "EnumString32" ||
+                     fd.typeName == "DropDownCombo") sub_type = "(FixedString)";
+
+            // Field header line: "FieldName (TypeName)(SubType):"
+            cur_gl_y -= hdr_row_h;
+            {
+              int screen_y = vh - cur_gl_y - hdr_row_h + 3;
+              char fhdr[128];
+              if (sub_type[0])
+                snprintf(fhdr, sizeof(fhdr), "%s (%s)%s:", fd.name.c_str(), fd.typeName.c_str(), sub_type);
+              else
+                snprintf(fhdr, sizeof(fhdr), "%s (%s):", fd.name.c_str(), fd.typeName.c_str());
+              draw_text(gl_left + pad, screen_y, fhdr, 0.5f, 0.5f, 0.5f);
+            }
+
+            // Sub-component labels
+            const char* sub_labels[3] = {"X", "Y", "Z"};
+            if (fd.typeName == "Real32x9") {
+              sub_labels[0] = "Alpha"; sub_labels[1] = "Beta"; sub_labels[2] = "Gamma";
+            }
+            if (fd.typeName == "RGB" || fd.typeName == "Colour") {
+              sub_labels[0] = "R"; sub_labels[1] = "G"; sub_labels[2] = "B";
+            }
+
+            for (int c = 0; c < nsub; ++c) {
+              cur_gl_y -= val_row_h;
+              int row_screen_y = vh - cur_gl_y - val_row_h + 2; // top-down for draw_text
+
+              bool active = (task_tree_view.prop_field_index_    == fi * 3 + c) ||
                             (task_tree_view.prop_text_edit_field_ == fi * 3 + c);
 
-              // Row highlight
+              // Active row highlight
               if (active) {
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                glColor4f(0.3f, 0.3f, 0.8f, 0.4f);
-                int gy = vh - (this_row_y + row_h);
+                glColor4f(0.25f, 0.25f, 0.6f, 0.45f);
                 glBegin(GL_QUADS);
-                glVertex2i(gl_left + 2,           gy);
-                glVertex2i(gl_left + panel_w - 2, gy);
-                glVertex2i(gl_left + panel_w - 2, gy + row_h);
-                glVertex2i(gl_left + 2,           gy + row_h);
+                glVertex2i(gl_left + 2,           cur_gl_y);
+                glVertex2i(gl_left + panel_w - 2, cur_gl_y);
+                glVertex2i(gl_left + panel_w - 2, cur_gl_y + val_row_h);
+                glVertex2i(gl_left + 2,           cur_gl_y + val_row_h);
                 glEnd();
                 glDisable(GL_BLEND);
               }
 
-              // Label
-              char label_str[64];
-              if (sub > 1)
-                snprintf(label_str, sizeof(label_str), "%s.%s", fd.name.c_str(), sub_labels[c]);
-              else
-                snprintf(label_str, sizeof(label_str), "%s", fd.name.c_str());
-              draw_text(gl_left + 4, this_row_y + row_h - 3, label_str, 0.7f, 0.8f, 1.0f);
-
-              // Value
+              // Resolve value string
               int argIdx = fd.argOffset + c;
               std::string val_str;
               if (argIdx < (int)obj.argTokens.size())
@@ -1532,42 +1576,115 @@ void Renderer::Draw(const draw_params_s &params,
               else
                 val_str = "-";
 
-              // If text editing this field, show buf
+              // If text-editing this field, override with edit buffer + cursor
               if (task_tree_view.prop_text_edit_field_ == fi * 3 + c)
                 val_str = task_tree_view.prop_text_buf_ + "_";
 
-              char val_display[64];
-              if (val_str.size() > 22)
-                val_str = val_str.substr(0, 19) + "...";
-              snprintf(val_display, sizeof(val_display), "%s", val_str.c_str());
+              // Truncate for display
+              if (val_str.size() > 18)
+                val_str = val_str.substr(0, 15) + "...";
 
-              float vr = is_ro ? 0.5f : 1.0f;
-              float vg = is_ro ? 0.5f : 1.0f;
-              float vb = is_ro ? 0.5f : 0.3f;
-              if (is_bool) { vr = 0.3f; vg = 1.0f; vb = 0.3f; }
+              if (is_bool) {
+                // Boolean: checkbox rectangle + TRUE/FALSE text
+                int bx = gl_left + pad;
+                int by = cur_gl_y + (val_row_h - 8) / 2;
+                bool bval = false;
+                try { bval = (std::stoi(val_str) != 0); } catch(...) {}
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                if (bval) {
+                  glColor4f(0.2f, 0.9f, 0.2f, 0.85f);
+                  glBegin(GL_QUADS);
+                  glVertex2i(bx, by); glVertex2i(bx+8, by);
+                  glVertex2i(bx+8, by+8); glVertex2i(bx, by+8);
+                  glEnd();
+                }
+                glColor3f(0.9f, 0.9f, 0.9f);
+                glBegin(GL_LINE_LOOP);
+                glVertex2i(bx, by); glVertex2i(bx+8, by);
+                glVertex2i(bx+8, by+8); glVertex2i(bx, by+8);
+                glEnd();
+                glDisable(GL_BLEND);
+                char bstr[32];
+                snprintf(bstr, sizeof(bstr), " %s", bval ? "TRUE" : "FALSE");
+                draw_text(gl_left + pad + 10, row_screen_y, bstr, 0.3f, 1.0f, 0.3f);
 
-              draw_text(gl_left + 130, this_row_y + row_h - 3, val_display, vr, vg, vb);
+              } else if (is_ro) {
+                // Read-only blob: show grey text, no slider
+                draw_text(gl_left + pad + 8, row_screen_y, val_str.c_str(), 0.5f, 0.5f, 0.5f);
+
+              } else if (is_string) {
+                // String: bordered text-box appearance
+                int bx1 = gl_left + pad;
+                int bx2 = gl_left + panel_w - pad;
+                int by1 = cur_gl_y + 1;
+                int by2 = cur_gl_y + val_row_h - 1;
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glColor4f(0.12f, 0.12f, 0.18f, 0.9f);
+                glBegin(GL_QUADS);
+                glVertex2i(bx1, by1); glVertex2i(bx2, by1);
+                glVertex2i(bx2, by2); glVertex2i(bx1, by2);
+                glEnd();
+                float br = active ? 0.8f : 0.45f;
+                float bg_ = active ? 0.8f : 0.45f;
+                float bb = active ? 1.0f : 0.65f;
+                glColor3f(br, bg_, bb);
+                glBegin(GL_LINE_LOOP);
+                glVertex2i(bx1, by1); glVertex2i(bx2, by1);
+                glVertex2i(bx2, by2); glVertex2i(bx1, by2);
+                glEnd();
+                glDisable(GL_BLEND);
+                draw_text(gl_left + pad + 2, row_screen_y, val_str.c_str(), 1.0f, 1.0f, 1.0f);
+
+              } else {
+                // Numeric: "Label: value  [■]"
+                char num_buf[80];
+                if (nsub > 1)
+                  snprintf(num_buf, sizeof(num_buf), "  %s: %s", sub_labels[c], val_str.c_str());
+                else
+                  snprintf(num_buf, sizeof(num_buf), "  %s", val_str.c_str());
+                draw_text(gl_left + pad, row_screen_y, num_buf, 1.0f, 1.0f, 1.0f);
+
+                // Slider handle square (6x6) to the right of the value
+                int sx = gl_left + panel_w - pad - slider_sz - 2;
+                int sy = cur_gl_y + (val_row_h - slider_sz) / 2;
+                bool dragging = (task_tree_view.prop_field_index_ == fi * 3 + c);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                if (dragging)
+                  glColor4f(1.0f, 1.0f, 0.0f, 1.0f); // yellow when dragging
+                else
+                  glColor4f(1.0f, 1.0f, 1.0f, 0.85f);
+                glBegin(GL_QUADS);
+                glVertex2i(sx,            sy);
+                glVertex2i(sx + slider_sz, sy);
+                glVertex2i(sx + slider_sz, sy + slider_sz);
+                glVertex2i(sx,            sy + slider_sz);
+                glEnd();
+                glDisable(GL_BLEND);
+              }
             }
-            row_idx += sub;
           }
         }
       }
     }
 
-    // ── C3: Ctrl+F find bar ─────────────────────────────────────────────────────
+    // ── C3: Ctrl+F find bar (centered on screen) ───────────────────────────────
     if (task_tree_view.find_open_) {
       int vw = params.view_define_->viewport_width_;
       int vh = params.view_define_->viewport_height_;
-      int bar_h = 26;
-      int bar_y_screen = vh - bar_h - 2;  // screen top-down y
-      int bar_gl_y = 2;                   // GL bottom-up
-      int bar_x = 350;
-      int bar_w = vw - 350 - 260;         // leave room for prop panel
 
-      // Background
+      // Centered 400x80 box
+      const int bar_w      = 400;
+      const int bar_h      = 80;
+      const int bar_x      = vw / 2 - bar_w / 2;
+      const int bar_gl_y   = vh / 2 - bar_h / 2;   // GL bottom-up origin
+
+      // Dark semi-transparent background
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      glColor4f(0.1f, 0.1f, 0.15f, 0.92f);
+      glColor4f(0.05f, 0.05f, 0.1f, 0.92f);
       glBegin(GL_QUADS);
       glVertex2i(bar_x,         bar_gl_y);
       glVertex2i(bar_x + bar_w, bar_gl_y);
@@ -1575,8 +1692,8 @@ void Renderer::Draw(const draw_params_s &params,
       glVertex2i(bar_x,         bar_gl_y + bar_h);
       glEnd();
 
-      // Border
-      glColor4f(0.6f, 0.9f, 0.4f, 0.9f);
+      // White border
+      glColor4f(1.0f, 1.0f, 1.0f, 0.85f);
       glBegin(GL_LINE_LOOP);
       glVertex2i(bar_x,         bar_gl_y);
       glVertex2i(bar_x + bar_w, bar_gl_y);
@@ -1585,25 +1702,59 @@ void Renderer::Draw(const draw_params_s &params,
       glEnd();
       glDisable(GL_BLEND);
 
-      // Label + query
-      char find_label[256];
-      snprintf(find_label, sizeof(find_label), "Find: %s_", task_tree_view.find_query_.c_str());
-      draw_text(bar_x + 8, bar_y_screen + 18, find_label, 1.0f, 1.0f, 1.0f);
+      // Convert GL y to screen top-down y for draw_text
+      // bar top (screen-top-down) = vh - (bar_gl_y + bar_h)
+      int bar_screen_top = vh - (bar_gl_y + bar_h);
 
-      // First match label
+      // Title
+      {
+        const char* title = "Find task by type:";
+        int tw = glutBitmapLength(GLUT_BITMAP_HELVETICA_12, (const unsigned char*)title);
+        draw_text(bar_x + (bar_w - tw) / 2, bar_screen_top + 14, title, 1.0f, 1.0f, 1.0f);
+      }
+
+      // Input box background
+      {
+        int ibx1 = bar_x + 8;
+        int ibx2 = bar_x + bar_w - 8;
+        int iby1 = bar_gl_y + 10;
+        int iby2 = bar_gl_y + 36;
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(0.1f, 0.1f, 0.15f, 0.95f);
+        glBegin(GL_QUADS);
+        glVertex2i(ibx1, iby1); glVertex2i(ibx2, iby1);
+        glVertex2i(ibx2, iby2); glVertex2i(ibx1, iby2);
+        glEnd();
+        glColor4f(0.7f, 0.7f, 0.7f, 0.9f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2i(ibx1, iby1); glVertex2i(ibx2, iby1);
+        glVertex2i(ibx2, iby2); glVertex2i(ibx1, iby2);
+        glEnd();
+        glDisable(GL_BLEND);
+      }
+
+      // Search text with cursor
+      char find_label[256];
+      snprintf(find_label, sizeof(find_label), "%s_", task_tree_view.find_query_.c_str());
+      // screen y for text inside input box: bar_screen_top + bar_h - 10 - 26 + 16 = bar_screen_top+20
+      int input_text_y = bar_screen_top + bar_h - 10 - (bar_h - 36) - 10;
+      draw_text(bar_x + 12, input_text_y, find_label, 1.0f, 1.0f, 1.0f);
+
+      // Match / no-match feedback below the input box
       if (task_tree_view.find_result_idx_ >= 0 && task_tree_view.level_objects_) {
         const auto& objects = task_tree_view.level_objects_->GetObjects();
         int ri = task_tree_view.find_result_idx_;
         if (ri < (int)objects.size()) {
-          char match_buf[128];
-          snprintf(match_buf, sizeof(match_buf), "  → %s \"%s\" (ID:%s)  [Enter] confirm",
+          char match_buf[160];
+          snprintf(match_buf, sizeof(match_buf), "%s \"%s\" (ID:%s)  [Enter]",
                    objects[ri].type.c_str(),
                    objects[ri].name.c_str(),
                    objects[ri].taskId.empty() ? "-1" : objects[ri].taskId.c_str());
-          draw_text(bar_x + 8 + bar_w / 3, bar_y_screen + 18, match_buf, 0.4f, 1.0f, 0.4f);
+          draw_text(bar_x + 12, bar_screen_top + 68, match_buf, 0.3f, 1.0f, 0.3f);
         }
       } else if (!task_tree_view.find_query_.empty()) {
-        draw_text(bar_x + 8 + bar_w / 3, bar_y_screen + 18, "  No match", 1.0f, 0.4f, 0.4f);
+        draw_text(bar_x + 12, bar_screen_top + 68, "No match found", 1.0f, 0.4f, 0.4f);
       }
     }
 
