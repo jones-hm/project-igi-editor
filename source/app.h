@@ -158,6 +158,27 @@ private:
 	std::vector<std::string>	edit_undo_stack_;
 	std::vector<std::string>	edit_redo_stack_;
 
+	// C1: Custom SPR cursor
+	GLuint					cursor_tex_id_        = 0;
+	int						cursor_tex_w_         = 0;
+	int						cursor_tex_h_         = 0;
+	bool					custom_cursor_loaded_ = false;
+	void					LoadCustomCursor(const char* spr_path);
+	void					DrawCustomCursor();
+
+	// C2: Typed task property editor
+	bool					prop_editor_open_      = false;
+	int						prop_field_index_      = -1;
+	float					prop_drag_start_val_   = 0.f;
+	int						prop_drag_start_x_     = 0;
+	int						prop_text_edit_field_  = -1;
+	std::string				prop_text_buf_;
+
+	// C3: Ctrl+F find
+	bool					find_open_        = false;
+	std::string				find_query_;
+	int						find_result_idx_  = -1;
+
 	bool					sync_from_game_once_;
 	int						last_game_level_;
 	int						last_loaded_level_ = -1;	// level currently loaded; -1 = none yet (first load == fresh process)
