@@ -125,4 +125,4 @@ __pycache__/
 *.pyc
 *.qsc
 *.qas
-*qvm
+*qvm.worktrees
