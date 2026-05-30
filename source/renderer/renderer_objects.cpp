@@ -1246,7 +1246,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 rootWorldMat = rootWorldMat * parentRot;
 
                 std::unordered_set<std::string> drawn;
-                DrawAttachmentsRecursive(obj.modelId, obj.isBuilding, rootWorldMat, isTransparentPass,
+                DrawAttachmentsRecursive(obj.modelId, obj.modelId, obj.isBuilding, rootWorldMat, isTransparentPass,
                                           loc_model, loc_dirlight, loc_ambient,
                                           loc_useTex, loc_tex, loc_alpha, drawn);
 
@@ -1374,7 +1374,7 @@ void Renderer_Objects::LoadAttachmentsRecursive(const std::string& modelId, bool
 // (translate + rotate only), so children can position themselves relative to it.
 // The 40.96 scale is applied only at the leaf draw call.
 void Renderer_Objects::DrawAttachmentsRecursive(
-    const std::string& parentModelId, bool isBuilding, const glm::mat4& parentWorldMat,
+    const std::string& topLevelModelId, const std::string& parentModelId, bool isBuilding, const glm::mat4& parentWorldMat,
     bool isTransparentPass, GLint loc_model, GLint loc_dirlight,
     GLint loc_ambient, GLint loc_useTex, GLint loc_tex, GLint loc_alpha,
     std::unordered_set<std::string>& drawn,
@@ -1432,7 +1432,7 @@ void Renderer_Objects::DrawAttachmentsRecursive(
         if (!subMesh.fromRenderMesh) {
             std::string childKey = parentModelId + ">" + att.modelId;
             if (drawn.insert(childKey).second) {
-                DrawAttachmentsRecursive(att.modelId, isBuilding, childWorldMat, isTransparentPass,
+                DrawAttachmentsRecursive(topLevelModelId, att.modelId, isBuilding, childWorldMat, isTransparentPass,
                                          loc_model, loc_dirlight, loc_ambient,
                                          loc_useTex, loc_tex, loc_alpha, drawn, leafScale);
             }
@@ -1456,10 +1456,12 @@ void Renderer_Objects::DrawAttachmentsRecursive(
             const float subMaxHalfExtent = std::max(subMesh.halfExtents.x,
                 std::max(subMesh.halfExtents.y, subMesh.halfExtents.z));
             const bool isLargeSlab = (subMaxHalfExtent >= kSlabHalfExtent);
-            if (!subHasTex && isLargeSlab) {
+            EnsureAiModelIdsLoaded();
+            const bool isAiModel = (ai_model_ids_.count(topLevelModelId) > 0);
+            if (!subHasTex && (!isAiModel || isLargeSlab)) {
                 std::string childKey = parentModelId + ">" + att.modelId;
                 if (drawn.insert(childKey).second) {
-                    DrawAttachmentsRecursive(att.modelId, isBuilding, childWorldMat, isTransparentPass,
+                    DrawAttachmentsRecursive(topLevelModelId, att.modelId, isBuilding, childWorldMat, isTransparentPass,
                                              loc_model, loc_dirlight, loc_ambient,
                                              loc_useTex, loc_tex, loc_alpha, drawn, leafScale);
                 }
@@ -1494,7 +1496,7 @@ void Renderer_Objects::DrawAttachmentsRecursive(
             // Still recurse into children — they may need a different pass
             std::string childKey = parentModelId + ">" + att.modelId;
             if (drawn.insert(childKey).second) {
-                DrawAttachmentsRecursive(att.modelId, isBuilding, childWorldMat, isTransparentPass,
+                DrawAttachmentsRecursive(topLevelModelId, att.modelId, isBuilding, childWorldMat, isTransparentPass,
                                           loc_model, loc_dirlight, loc_ambient,
                                           loc_useTex, loc_tex, loc_alpha, drawn, leafScale);
             }
@@ -1576,7 +1578,7 @@ void Renderer_Objects::DrawAttachmentsRecursive(
         // Recurse into this attachment's own children
         std::string childKey = parentModelId + ">" + att.modelId;
         if (drawn.insert(childKey).second) {
-            DrawAttachmentsRecursive(att.modelId, isBuilding, childWorldMat, isTransparentPass,
+            DrawAttachmentsRecursive(topLevelModelId, att.modelId, isBuilding, childWorldMat, isTransparentPass,
                                       loc_model, loc_dirlight, loc_ambient,
                                       loc_useTex, loc_tex, loc_alpha, drawn, leafScale);
         }
@@ -2640,18 +2642,21 @@ void Renderer_Objects::DrawAttachmentsForSpline(
     // Opaque pass
     {
         std::unordered_set<std::string> drawn;
-        DrawAttachmentsRecursive(modelId, isBuilding, unscaledWorldMat, /*isTransparentPass=*/false,
+        DrawAttachmentsRecursive(modelId, modelId, isBuilding, unscaledWorldMat, /*isTransparentPass=*/false,
                                  loc_model, loc_dirlight, loc_ambient, loc_useTex, loc_tex, loc_alpha, drawn, leafScale);
     }
 
     // Transparent pass (windows / glass)
     {
         std::unordered_set<std::string> drawn;
-        DrawAttachmentsRecursive(modelId, isBuilding, unscaledWorldMat, /*isTransparentPass=*/true,
+        DrawAttachmentsRecursive(modelId, modelId, isBuilding, unscaledWorldMat, /*isTransparentPass=*/true,
                                  loc_model, loc_dirlight, loc_ambient, loc_useTex, loc_tex, loc_alpha, drawn, leafScale);
     }
 
     glDisable(GL_POLYGON_OFFSET_FILL);
     glUseProgram(0);
 }
+
+
+
 

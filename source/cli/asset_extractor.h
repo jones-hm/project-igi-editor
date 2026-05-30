@@ -25,6 +25,9 @@ public:
                                        const std::string& output_dir);
 
     // Remove all extracted models and textures folders from output_dir.
+    // Clear specific level extracted assets (used on level switch)
+    static void ClearLevelAssets(int level_no, const std::string& output_dir);
+
     static void CleanupExtractedAssets(const std::string& output_dir);
 
 private:

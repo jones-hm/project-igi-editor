@@ -268,10 +268,13 @@ void App::LoadLevel(int level_no) {
 			Logger::Get().Log(LogLevel::INFO, "[App] MENU/RELOAD switch from level " +
 				std::to_string(last_loaded_level_) + " to " + std::to_string(level_no) +
 				" — performing full previous-level teardown");
+			AssetExtractor::ClearLevelAssets(last_loaded_level_, Utils::GetExeDirectory());
 		} else {
 			Logger::Get().Log(LogLevel::INFO, "[App] Initial level load (level " +
 				std::to_string(level_no) + ")");
 		}
+
+		AssetExtractor::ClearLevelAssets(level_no, Utils::GetExeDirectory());
 
 		// Verify level number is valid
 		if (level_no < MIN_LEVEL_NO || level_no > MAX_LEVEL_NO) {
