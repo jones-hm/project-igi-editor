@@ -114,6 +114,7 @@ void Config::CreateDefault() {
     data_.taskFileName = "";
     data_.objectFilePath = "";
     data_.interpolation = 0;
+    data_.renderZNear = 2.8672f;
     data_.cameraOriX = data_.cameraOriY = data_.cameraOriZ = 0.0f;
     data_.cameraRadiusX = data_.cameraRadiusY = 0.0f;
     data_.cameraPosX = data_.cameraPosY = data_.cameraPosZ = 0.0f;
@@ -177,6 +178,11 @@ void Config::Load() {
                 else if (key == "FontColorR") data_.fontColorR = std::stoi(val);
                 else if (key == "FontColorG") data_.fontColorG = std::stoi(val);
                 else if (key == "FontColorB") data_.fontColorB = std::stoi(val);
+                else if (key == "RenderZNear") {
+                    data_.renderZNear = std::stof(val);
+                    RENDER_Z_NEAR = data_.renderZNear;
+                    WORLD_Z_NEAR = RENDER_Z_NEAR / 0.001f;
+                }
                 else if (key == "Logs" || key == "Enable" || key == "SaveConfigOnExit") data_.enableLogging = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Debug") data_.debugLogging = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Lod") data_.enableLOD = (val == "TRUE" || val == "true" || val == "1");
@@ -260,6 +266,11 @@ void Config::Load() {
             else if (key == "FontColorR") data_.fontColorR = std::stoi(val);
             else if (key == "FontColorG") data_.fontColorG = std::stoi(val);
             else if (key == "FontColorB") data_.fontColorB = std::stoi(val);
+            else if (key == "RenderZNear") {
+                data_.renderZNear = std::stof(val);
+                RENDER_Z_NEAR = data_.renderZNear;
+                WORLD_Z_NEAR = RENDER_Z_NEAR / 0.001f;
+            }
             else if (key == "Logs" || key == "Enable" || key == "SaveConfigOnExit") data_.enableLogging = (val == "TRUE" || val == "true" || val == "1");
             else if (key == "Debug") data_.debugLogging = (val == "TRUE" || val == "true" || val == "1");
             else if (key == "ConsoleAutoActivate") data_.consoleAutoActivate = std::stoi(val);
@@ -321,6 +332,7 @@ void Config::Save() {
         file << "QEDTaskFileName(\"" << data_.taskFileName << "\");\n";
         file << "QEDSetObjectFile(\"" << data_.objectFilePath << "\");\n";
         file << "QEDInterpolation(" << data_.interpolation << ");\n";
+        file << "QEDRenderZNear(" << data_.renderZNear << ");\n";
         file << "QEDSetCameraOrientation(" << data_.cameraOriX << ", " << data_.cameraOriY << ", " << data_.cameraOriZ << ");\n";
         file << "QEDSetCameraRadius(" << data_.cameraRadiusX << ", " << data_.cameraRadiusY << ");\n";
         file << "QEDSetCameraPosition(" << data_.cameraPosX << ", " << data_.cameraPosY << ", " << data_.cameraPosZ << ");\n";

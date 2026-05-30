@@ -99,6 +99,7 @@ struct ConfigData {
     std::string taskFileName;
     std::string objectFilePath;
     int interpolation;
+    float renderZNear;
 
     // Camera State
     float cameraOriX, cameraOriY, cameraOriZ;

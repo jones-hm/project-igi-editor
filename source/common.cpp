@@ -38,6 +38,9 @@ const glm::vec3 VEC3_X_DIR(1.0f, 0.0f, 0.0f);
 const glm::vec3 VEC3_Y_DIR(0.0f, 1.0f, 0.0f);
 const glm::vec3 VEC3_Z_DIR(0.0f, 0.0f, 1.0f);
 
+float RENDER_Z_NEAR = 2.8672f;
+float WORLD_Z_NEAR = 2.8672f / 0.001f;
+
 /*
 ================================================================================
  memory

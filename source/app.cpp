@@ -2271,6 +2271,7 @@ void App::UpdateViewDefine() {
 	view_define_.forward_ = viewer_.forward_;
 	view_define_.right_ = viewer_.right_;
 	view_define_.up_ = viewer_.up_;
+	view_define_.render_z_near_ = RENDER_Z_NEAR;
 
 	/* rotate to coordinate:
 
