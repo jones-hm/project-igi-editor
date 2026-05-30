@@ -211,15 +211,17 @@ FntFont FNT_Parse(const std::string& filepath) {
             continue; // no glyph for this codepoint
         }
 
+        // ANMF float layout (verified against editor.fnt):
+        //   [0] unused (always 0)  [4] u_left  [8] v_top  [12] u_right  [16] v_bottom
         const uint8_t* g = anmf + (size_t)gi * 40;
-        float v_top  = ReadF32LE(g + 0);
         float u_left = ReadF32LE(g + 4);
+        float v_top  = ReadF32LE(g + 8);
         uint16_t width    = ReadU16LE(g + 22);
         uint16_t height   = ReadU16LE(g + 24);
         uint16_t advance  = ReadU16LE(g + 26);
 
-        // u_right/v_bottom in the file are unreliable glyph bounds, so derive the
-        // UV rect from the glyph's pixel width/height anchored at (u_left, v_top).
+        // Derive the UV rect from the glyph's pixel size anchored at (u_left, v_top)
+        // for exact pixel alignment.
         FntGlyph glyph;
         glyph.u0 = u_left;
         glyph.v0 = v_top;

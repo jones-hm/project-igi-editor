@@ -1010,8 +1010,9 @@ void App::Input_OnMotion(int x, int y) {
 						}
 					};
 					if (is_pos && comp == 0) {
-						// 2D pad: X horizontal, Y vertical (screen-down => world -Y)
-						const float sens = 0.5f;
+						// 2D pad: X horizontal, Y vertical (screen-down => world -Y).
+						// IGI positions are ~40.96 units/metre; match marker-manip feel.
+						const float sens = 200.0f;
 						writeArg(fd.argOffset + 0, prop_drag_start_val_  + dxp * sens);
 						writeArg(fd.argOffset + 1, prop_drag_start_val2_ - dyp * sens);
 						obj.pos.x = obj.argTokens.size() > (size_t)(fd.argOffset)   ? std::atof(obj.argTokens[fd.argOffset].c_str())   : obj.pos.x;
@@ -1020,7 +1021,7 @@ void App::Input_OnMotion(int x, int y) {
 						level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
 					} else if (is_pos && comp == 2) {
 						// Z vertical slider: dragging up increases Z
-						const float sens = 0.5f;
+						const float sens = 200.0f;
 						float nz = prop_drag_start_val_ - dyp * sens;
 						writeArg(fd.argOffset + 2, nz);
 						obj.pos.z = nz;

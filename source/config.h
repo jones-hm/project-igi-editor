@@ -93,6 +93,7 @@ struct ConfigData {
     bool runEvent;
     bool cameraLock;
     bool enableBackup;
+    bool useEditorFont; // TRUE: render HUD with content/qed/editor.fnt; FALSE: GLUT system font
     std::string findTaskName;
     std::string findTaskNote;
     std::string findTaskID;

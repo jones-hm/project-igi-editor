@@ -299,11 +299,12 @@ void Renderer::Draw(const draw_params_s &params,
     glPushMatrix();
     glLoadIdentity();
 
-    EnsureEditorFont();
+    const bool useEditorFont = Config::Get().useEditorFont;
+    if (useEditorFont) EnsureEditorFont();
 
     auto draw_text = [&](int x, int y, const char *str, float r, float g,
                          float b) {
-      if (g_editorFont.valid && g_editorFontTex) {
+      if (useEditorFont && g_editorFont.valid && g_editorFontTex) {
         // Editor bitmap font path. y is top-down; convert each line's top to
         // gl space (y=0 bottom) and let glyphs extend downward.
         std::stringstream ss(str);

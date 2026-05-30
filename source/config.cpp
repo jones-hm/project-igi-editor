@@ -128,6 +128,7 @@ void Config::CreateDefault() {
     data_.runEvent = true;
     data_.cameraLock = false;
     data_.enableBackup = false;
+    data_.useEditorFont = true;
     data_.findTaskName = "";
     data_.findTaskNote = "";
     data_.findTaskID = "";
@@ -209,6 +210,7 @@ void Config::Load() {
                 else if (key == "RunEvent") data_.runEvent = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "CameraLock") data_.cameraLock = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Backup") data_.enableBackup = (val == "TRUE" || val == "true" || val == "1");
+                else if (key == "UseEditorFont") data_.useEditorFont = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "FindTaskName") data_.findTaskName = val;
                 else if (key == "FindTaskNote") data_.findTaskNote = val;
                 else if (key == "FindTaskID") data_.findTaskID = val;
@@ -339,6 +341,7 @@ void Config::Save() {
         file << "QEDRunEvent(" << (data_.runEvent ? "TRUE" : "FALSE") << ");\n";
         file << "QEDCameraLock(" << (data_.cameraLock ? "TRUE" : "FALSE") << ");\n";
         file << "QEDBackup(" << (data_.enableBackup ? "TRUE" : "FALSE") << ");\n";
+        file << "QEDUseEditorFont(" << (data_.useEditorFont ? "TRUE" : "FALSE") << ");\n";
         file << "QEDFindTaskName(\"" << data_.findTaskName << "\");\n";
         file << "QEDFindTaskNote(\"" << data_.findTaskNote << "\");\n";
         file << "QEDFindTaskID(\"" << data_.findTaskID << "\");\n";
