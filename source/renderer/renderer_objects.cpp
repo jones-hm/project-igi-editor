@@ -157,6 +157,61 @@ void Renderer_Objects::EnsureWindowModelIdsLoaded() {
         " window/glass model IDs from IGIModels.json");
 }
 
+// ─── EnsureAiModelIdsLoaded ───────────────────────────────────────────────────
+void Renderer_Objects::EnsureAiModelIdsLoaded() {
+    if (ai_ids_loaded_) return;
+    ai_ids_loaded_ = true;
+
+    const std::string jsonPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModels.json";
+    if (!std::filesystem::exists(jsonPath)) return;
+
+    std::ifstream f(jsonPath);
+    if (!f.is_open()) return;
+
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+
+    size_t pos = 0;
+    while (pos < content.size()) {
+        size_t nameKey = content.find("\"ModelName\"", pos);
+        if (nameKey == std::string::npos) break;
+        size_t nameStart = content.find('"', nameKey + 11);
+        if (nameStart == std::string::npos) break;
+        ++nameStart;
+        size_t nameEnd = content.find('"', nameStart);
+        if (nameEnd == std::string::npos) break;
+        std::string modelName = content.substr(nameStart, nameEnd - nameStart);
+
+        size_t idKey = content.find("\"ModelId\"", nameEnd);
+        if (idKey == std::string::npos) break;
+        size_t idStart = content.find('"', idKey + 9);
+        if (idStart == std::string::npos) break;
+        ++idStart;
+        size_t idEnd = content.find('"', idStart);
+        if (idEnd == std::string::npos) break;
+        std::string modelId = content.substr(idStart, idEnd - idStart);
+
+        auto toUpper = [](std::string s) {
+            for (auto& c : s) c = (char)toupper((unsigned char)c);
+            return s;
+        };
+        const std::string upper = toUpper(modelName);
+        if (upper.find("AITYPE_") == 0) {
+            ai_model_ids_.insert(modelId);
+        }
+
+        pos = idEnd + 1;
+    }
+
+    // Also manually include specific hardcoded AI types known to have sunglasses but maybe missing prefix
+    ai_model_ids_.insert("009_01_1"); // Jach Priboi
+    ai_model_ids_.insert("014_01_1"); // Mafia Patrol
+    ai_model_ids_.insert("014_02_1"); // Mafia2 Patrol
+
+    Logger::Get().Log(LogLevel::INFO,
+        "[Renderer_Objects] Loaded " + std::to_string(ai_model_ids_.size()) +
+        " AI model IDs from IGIModels.json");
+}
+
 // ─── EnsureDeathZoneIdsLoaded ──────────────────────────────────────────────────
 // Parses magicobj.qvm (via the QVM decompiler) and collects model IDs registered
 // as TASKTYPE_DEATHZONE. These are invisible trigger zones attached to vehicles/
@@ -1970,42 +2025,56 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
                 // Defer to materialSlot lookup from MEF render block data
                 texture = textures[matSlot];
             } else if (matSlot > 0 && !textures.empty()) {
-                // materialSlot is out of range — this happens for models like
-                // sunglasses-bearing characters (009_01_1, 014_01_1, 014_02_1) where
-                // the MEF render block references a slot beyond the DAT texture list.
-                // Instead of blindly wrapping (which gives wrong textures), try to
-                // resolve the texture from the global DAT or by direct name lookup.
-                bool resolved = false;
+                EnsureAiModelIdsLoaded();
+                if (ai_model_ids_.count(modelId) > 0) {
+                    // materialSlot is out of range — this happens for models like
+                    // sunglasses-bearing characters (009_01_1, 014_01_1, 014_02_1) where
+                    // the MEF render block references a slot beyond the DAT texture list.
+                    // Instead of blindly wrapping (which gives wrong textures), try to
+                    // resolve the texture from the global DAT or by direct name lookup.
+                    bool resolved = false;
 
-                // 1. Try global DAT lookup: the texture for this slot may be listed
-                //    under the same model in a different level's DAT.
-                EnsureGlobalTextureMapLoaded();
-                {
-                    auto git = global_texture_map_.find(modelId);
-                    if (git != global_texture_map_.end() &&
-                        static_cast<size_t>(matSlot) < git->second.size()) {
-                        const std::string& globalTexId = git->second[static_cast<size_t>(matSlot)];
-                        GLuint globalTex = GetOrLoadTexture(globalTexId);
-                        if (globalTex) {
-                            texture = globalTex;
-                            resolved = true;
-                            Logger::Get().Log(LogLevel::INFO,
-                                "[TEX Native] materialSlot out of range resolved via global DAT for modelId=" + modelId +
-                                " submeshIndex=" + std::to_string(i) +
-                                " materialSlot=" + std::to_string(matSlot) +
-                                " globalTexId=" + globalTexId);
+                    // 1. Try global DAT lookup: the texture for this slot may be listed
+                    //    under the same model in a different level's DAT.
+                    EnsureGlobalTextureMapLoaded();
+                    {
+                        auto git = global_texture_map_.find(modelId);
+                        if (git != global_texture_map_.end() &&
+                            static_cast<size_t>(matSlot) < git->second.size()) {
+                            const std::string& globalTexId = git->second[static_cast<size_t>(matSlot)];
+                            GLuint globalTex = GetOrLoadTexture(globalTexId);
+                            if (globalTex) {
+                                texture = globalTex;
+                                resolved = true;
+                                Logger::Get().Log(LogLevel::INFO,
+                                    "[TEX Native] AI materialSlot out of range resolved via global DAT for modelId=" + modelId +
+                                    " submeshIndex=" + std::to_string(i) +
+                                    " materialSlot=" + std::to_string(matSlot) +
+                                    " globalTexId=" + globalTexId);
+                            }
                         }
                     }
-                }
 
-                if (!resolved) {
-                    // 2. Fallback: use last valid texture (better than wrong wrap)
-                    texture = textures.back();
-                    Logger::Get().Log(LogLevel::WARNING,
-                        "[TEX Native] materialSlot out of range, using last texture for modelId=" + modelId +
+                    if (!resolved) {
+                        // 2. Fallback: use last valid texture (better than wrong wrap)
+                        texture = textures.back();
+                        Logger::Get().Log(LogLevel::WARNING,
+                            "[TEX Native] AI materialSlot out of range, using last texture for modelId=" + modelId +
+                            " submeshIndex=" + std::to_string(i) +
+                            " materialSlot=" + std::to_string(matSlot) +
+                            " textureCount=" + std::to_string(textures.size()));
+                    }
+                } else {
+                    // materialSlot is out of range for non-AI model — wrap it (handles 1-based MEF slots and
+                    // sub-models whose slots reference the parent's texture list by index).
+                    texture = textures[static_cast<size_t>(matSlot) % textures.size()];
+                    Logger::Get().Log(
+                        LogLevel::WARNING,
+                        "[TEX Native] materialSlot out of range, wrapping for modelId=" + modelId +
                         " submeshIndex=" + std::to_string(i) +
                         " materialSlot=" + std::to_string(matSlot) +
-                        " textureCount=" + std::to_string(textures.size()));
+                        " textureCount=" + std::to_string(textures.size()) +
+                        " wrappedSlot=" + std::to_string(static_cast<size_t>(matSlot) % textures.size()));
                 }
             } else if (i < textures.size()) {
                 // Sequential index fallback for materialSlot == -1 (not assigned)
