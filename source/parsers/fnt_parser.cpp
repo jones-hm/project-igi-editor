@@ -206,10 +206,11 @@ FntFont FNT_Parse(const std::string& filepath) {
     // notdef slot (control chars map to it), so a TRAN value of 0 means "no glyph".
     const int tranCount = (int)(tranLen / 2);
     for (int code = 0; code < tranCount; ++code) {
-        uint16_t gi = ReadU16LE(tran + (size_t)code * 2);
-        if (gi == 0 || gi >= numGlyphs) {
-            continue; // no glyph for this codepoint
+        uint16_t tv = ReadU16LE(tran + (size_t)code * 2);
+        if (tv == 0 || tv > numGlyphs) {
+            continue; // 0 = no glyph for this codepoint
         }
+        uint32_t gi = (uint32_t)tv - 1; // TRAN stores 1-based glyph indices
 
         // ANMF float layout (verified against editor.fnt):
         //   [0] unused (always 0)  [4] u_left  [8] v_top  [12] u_right  [16] v_bottom

@@ -50,12 +50,12 @@ struct Layout {
 // Layout constants (kept in one place so draw + hit-test agree exactly).
 static constexpr int kLeft       = 8;
 static constexpr int kTop        = 8;
-static constexpr int kWidth      = 320;
+static constexpr int kWidth      = 460;
 static constexpr int kPad        = 8;
-static constexpr int kRowH       = 15;   // text line height (matches draw_text spacing)
-static constexpr int kBoxH       = 16;   // editable box / slider row height
-static constexpr int kPadSize    = 92;   // 2D pad square
-static constexpr int kZSliderW   = 14;   // vertical Z slider width
+static constexpr int kRowH       = 16;   // text line height (matches draw_text spacing)
+static constexpr int kBoxH       = 18;   // editable box / slider row height
+static constexpr int kPadSize    = 100;  // 2D pad square
+static constexpr int kZSliderW   = 22;   // vertical Z slider width
 
 // Build the layout for one task type's schema. `is_multi` types (ObjectPos /
 // Real32x9 / RGB) expand to multiple sub-rows. Returns rows' y positions implicitly
