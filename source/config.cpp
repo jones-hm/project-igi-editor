@@ -116,6 +116,8 @@ void Config::CreateDefault() {
     data_.keySaveState = {0x57, true, false, false};           // Ctrl+W
     data_.keyToggleSaveStateOnExit = {0x41, true, false, false}; // Ctrl+A
     data_.keyDeleteTask = {VK_DELETE, false, false, false};
+    data_.keyUndo = {0x5A, true, false, false};    // Ctrl+Z
+    data_.keyRedo = {0x59, true, false, false};    // Ctrl+Y
     data_.enableLogging = true;
     data_.debugLogging = false;
     data_.enableLOD = true;

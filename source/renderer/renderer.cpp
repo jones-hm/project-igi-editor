@@ -27,6 +27,10 @@ static FntFont g_editorFont;
 static GLuint  g_editorFontTex = 0;
 static bool    g_editorFontTried = false;
 
+static FntFont g_editorSmFont;
+static GLuint  g_editorSmFontTex = 0;
+static bool    g_editorSmFontTried = false;
+
 // Lazily load + upload the editor font atlas on first HUD draw.
 static void EnsureEditorFont() {
   if (g_editorFontTried) {
@@ -47,6 +51,25 @@ static void EnsureEditorFont() {
   g_editorFontTex = GL_RegisterTexture(&pic, GL_CLAMP_TO_EDGE, GL_NEAREST, GL_NEAREST, false);
 }
 
+// Lazily load + upload the small editor font atlas (editorsm.fnt) for tooltips.
+static void EnsureEditorSmFont() {
+  if (g_editorSmFontTried) {
+    return;
+  }
+  g_editorSmFontTried = true;
+
+  g_editorSmFont = FNT_Parse("content\\qed\\editorsm.fnt");
+  if (!g_editorSmFont.valid) {
+    return;
+  }
+
+  pic_s pic;
+  pic.width_  = g_editorSmFont.texWidth;
+  pic.height_ = g_editorSmFont.texHeight;
+  pic.pixels_ = g_editorSmFont.rgba.data();
+  g_editorSmFontTex = GL_RegisterTexture(&pic, GL_CLAMP_TO_EDGE, GL_NEAREST, GL_NEAREST, false);
+}
+
 // Draw a string with the editor bitmap font in the HUD ortho space (y=0 bottom).
 // y_gl is the gl-space y of the top of the first text line; glyphs extend
 // downward from there. '\n' starts a new line.
@@ -61,7 +84,9 @@ static void DrawFontText(int x, int y_gl, const char* str, float r, float g, flo
 
   glEnable(GL_TEXTURE_2D);
   glBindTexture(GL_TEXTURE_2D, g_editorFontTex);
-  glColor3f(r, g, b);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glColor4f(r, g, b, 1.0f);
 
   int pen_x = x;
   int pen_y = y_gl; // top of current line in gl space (y up)
@@ -99,6 +124,59 @@ static void DrawFontText(int x, int y_gl, const char* str, float r, float g, flo
 
   glBindTexture(GL_TEXTURE_2D, 0);
   glDisable(GL_TEXTURE_2D);
+  glDisable(GL_BLEND);
+}
+
+// Draw a string with the small editor bitmap font (editorsm.fnt) for tooltips.
+static void DrawFontTextSm(int x, int y_gl, const char* str, float r, float g, float b) {
+  if (!g_editorSmFont.valid || !g_editorSmFontTex) {
+    return;
+  }
+
+  const int spaceAdvance = g_editorSmFont.lineHeight > 0 ? g_editorSmFont.lineHeight / 2 : 4;
+
+  glEnable(GL_TEXTURE_2D);
+  glBindTexture(GL_TEXTURE_2D, g_editorSmFontTex);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glColor4f(r, g, b, 1.0f); // Use glColor4f to ensure alpha is 1
+
+  int pen_x = x;
+  int pen_y = y_gl;
+
+  glBegin(GL_QUADS);
+  for (const char* p = str; *p; ++p) {
+    unsigned char c = (unsigned char)*p;
+    if (c == '\n') {
+      pen_x = x;
+      pen_y -= g_editorSmFont.lineHeight;
+      continue;
+    }
+
+    auto it = g_editorSmFont.glyphs.find((int)c);
+    if (it == g_editorSmFont.glyphs.end()) {
+      pen_x += spaceAdvance;
+      continue;
+    }
+
+    const FntGlyph& gl = it->second;
+    float x0 = (float)pen_x;
+    float x1 = (float)(pen_x + gl.width);
+    float yTop = (float)pen_y;
+    float yBot = (float)(pen_y - gl.height);
+
+    glTexCoord2f(gl.u0, gl.v0); glVertex2f(x0, yTop);
+    glTexCoord2f(gl.u1, gl.v0); glVertex2f(x1, yTop);
+    glTexCoord2f(gl.u1, gl.v1); glVertex2f(x1, yBot);
+    glTexCoord2f(gl.u0, gl.v1); glVertex2f(x0, yBot);
+
+    pen_x += gl.advance;
+  }
+  glEnd();
+
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glDisable(GL_TEXTURE_2D);
+  glDisable(GL_BLEND);
 }
 
 /*
@@ -300,7 +378,10 @@ void Renderer::Draw(const draw_params_s &params,
     glLoadIdentity();
 
     const bool useEditorFont = Config::Get().useEditorFont;
-    if (useEditorFont) EnsureEditorFont();
+    if (useEditorFont) {
+      EnsureEditorFont();
+      EnsureEditorSmFont();
+    }
 
     auto draw_text = [&](int x, int y, const char *str, float r, float g,
                          float b) {
@@ -365,6 +446,53 @@ void Renderer::Draw(const draw_params_s &params,
       }
     };
 
+    // draw_text_sm: uses editorsm.fnt bitmap font for tooltip text.
+    auto draw_text_sm = [&](int x, int y, const char *str, float r, float g,
+                            float b) {
+      if (useEditorFont && g_editorSmFont.valid && g_editorSmFontTex) {
+        std::stringstream ss(str);
+        std::string line;
+        int line_y = y;
+        while (std::getline(ss, line)) {
+          int y_gl = params.view_define_->viewport_height_ - line_y;
+          DrawFontTextSm(x + 1, y_gl - 1, line.c_str(), 0.0f, 0.0f, 0.0f);
+          DrawFontTextSm(x, y_gl, line.c_str(), r, g, b);
+          line_y += g_editorSmFont.lineHeight > 0 ? g_editorSmFont.lineHeight + 2 : 15;
+        }
+        return;
+      }
+      // Fallback: GLUT bitmap font (smaller).
+      std::stringstream ss(str);
+      std::string line;
+      int line_y = y;
+      while (std::getline(ss, line)) {
+        glColor3f(0.0f, 0.0f, 0.0f);
+        glRasterPos2i(x + 1, params.view_define_->viewport_height_ - line_y - 1);
+        for (char c : line) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_10, c);
+        glColor3f(r, g, b);
+        glRasterPos2i(x, params.view_define_->viewport_height_ - line_y);
+        for (char c : line) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_10, c);
+        line_y += 13;
+      }
+    };
+
+    // draw_text_sys: always uses GLUT system font (for Escape menu, Help, Debug).
+    auto draw_text_sys = [&](int x, int y, const char *str, float r, float g,
+                             float b) {
+      std::stringstream ss(str);
+      std::string line;
+      int line_y = y;
+      while (std::getline(ss, line)) {
+        glColor3f(0.0f, 0.0f, 0.0f);
+        glRasterPos2i(x + 1, params.view_define_->viewport_height_ - line_y - 1);
+        for (char c : line) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, c);
+        glColor3f(r, g, b);
+        glRasterPos2i(x, params.view_define_->viewport_height_ - line_y);
+        for (char c : line) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, c);
+        line_y += 15;
+      }
+    };
+
     // Helper to convert KeyBinding to display string
     auto keybinding_to_string = [&](const KeyBinding &kb) -> std::string {
       std::string result;
@@ -400,7 +528,7 @@ void Renderer::Draw(const draw_params_s &params,
 
     // --- TreeView HUD Implementation ---
     // Hidden while the property panel occupies the left strip.
-    if (task_tree_view.level_objects_ && !task_tree_view.prop_editor_open_) {
+    if (task_tree_view.level_objects_ && !task_tree_view.prop_editor_open_ && !task_tree_view.task_picker_open_) {
       const auto &objects = task_tree_view.level_objects_->GetObjects();
       int tree_x = 20;
       int tree_y = 30; // Starting Y for tree
@@ -743,12 +871,12 @@ void Renderer::Draw(const draw_params_s &params,
         if (isAI) {
           std::string aiName = obj.name.empty() ? "AI Soldier" : obj.name;
           snprintf(buf, sizeof(buf), "Name: %s (Type: %s)", aiName.c_str(), obj.type.c_str());
-          draw_text(text_x, text_y, buf, 0.0f, 0.8f, 1.0f); // Sky blue title
+          draw_text_sm(text_x, text_y, buf, 0.0f, 0.8f, 1.0f); // Sky blue title
           text_y += 15;
 
           snprintf(buf, sizeof(buf), "Soldier ID: %s | AI ID: %s",
                    task_id.c_str(), obj.aiId.empty() ? "-1" : obj.aiId.c_str());
-          draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
+          draw_text_sm(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
           text_y += 15;
 
           std::string teamStr =
@@ -758,54 +886,54 @@ void Renderer::Draw(const draw_params_s &params,
           float tg = (obj.team == 1) ? 0.2f : 1.0f;
           float tb = 0.2f;
           snprintf(buf, sizeof(buf), "Team: %s", teamStr.c_str());
-          draw_text(text_x, text_y, buf, tr, tg, tb);
+          draw_text_sm(text_x, text_y, buf, tr, tg, tb);
           text_y += 15;
 
           if (!obj.primaryWeapon.empty()) {
             snprintf(buf, sizeof(buf), "Pri: %s (%s Ammo)",
                      obj.primaryWeapon.c_str(), obj.primaryAmmo.c_str());
-            draw_text(text_x, text_y, buf, 0.9f, 0.9f, 0.9f);
+            draw_text_sm(text_x, text_y, buf, 0.9f, 0.9f, 0.9f);
             text_y += 15;
           }
 
           if (!obj.secondaryWeapon.empty()) {
             snprintf(buf, sizeof(buf), "Sec: %s (%s Ammo)",
                      obj.secondaryWeapon.c_str(), obj.secondaryAmmo.c_str());
-            draw_text(text_x, text_y, buf, 0.8f, 0.8f, 0.8f);
+            draw_text_sm(text_x, text_y, buf, 0.8f, 0.8f, 0.8f);
             text_y += 15;
           }
 
           if (!obj.graphName.empty() || !obj.graphId.empty()) {
             snprintf(buf, sizeof(buf), "Graph: %s (ID: %s)",
                      obj.graphName.c_str(), obj.graphId.c_str());
-            draw_text(text_x, text_y, buf, 0.9f, 0.6f, 0.9f);
+            draw_text_sm(text_x, text_y, buf, 0.9f, 0.6f, 0.9f);
             text_y += 15;
           }
         } else {
           snprintf(buf, sizeof(buf), "%s ID: %s", display_name.c_str(),
                    task_id.c_str());
-          draw_text(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
+          draw_text_sm(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
           text_y += 15;
 
           snprintf(buf, sizeof(buf), "%s", obj.modelId.c_str());
-          draw_text(text_x, text_y, buf, obj.isBuilding ? 1.0f : 0.0f, 1.0f,
+          draw_text_sm(text_x, text_y, buf, obj.isBuilding ? 1.0f : 0.0f, 1.0f,
                     0.0f);
           text_y += 15;
         }
 
         snprintf(buf, sizeof(buf), "Pos: X: %.1f Y: %.1f Z: %.1f", obj.pos.x,
                  obj.pos.y, obj.pos.z);
-        draw_text(text_x, text_y, buf, 0.7f, 0.7f, 0.7f);
+        draw_text_sm(text_x, text_y, buf, 0.7f, 0.7f, 0.7f);
         text_y += 15;
 
         if (!task_tree_view.status_msg_.empty() &&
             info_object_index == task_tree_view.selected_object_index_) {
-          draw_text(text_x, text_y, task_tree_view.status_msg_.c_str(), 0.85f,
+          draw_text_sm(text_x, text_y, task_tree_view.status_msg_.c_str(), 0.85f,
                     1.0f, 0.6f);
         }
       }
     } else if (!task_tree_view.pause_mode_ && (!task_tree_view.show_hud_ || task_tree_view.mouse_x_ >= 350)) {
-      draw_text(tooltip_x, tooltip_y, "Terrain ID: -1", 1.0f, 1.0f, 1.0f);
+      draw_text_sm(tooltip_x, tooltip_y, "Terrain ID: -1", 1.0f, 1.0f, 1.0f);
     }
 
     // Watermark
@@ -816,8 +944,8 @@ void Renderer::Draw(const draw_params_s &params,
     draw_text(w_x, params.view_define_->viewport_height_ - 20, "IGI Editor - HeavenHM", 0.7f, 0.7f, 0.7f);
 
     if (task_tree_view.task_picker_open_ && task_tree_view.level_objects_) {
-      int picker_x = 350;
-      int picker_w = 400;
+      int picker_x = 20;
+      int picker_w = 320;
       int viewport_h = params.view_define_->viewport_height_;
 
       // Proportional card layout:
@@ -832,8 +960,7 @@ void Renderer::Draw(const draw_params_s &params,
       // Translucent white & yellow background (white and yellow transparent)
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      glColor4f(0.95f, 0.95f, 0.90f,
-                0.25f); // Semi-transparent warm white/yellow
+      glColor4f(0.06f, 0.06f, 0.09f, 0.85f);
       glBegin(GL_QUADS);
       glVertex2i(picker_x, card_bottom_y);
       glVertex2i(picker_x + picker_w, card_bottom_y);
@@ -842,7 +969,7 @@ void Renderer::Draw(const draw_params_s &params,
       glEnd();
 
       // Warm Yellow/Gold transparent border
-      glColor4f(1.0f, 0.85f, 0.0f, 0.7f); // Transparent yellow/gold
+      glColor4f(1.0f, 0.85f, 0.0f, 0.7f); // Warm yellow/gold border
       glLineWidth(2.0f);
       glBegin(GL_LINE_LOOP);
       glVertex2i(picker_x, card_bottom_y);
@@ -883,7 +1010,7 @@ void Renderer::Draw(const draw_params_s &params,
       glEnd();
 
       // Draw Search Box border (transparent yellow/gold)
-      glColor4f(1.0f, 0.85f, 0.0f, 0.7f);
+      glColor4f(0.30f, 0.30f, 0.55f, 1.0f);
       glBegin(GL_LINE_LOOP);
       glVertex2i(box_left, viewport_h - 44);
       glVertex2i(box_right, viewport_h - 44);
@@ -1054,8 +1181,8 @@ void Renderer::Draw(const draw_params_s &params,
             track_y_top - (int)((track_h - thumb_h) * scroll_ratio);
         int thumb_y_bottom = thumb_y_top - thumb_h;
 
-        // Draw thumb (semi-transparent yellow/gold)
-        glColor4f(1.0f, 0.85f, 0.0f, 0.7f); // Transparent yellow/gold
+        // Draw thumb (match dark theme border color)
+        glColor4f(0.30f, 0.30f, 0.55f, 1.0f);
         glLineWidth(3.0f);
         glBegin(GL_LINES);
         glVertex2i(track_x, thumb_y_bottom);
@@ -1195,9 +1322,9 @@ void Renderer::Draw(const draw_params_s &params,
       glLineWidth(1.0f);
 
       int screen_menu_top = (viewport_h - menu_h) / 2;
-      draw_text(menu_x + menu_w / 2 - 45, screen_menu_top + 18, "IGI EDITOR",
+      draw_text_sys(menu_x + menu_w / 2 - 45, screen_menu_top + 18, "IGI EDITOR",
                 0.0f, 1.0f, 0.0f);
-      draw_text(menu_x + menu_w / 2 - 35, screen_menu_top + 32, "PAUSED", 0.8f,
+      draw_text_sys(menu_x + menu_w / 2 - 35, screen_menu_top + 32, "PAUSED", 0.8f,
                 0.8f, 0.8f);
 
       const char *btn_labels[] = {"Resume", "Debug", "Reset Level",
@@ -1223,10 +1350,10 @@ void Renderer::Draw(const draw_params_s &params,
           glVertex2i(menu_x + 20, gl_btn_y + 12);
           glEnd();
           glDisable(GL_BLEND);
-          draw_text(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 4),
+          draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 4),
                     screen_btn_y, btn_labels[i], 1.0f, 1.0f, 1.0f);
         } else {
-          draw_text(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 4),
+          draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 4),
                     screen_btn_y, btn_labels[i], 0.0f, 0.85f, 0.0f);
         }
       }
@@ -1268,7 +1395,7 @@ void Renderer::Draw(const draw_params_s &params,
       glLineWidth(1.0f);
 
       // Title at top of box (draw_text uses top-left origin)
-      draw_text(debug_x + 10, debug_y_text + 10, "DEBUG CONSOLE", font_r,
+      draw_text_sys(debug_x + 10, debug_y_text + 10, "DEBUG CONSOLE", font_r,
                 font_g, font_b);
 
       int startY = debug_y_text + 30; // Just below title, inside the frame
@@ -1303,7 +1430,7 @@ void Renderer::Draw(const draw_params_s &params,
         if (msg.length() > max_chars) {
           msg = msg.substr(0, max_chars - 3) + "...";
         }
-        draw_text(debug_x + 10, startY + count * line_height, msg.c_str(), r, g,
+        draw_text_sys(debug_x + 10, startY + count * line_height, msg.c_str(), r, g,
                   b);
       }
     }
@@ -1338,51 +1465,51 @@ void Renderer::Draw(const draw_params_s &params,
       glLineWidth(1.0f);
 
       // Title
-      draw_text(menu_x + menu_w / 2 - 40, menu_y + menu_h - 30, "KEYBINDINGS",
+      draw_text_sys(menu_x + menu_w / 2 - 40, menu_y + menu_h - 30, "KEYBINDINGS",
                 font_r, font_g, font_b);
 
       // Help items
       int line_y = menu_y + menu_h - 60;
-      draw_text(menu_x + 30, line_y, "[W/A/S/D] Movement", font_r, font_g,
+      draw_text_sys(menu_x + 30, line_y, "[W/A/S/D] Movement", font_r, font_g,
                 font_b);
       line_y -= 20;
-      draw_text(menu_x + 30, line_y, "[F3] Clip Toggle", font_r, font_g,
+      draw_text_sys(menu_x + 30, line_y, "[F3] Clip Toggle", font_r, font_g,
                 font_b);
       line_y -= 20;
       // Edit Mode toggle removed as requested
-      draw_text(menu_x + 30, line_y, "[PageUp/Down] Move Speed", font_r, font_g,
+      draw_text_sys(menu_x + 30, line_y, "[PageUp/Down] Move Speed", font_r, font_g,
                 font_b);
       line_y -= 20;
-      draw_text(menu_x + 30, line_y, "[Left/Right] Roll", font_r, font_g,
+      draw_text_sys(menu_x + 30, line_y, "[Left/Right] Roll", font_r, font_g,
                 font_b);
       line_y -= 20;
-      draw_text(menu_x + 30, line_y, "[TAB] Select Next Object", font_r, font_g,
+      draw_text_sys(menu_x + 30, line_y, "[TAB] Select Next Object", font_r, font_g,
                 font_b);
       line_y -= 20;
-      draw_text(menu_x + 30, line_y, "[T] Teleport to Height Map", font_r,
+      draw_text_sys(menu_x + 30, line_y, "[T] Teleport to Height Map", font_r,
                 font_g, font_b);
       line_y -= 20;
-      draw_text(menu_x + 30, line_y, "[S] Snap Object to Ground", font_r,
+      draw_text_sys(menu_x + 30, line_y, "[S] Snap Object to Ground", font_r,
                 font_g, font_b);
       line_y -= 20;
-      draw_text(menu_x + 30, line_y, "[ESC] Pause Menu", font_r, font_g,
+      draw_text_sys(menu_x + 30, line_y, "[ESC] Pause Menu", font_r, font_g,
                 font_b);
       line_y -= 30;
-      draw_text(menu_x + 30, line_y, "PAUSE MENU:", font_r, font_g, font_b);
+      draw_text_sys(menu_x + 30, line_y, "PAUSE MENU:", font_r, font_g, font_b);
       line_y -= 20;
-      draw_text(menu_x + 30, line_y, "[CTRL+S] Save Level", font_r, font_g,
+      draw_text_sys(menu_x + 30, line_y, "[CTRL+S] Save Level", font_r, font_g,
                 font_b);
       line_y -= 20;
-      draw_text(menu_x + 30, line_y, "[CTRL+R] Reset Level", font_r, font_g,
+      draw_text_sys(menu_x + 30, line_y, "[CTRL+R] Reset Level", font_r, font_g,
                 font_b);
       line_y -= 20;
-      draw_text(menu_x + 30, line_y, "[SHIFT+R] Reset Script", font_r, font_g,
+      draw_text_sys(menu_x + 30, line_y, "[SHIFT+R] Reset Script", font_r, font_g,
                 font_b);
       line_y -= 20;
-      draw_text(menu_x + 30, line_y, "[CTRL+D] Debug Toggle", font_r, font_g,
+      draw_text_sys(menu_x + 30, line_y, "[CTRL+D] Debug Toggle", font_r, font_g,
                 font_b);
       line_y -= 20;
-      draw_text(menu_x + 30, line_y, "[CTRL+Q] Exit", font_r, font_g, font_b);
+      draw_text_sys(menu_x + 30, line_y, "[CTRL+Q] Exit", font_r, font_g, font_b);
       line_y -= 20;
     }
 
@@ -1468,9 +1595,9 @@ void Renderer::Draw(const draw_params_s &params,
 
           // Opaque panel background covering the left strip + border.
           quad(L.panel_x, L.panel_y, L.panel_x + L.panel_w, L.panel_y + L.panel_h,
-               0.06f, 0.06f, 0.09f, 0.97f);
+               0.06f, 0.06f, 0.09f, 0.85f);
           border(L.panel_x, L.panel_y, L.panel_x + L.panel_w, L.panel_y + L.panel_h,
-                 0.30f, 0.30f, 0.55f);
+                 0.5f, 0.5f, 0.5f);
 
           // Header text — track running screen y to mirror the layout.
           int ty = L.panel_y + PropPanel::kPad;
@@ -1556,8 +1683,8 @@ void Renderer::Draw(const draw_params_s &params,
               }
               // Z vertical slider
               const auto& zs = L.widgets[wi++];
-              quad(zs.x1, zs.y1, zs.x2, zs.y2, 0.10f, 0.10f, 0.16f, 1.0f);
-              border(zs.x1, zs.y1, zs.x2, zs.y2, 0.45f, 0.45f, 0.65f);
+              quad(zs.x1, zs.y1, zs.x2, zs.y2, 0.95f, 0.95f, 0.90f, 0.15f);
+              border(zs.x1, zs.y1, zs.x2, zs.y2, 1.0f, 0.85f, 0.0f);
               {
                 double pz = 0; try { pz = std::stod(tok(fd.argOffset + 2)); } catch(...) {}
                 const double zwin = 50.0;
@@ -1570,11 +1697,11 @@ void Renderer::Draw(const draw_params_s &params,
               // Snap buttons
               const auto& bg = L.widgets[wi++];
               const auto& bo = L.widgets[wi++];
-              quad(bg.x1, bg.y1, bg.x2, bg.y2, 0.18f, 0.20f, 0.30f, 1.0f);
-              border(bg.x1, bg.y1, bg.x2, bg.y2, 0.5f, 0.55f, 0.7f);
+              quad(bg.x1, bg.y1, bg.x2, bg.y2, 0.95f, 0.95f, 0.90f, 0.20f);
+              border(bg.x1, bg.y1, bg.x2, bg.y2, 1.0f, 0.85f, 0.0f);
               draw_text(bg.x1 + 6, bg.y1 + 12, "Snap to ground", 0.9f, 0.9f, 1.0f);
-              quad(bo.x1, bo.y1, bo.x2, bo.y2, 0.18f, 0.20f, 0.30f, 1.0f);
-              border(bo.x1, bo.y1, bo.x2, bo.y2, 0.5f, 0.55f, 0.7f);
+              quad(bo.x1, bo.y1, bo.x2, bo.y2, 0.95f, 0.95f, 0.90f, 0.20f);
+              border(bo.x1, bo.y1, bo.x2, bo.y2, 1.0f, 0.85f, 0.0f);
               draw_text(bo.x1 + 6, bo.y1 + 12, "Snap to object", 0.9f, 0.9f, 1.0f);
               y = bg.y2 + 4;
               {
@@ -1638,9 +1765,9 @@ void Renderer::Draw(const draw_params_s &params,
             } else if (is_bool) {
               const auto& w = L.widgets[wi++];
               bool bv = false; try { bv = (std::stoi(tok(fd.argOffset)) != 0); } catch(...) {}
-              quad(w.x1, w.y1, w.x2, w.y2, 0.10f, 0.10f, 0.16f, 1.0f);
+              quad(w.x1, w.y1, w.x2, w.y2, 0.95f, 0.95f, 0.90f, 0.15f);
               if (bv) quad(w.x1 + 2, w.y1 + 2, w.x2 - 2, w.y2 - 2, 0.2f, 0.9f, 0.2f, 1.0f);
-              border(w.x1, w.y1, w.x2, w.y2, 0.85f, 0.85f, 0.85f);
+              border(w.x1, w.y1, w.x2, w.y2, 1.0f, 0.85f, 0.0f);
               draw_text(w.x2 + 6, w.y1 + 11, bv ? "TRUE" : "FALSE", 0.3f, 1.0f, 0.3f);
               y = w.y2;
             } else if (is_ro) {
