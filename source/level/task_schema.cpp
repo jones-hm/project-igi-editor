@@ -122,4 +122,49 @@ const TaskSchema* GetBuiltinSchema(const std::string& taskType) {
     return it == m.end() ? nullptr : &it->second;
 }
 
+// --- Runtime schemas from Task_DeclareParameters ----------------------------
+
+static std::string Unquote(const std::string& s) {
+    if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
+        return s.substr(1, s.size() - 2);
+    return s;
+}
+
+TaskSchema ParseDeclaration(const std::vector<std::string>& declArgs) {
+    TaskSchema schema;
+    if (declArgs.size() < 3) return schema; // need TypeName + at least one (name,type)
+    int off = 3; // id, type, note occupy 0..2; first declared field starts at 3
+    for (size_t i = 1; i + 1 < declArgs.size(); i += 2) {
+        FieldDef f;
+        f.name      = Unquote(declArgs[i]);
+        f.typeName  = Unquote(declArgs[i + 1]);
+        f.argCount  = TypeArgCount(f.typeName);
+        f.argOffset = off;
+        off += f.argCount;
+        schema.push_back(f);
+    }
+    return schema;
+}
+
+static std::map<std::string, TaskSchema>& RegisteredSchemas() {
+    static std::map<std::string, TaskSchema> s;
+    return s;
+}
+
+void RegisterSchema(const std::string& taskType, TaskSchema schema) {
+    if (taskType.empty() || schema.empty()) return;
+    RegisteredSchemas()[taskType] = std::move(schema);
+}
+
+void ClearRegisteredSchemas() {
+    RegisteredSchemas().clear();
+}
+
+const TaskSchema* GetSchema(const std::string& taskType) {
+    const auto& reg = RegisteredSchemas();
+    auto it = reg.find(taskType);
+    if (it != reg.end()) return &it->second;
+    return GetBuiltinSchema(taskType);
+}
+
 } // namespace TaskSchemaNS

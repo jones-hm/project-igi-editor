@@ -31,4 +31,19 @@ const std::map<std::string, TaskSchema>& GetBuiltinSchemas();
 // Schema for one task type, or nullptr if no builtin schema exists.
 const TaskSchema* GetBuiltinSchema(const std::string& taskType);
 
+// --- Runtime schemas parsed from the level's Task_DeclareParameters ---------
+// declArgs is the Task_DeclareParameters argument list: [0]=TypeName, then
+// (paramName, paramType) pairs. Field argOffsets start at 3 (id, type, note
+// occupy 0-2) and advance by TypeArgCount(type). Surrounding quotes are stripped.
+TaskSchema ParseDeclaration(const std::vector<std::string>& declArgs);
+
+// Register/clear schemas parsed from the current level. Registered schemas take
+// precedence over builtins so the property editor exposes EVERY declared field.
+void RegisterSchema(const std::string& taskType, TaskSchema schema);
+void ClearRegisteredSchemas();
+
+// Resolve a task type to its schema: registered (level) first, then builtin.
+// Returns nullptr if neither exists.
+const TaskSchema* GetSchema(const std::string& taskType);
+
 } // namespace TaskSchemaNS

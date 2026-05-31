@@ -26,6 +26,8 @@ using namespace TaskSchemaNS;
 #include <algorithm>
 #include <unordered_map>
 
+static glm::dmat3 BuildRotMatZXY(const glm::dvec3& euler);
+static glm::dvec3 ExtractEulerZXY(const glm::dmat3& M);
 /*
 ================================================================================
  Game monitor thread — blocks until game process exits, then signals main thread
@@ -486,6 +488,19 @@ void App::LoadLevel(int level_no) {
 
 		// AI rotation override: AI models (HumanSoldier, HumanAI) only have horizontal rotation
 		auto& objects = level_.GetLevelObjects().GetObjects();
+
+		// Build runtime parameter schemas from this level's Task_DeclareParameters so
+		// the property editor can expose EVERY declared field of any task type.
+		TaskSchemaNS::ClearRegisteredSchemas();
+		for (const auto& obj : objects) {
+			if (obj.type == "Task_DeclareParameters" && obj.argTokens.size() >= 3) {
+				std::string typeName = obj.argTokens[0];
+				if (typeName.size() >= 2 && typeName.front() == '"' && typeName.back() == '"')
+					typeName = typeName.substr(1, typeName.size() - 2);
+				TaskSchemaNS::RegisterSchema(typeName, TaskSchemaNS::ParseDeclaration(obj.argTokens));
+			}
+		}
+
 		for (auto& obj : objects) {
 			if (obj.modelId == "000_01_1") continue; // Skip Player Jones
 			if (obj.type == "HumanSoldier" || obj.type == "HumanAI" || obj.type.find("AITYPE") == 0) {
@@ -826,6 +841,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 									prop_field_index_  = w.fieldIndex * 3 + 0;
 									prop_drag_start_x_ = x;
 									prop_drag_start_y_ = y;
+									PushUndoState();
 									int off = schema[w.fieldIndex].argOffset;
 									prop_drag_start_val_  = tokOf(off + 0);
 									prop_drag_start_val2_ = tokOf(off + 1);
@@ -834,6 +850,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 									prop_field_index_  = w.fieldIndex * 3 + w.comp;
 									prop_drag_start_x_ = x;
 									prop_drag_start_y_ = y;
+									PushUndoState();
 									prop_drag_start_val_ = tokOf(schema[w.fieldIndex].argOffset + w.comp);
 								}
 								return;
@@ -1010,6 +1027,8 @@ void App::Input_OnMotion(int x, int y) {
 						}
 					};
 					if (is_pos && comp == 0) {
+						glm::dvec3 oldPos = obj.pos;
+						glm::dvec3 oldRot = obj.rot;
 						// 2D pad: X horizontal, Y vertical (screen-down => world -Y).
 						// IGI positions are ~40.96 units/metre; match marker-manip feel.
 						const float sens = 200.0f;
@@ -1018,16 +1037,24 @@ void App::Input_OnMotion(int x, int y) {
 						obj.pos.x = obj.argTokens.size() > (size_t)(fd.argOffset)   ? std::atof(obj.argTokens[fd.argOffset].c_str())   : obj.pos.x;
 						obj.pos.y = obj.argTokens.size() > (size_t)(fd.argOffset+1) ? std::atof(obj.argTokens[fd.argOffset+1].c_str()) : obj.pos.y;
 						obj.modified = true;
+						glm::dvec3 deltaPos = obj.pos - oldPos;
+						PropagateTransformToChildren(selected_object_index_, deltaPos, glm::dmat3(1.0), oldPos);
 						level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
 					} else if (is_pos && comp == 2) {
+						glm::dvec3 oldPos = obj.pos;
+						glm::dvec3 oldRot = obj.rot;
 						// Z vertical slider: dragging up increases Z
 						const float sens = 200.0f;
 						float nz = prop_drag_start_val_ - dyp * sens;
 						writeArg(fd.argOffset + 2, nz);
 						obj.pos.z = nz;
 						obj.modified = true;
+						glm::dvec3 deltaPos = obj.pos - oldPos;
+						PropagateTransformToChildren(selected_object_index_, deltaPos, glm::dmat3(1.0), oldPos);
 						level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
 					} else {
+						glm::dvec3 oldPos = obj.pos;
+						glm::dvec3 oldRot = obj.rot;
 						// Orientation / numeric horizontal slider.
 						float sens = is_ori ? 0.01f : (tn == "Int16" || tn == "Int32" || tn == "EnumInt32" ? 0.1f : 0.05f);
 						float nv = prop_drag_start_val_ + dxp * sens;
@@ -1045,6 +1072,10 @@ void App::Input_OnMotion(int x, int y) {
 							else                obj.rot.z = nv;
 						}
 						obj.modified = true;
+						if (is_ori) {
+							glm::dmat3 deltaWorld = BuildRotMatZXY(obj.rot) * glm::transpose(BuildRotMatZXY(oldRot));
+							PropagateTransformToChildren(selected_object_index_, glm::dvec3(0), deltaWorld, oldPos);
+						}
 						level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
 					}
 				}
@@ -1459,9 +1490,14 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 					if (prop_text_edit_field_ == -2) {
 						// Note edit: write to obj.name (and arg[2] if present).
 						obj.name = prop_text_buf_;
-						if (obj.argTokens.size() > 2) obj.argTokens[2] = prop_text_buf_;
+						if (obj.argTokens.size() > 2) {
+							std::string tokenVal = prop_text_buf_;
+							if (tokenVal.find('"') == std::string::npos) tokenVal = "\"" + tokenVal + "\"";
+							obj.argTokens[2] = tokenVal;
+						}
 						obj.modified = true;
-						level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
+						obj.qscLine = level_.GetLevelObjects().GenerateTaskLine(obj);
+						level_.GetLevelObjects().ParseTaskLine(obj.qscLine, obj);
 					} else {
 						const auto& schemas = GetBuiltinSchemas();
 						auto it = schemas.find(obj.type);
@@ -1472,9 +1508,17 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 							if (fi < (int)schema.size()) {
 								int argIdx = schema[fi].argOffset + comp;
 								if (argIdx < (int)obj.argTokens.size()) {
-									obj.argTokens[argIdx] = prop_text_buf_;
+									// Support quotes for strings if not present
+									std::string tokenVal = prop_text_buf_;
+									if (tokenVal.find('"') == std::string::npos && tokenVal != "-1" && tokenVal != "0" && tokenVal != "1") {
+										if (schema[fi].typeName.find("String") != std::string::npos || schema[fi].typeName == "DropDownCombo") {
+											tokenVal = "\"" + tokenVal + "\"";
+										}
+									}
+									obj.argTokens[argIdx] = tokenVal;
 									obj.modified = true;
-									level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
+									obj.qscLine = level_.GetLevelObjects().GenerateTaskLine(obj);
+									level_.GetLevelObjects().ParseTaskLine(obj.qscLine, obj);
 								}
 							}
 						}
@@ -3488,6 +3532,7 @@ void App::PropagateTransformToChildren(int parentIdx, const glm::dvec3& deltaPos
 		}
 
 		child.modified = true;
+		level_.GetLevelObjects().UpdateCoordinatesInLine(child);
 		PropagateTransformToChildren(childIdx, deltaPos, deltaWorld, pivot);
 	}
 }
