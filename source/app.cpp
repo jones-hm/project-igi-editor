@@ -310,6 +310,8 @@ void App::LoadAllCursors() {
 		"content\\qed\\TerrainEditIcon_Drop.spr",        // 7 TerrainDrop
 		"content\\qed\\TerrainEditIcon_Soften.spr",      // 8 TerrainSoften
 		"content\\qed\\inactivetool.spr",                // 9 Inactive
+		"content\\qed\\editor_camera.spr",               // 10 Camera (ALT held)
+		"content\\qed\\editor_move.spr",                 // 11 Move (ALT held + moving)
 	};
 	cursor_loaded_count_ = 0;
 	for (int i = 0; i < NUM_CURSORS; ++i) {
@@ -351,7 +353,13 @@ void App::UpdateCursorMode() {
 			current_cursor_mode_ = CursorMode::TerrainDrop;  // any other terrain mode
 		return;
 	}
-	// Default/hover/selected all use the Pointer cursor
+	// Camera mode (ALT held)
+	bool enableCameraMode = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera);
+	if (enableCameraMode) {
+		current_cursor_mode_ = camera_mode_moved_ ? CursorMode::Move : CursorMode::Camera;
+		camera_mode_moved_ = false;  // consume per frame
+		return;
+	}
 	current_cursor_mode_ = CursorMode::Default;
 }
 
@@ -933,6 +941,8 @@ void App::Input_OnMotion(int x, int y) {
 	int dy = y - mouse_state_.prior_y_;
 
 	bool enableCameraMode = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera);
+	if (enableCameraMode && (dx != 0 || dy != 0))
+		camera_mode_moved_ = true;
 
 	// Always update mouse coordinates for hover tooltip/interaction
 	mouse_state_.prior_x_ = x;

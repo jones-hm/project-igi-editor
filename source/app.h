@@ -173,13 +173,16 @@ private:
 		TerrainDrop        = 7,
 		TerrainSoften      = 8,
 		Inactive      = 9,  // inactivetool.spr
+		Camera        = 10, // ALT held, camera look mode  → editor_camera.spr
+		Move          = 11, // ALT held + mouse moving      → editor_move.spr
 	};
-	static const int        NUM_CURSORS           = 10;
+	static const int        NUM_CURSORS           = 12;
 	GLuint                  cursor_tex_ids_[NUM_CURSORS]  = {};
 	int                     cursor_tex_ws_[NUM_CURSORS]   = {};
 	int                     cursor_tex_hs_[NUM_CURSORS]   = {};
 	int                     cursor_loaded_count_          = 0;
 	CursorMode              current_cursor_mode_          = CursorMode::Default;
+	bool                    camera_mode_moved_            = false;
 	void                    LoadAllCursors();
 	void                    UpdateCursorMode();
 	void                    DrawCustomCursor();
