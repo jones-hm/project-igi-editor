@@ -1753,6 +1753,7 @@ void Renderer::Draw(const draw_params_s &params,
                 draw_text(track_x2 + 4, w.y1 + 12, tok(fd.argOffset + w.comp).c_str(), 1.0f, 1.0f, 0.85f);
                 y = w.y2;
               }
+              if (ori_count == 0) y += PropPanel::kBoxH;  // fallback if no widgets
             } else if (is_rgb) {
               const char* rgbl[3] = {"R", "G", "B"};
               float rgb[3] = {0,0,0};
