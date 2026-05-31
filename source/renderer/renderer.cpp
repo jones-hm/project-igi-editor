@@ -1065,143 +1065,6 @@ void Renderer::Draw(const draw_params_s &params,
       }
     }
 
-    if (task_tree_view.task_editor_open_) {
-      // Render Task Editor Box
-      int box_w = task_tree_view.edit_box_w_;
-      int box_h = task_tree_view.edit_box_h_;
-      int box_x = (params.view_define_->viewport_width_ - box_w) / 2;
-      int box_y = (params.view_define_->viewport_height_ - box_h) / 2;
-
-      // Dark background
-      glColor4f(0.05f, 0.05f, 0.05f, 0.95f);
-      glBegin(GL_QUADS);
-      glVertex2i(box_x, box_y);
-      glVertex2i(box_x + box_w, box_y);
-      glVertex2i(box_x + box_w, box_y + box_h);
-      glVertex2i(box_x, box_y + box_h);
-      glEnd();
-
-      // Border
-      glColor3f(1.0f, 0.4f, 0.0f); // Bright Orange border
-      glLineWidth(2.0f);
-      glBegin(GL_LINE_LOOP);
-      glVertex2i(box_x, box_y);
-      glVertex2i(box_x + box_w, box_y);
-      glVertex2i(box_x + box_w, box_y + box_h);
-      glVertex2i(box_x, box_y + box_h);
-      glEnd();
-      glLineWidth(1.0f);
-
-      int viewport_h = params.view_define_->viewport_height_;
-      draw_text(box_x + 10, viewport_h - (box_y + box_h - 20),
-                "Task Editor (ESC: Discard, Save: Commit)", 1.0f, 1.0f, 1.0f);
-      draw_text(box_x + 10, viewport_h - (box_y + box_h - 40),
-                "Contents:", 0.6f, 0.6f, 0.6f);
-
-      // Input field bg
-      glColor4f(0.15f, 0.15f, 0.15f, 1.0f);
-      glBegin(GL_QUADS);
-      glVertex2i(box_x + 10, box_y + 10);
-      glVertex2i(box_x + box_w - 10, box_y + 10);
-      glVertex2i(box_x + box_w - 10, box_y + box_h - 50);
-      glVertex2i(box_x + 10, box_y + box_h - 50);
-      glEnd();
-
-      // Use Scissor Test for clipping
-      glEnable(GL_SCISSOR_TEST);
-      glScissor(box_x + 10, box_y + 10, box_w - 20, box_h - 60);
-
-      int visible_chars = std::max(1, (box_w - 40) / 9);
-
-      // Selection Highlight (relative to visible window)
-      if (task_tree_view.edit_selection_start_ != -1 &&
-          task_tree_view.edit_selection_end_ != -1 &&
-          task_tree_view.edit_selection_start_ !=
-              task_tree_view.edit_selection_end_) {
-        int s = std::min(task_tree_view.edit_selection_start_,
-                         task_tree_view.edit_selection_end_);
-        int e = std::max(task_tree_view.edit_selection_start_,
-                         task_tree_view.edit_selection_end_);
-        int sel_x1 = box_x + 20 + ((s - task_tree_view.edit_scroll_x_) * 9);
-        int sel_x2 = box_x + 20 + ((e - task_tree_view.edit_scroll_x_) * 9);
-
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glColor4f(0.0f, 0.5f, 1.0f, 0.4f); // Semi-transparent blue
-        glBegin(GL_QUADS);
-        glVertex2i(sel_x1, box_y + 25);
-        glVertex2i(sel_x2, box_y + 25);
-        glVertex2i(sel_x2, box_y + 45);
-        glVertex2i(sel_x1, box_y + 45);
-        glEnd();
-        glDisable(GL_BLEND);
-      }
-
-      // Cursor (Scrolled) - 9px width
-      int cursor_x =
-          box_x + 20 +
-          ((task_tree_view.edit_cursor_pos_ - task_tree_view.edit_scroll_x_) *
-           9);
-      glColor3f(1.0f, 1.0f, 1.0f); // White cursor
-      glLineWidth(2.0f);
-      glBegin(GL_LINES);
-      glVertex2i(cursor_x, box_y + 28);
-      glVertex2i(cursor_x, box_y + 42);
-      glEnd();
-      glLineWidth(1.0f);
-
-      // Draw only visible text window to avoid blank rendering on very long
-      // lines
-      std::string displayString = task_tree_view.edit_string_;
-      displayString.erase(
-          std::remove(displayString.begin(), displayString.end(), '\r'),
-          displayString.end());
-      displayString.erase(
-          std::remove(displayString.begin(), displayString.end(), '\n'),
-          displayString.end());
-      int start = std::max(0, task_tree_view.edit_scroll_x_);
-      if (start > (int)displayString.size())
-        start = (int)displayString.size();
-      std::string visible =
-          displayString.substr((size_t)start, (size_t)visible_chars + 2);
-      draw_text_mono(box_x + 20, viewport_h - (box_y + 35), visible.c_str(),
-                     1.0f, 1.0f, 1.0f);
-
-      glDisable(GL_SCISSOR_TEST);
-
-      const int save_btn_w = 84;
-      const int save_btn_h = 26;
-      const int save_btn_x = box_x + box_w - save_btn_w - 14;
-      const int save_btn_y = box_y + box_h - 40;
-      bool save_hovered = task_tree_view.mouse_x_ >= save_btn_x &&
-                          task_tree_view.mouse_x_ <= save_btn_x + save_btn_w &&
-                          task_tree_view.mouse_y_ >= save_btn_y &&
-                          task_tree_view.mouse_y_ <= save_btn_y + save_btn_h;
-
-      glEnable(GL_BLEND);
-      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      glColor4f(save_hovered ? 0.10f : 0.05f, save_hovered ? 0.55f : 0.35f,
-                0.10f, 0.95f);
-      glBegin(GL_QUADS);
-      glVertex2i(save_btn_x, save_btn_y);
-      glVertex2i(save_btn_x + save_btn_w, save_btn_y);
-      glVertex2i(save_btn_x + save_btn_w, save_btn_y + save_btn_h);
-      glVertex2i(save_btn_x, save_btn_y + save_btn_h);
-      glEnd();
-      glDisable(GL_BLEND);
-
-      glColor3f(1.0f, 1.0f, 1.0f);
-      glBegin(GL_LINE_LOOP);
-      glVertex2i(save_btn_x, save_btn_y);
-      glVertex2i(save_btn_x + save_btn_w, save_btn_y);
-      glVertex2i(save_btn_x + save_btn_w, save_btn_y + save_btn_h);
-      glVertex2i(save_btn_x, save_btn_y + save_btn_h);
-      glEnd();
-      int text_w = glutBitmapLength(GLUT_BITMAP_HELVETICA_12,
-                                    (const unsigned char *)"Save");
-      draw_text(save_btn_x + (save_btn_w - text_w) / 2,
-                viewport_h - (save_btn_y + 9), "Save", 1.0f, 1.0f, 1.0f);
-    }
 
     if (task_tree_view.edit_mode_) {
       // Flip Y because glOrtho has y=0 at bottom, but mouse_y is top-down
@@ -1529,10 +1392,9 @@ void Renderer::Draw(const draw_params_s &params,
       int sel = task_tree_view.selected_object_index_;
       if (sel < (int)objects.size()) {
         const auto& obj = objects[sel];
-        const auto& schemas = GetBuiltinSchemas();
-        auto schema_it = schemas.find(obj.type);
-        if (schema_it != schemas.end()) {
-          const TaskSchema& schema = schema_it->second;
+        const TaskSchema* scp = GetSchema(obj.type);
+        if (scp) {
+          const TaskSchema& schema = *scp;
           int vh = params.view_define_->viewport_height_;
 
           PropPanel::Layout L = PropPanel::BuildLayout(schema);
@@ -1564,6 +1426,46 @@ void Renderer::Draw(const draw_params_s &params,
             return (idx >= 0 && idx < (int)obj.argTokens.size()) ? obj.argTokens[idx] : std::string("-");
           };
 
+          // Caret blink (on/off ~2Hz). ~7px per char matches the wrap heuristic.
+          const bool caret_on = ((glutGet(GLUT_ELAPSED_TIME) / 500) & 1) == 0;
+          const int  caret_field = task_tree_view.prop_text_edit_field_;
+          int caret_idx = task_tree_view.prop_text_caret_;
+          if (caret_idx < 0) caret_idx = 0;
+          if (caret_idx > (int)task_tree_view.prop_text_buf_.size())
+            caret_idx = (int)task_tree_view.prop_text_buf_.size();
+          // Draw an editable box's contents + blinking caret. `field_id` is the
+          // edit-field key (fi*3+comp, or -2 for the note). `multiline` wraps.
+          auto draw_edit_box = [&](const PropPanel::Widget& w, int field_id,
+                                   const std::string& live_text, bool multiline) {
+            bool editing = (caret_field == field_id);
+            const std::string& txt = editing ? task_tree_view.prop_text_buf_ : live_text;
+            const int cw = 7;
+            int max_chars = std::max(1, (w.x2 - w.x1 - 6) / cw);
+            int box_lines = std::max(1, (w.y2 - w.y1) / PropPanel::kBoxH);
+            // Render wrapped (single-line types still wrap if oversized).
+            int line = 0;
+            for (size_t p = 0; (p < txt.size() || (txt.empty() && line == 0)) &&
+                               line < (multiline ? box_lines : 1); p += max_chars, ++line) {
+              std::string seg = txt.substr(p, (multiline ? (size_t)max_chars : txt.size()));
+              if (!multiline && (int)seg.size() > max_chars && !editing)
+                seg = seg.substr(0, max_chars);
+              draw_text(w.x1 + 3, w.y1 + 12 + line * PropPanel::kBoxH, seg.c_str(), 1.0f, 1.0f, 1.0f);
+              if (txt.empty()) break;
+            }
+            if (editing && caret_on) {
+              int ci = caret_idx;
+              int cl = multiline ? (ci / max_chars) : 0;
+              int cc = multiline ? (ci % max_chars) : ci;
+              int cx = w.x1 + 3 + cc * cw;
+              int cyt = w.y1 + 3 + cl * PropPanel::kBoxH;
+              int cyb = cyt + 13;
+              glColor3f(1.0f, 1.0f, 1.0f);
+              glBegin(GL_LINES);
+              glVertex2i(cx, gl_y(cyt)); glVertex2i(cx, gl_y(cyb));
+              glEnd();
+            }
+          };
+
           // Opaque panel background covering the left strip + border.
           quad(L.panel_x, L.panel_y, L.panel_x + L.panel_w, L.panel_y + L.panel_h,
                0.06f, 0.06f, 0.09f, 0.97f);
@@ -1587,9 +1489,7 @@ void Renderer::Draw(const draw_params_s &params,
             quad(w.x1, w.y1, w.x2, w.y2, 0.12f, 0.12f, 0.18f, 1.0f);
             border(w.x1, w.y1, w.x2, w.y2, editing ? 1.0f : 0.45f,
                    editing ? 1.0f : 0.45f, editing ? 1.0f : 0.65f);
-            std::string nv = editing ? (task_tree_view.prop_text_buf_ + "_") : obj.name;
-            if (nv.size() > 40) nv = nv.substr(0, 40);
-            draw_text(w.x1 + 3, w.y1 + 12, nv.c_str(), 1.0f, 1.0f, 1.0f);
+            draw_edit_box(w, -2, obj.name, false);
           }
 
           // Per-field rendering driven by the same layout pass.
@@ -1605,32 +1505,42 @@ void Renderer::Draw(const draw_params_s &params,
                             tn == "EnumString32" || tn == "DropDownCombo");
             bool is_bool = (tn == "bool8" || tn == "PushButton");
             bool is_ro   = (tn == "Graph" || tn == "AnimData" || tn == "TrainPos1D");
+            bool is_int  = (tn == "Int16" || tn == "Int32" || tn == "EnumInt32");
 
             // Field header line "Name (Type)(sub):"
             const char* sub = "";
-            if (tn == "ObjectPos") sub = "(Real64x3)";
-            else if (is_str)       sub = "(FixedString)";
-            else if (tn == "Real32" && (fd.name == "Gamma" || fd.name == "Heading")) sub = "(Angle)";
+            if (tn == "Angle")        sub = "(Angle)";
+            else if (tn == "Degrees") sub = "(Degrees)";
+            else if (tn == "PushButton") sub = "(Button)";
             char fhdr[160];
             if (sub[0]) snprintf(fhdr, sizeof(fhdr), "%s (%s)%s:", fd.name.c_str(), tn.c_str(), sub);
             else        snprintf(fhdr, sizeof(fhdr), "%s (%s):", fd.name.c_str(), tn.c_str());
             draw_text(L.panel_x + PropPanel::kPad, y + 11, fhdr, 0.6f, 0.6f, 0.6f);
             y += PropPanel::kRowH;
 
+            // Helper: editable numeric box (NumBox) — label + box + caret.
+            auto draw_numbox = [&](const PropPanel::Widget& w, const char* label) {
+              int field_id = fi * 3 + w.comp;
+              bool editing = (caret_field == field_id);
+              if (label && label[0])
+                draw_text(L.panel_x + PropPanel::kPad, w.y1 + 12, label, 0.85f, 0.85f, 0.85f);
+              quad(w.x1, w.y1, w.x2, w.y2, 0.12f, 0.12f, 0.18f, 1.0f);
+              border(w.x1, w.y1, w.x2, w.y2, editing ? 1.0f : 0.45f,
+                     editing ? 1.0f : 0.45f, editing ? 1.0f : 0.65f);
+              draw_edit_box(w, field_id, tok(fd.argOffset + w.comp), false);
+            };
+
             if (is_pos) {
-              // X/Y/Z rows
+              // X/Y/Z editable numeric boxes.
               const char* lab[3] = {"X", "Y", "Z"};
               for (int c = 0; c < 3; ++c) {
-                char vb[96];
-                snprintf(vb, sizeof(vb), "%s: %s", lab[c], tok(fd.argOffset + c).c_str());
-                draw_text(L.panel_x + PropPanel::kPad + 4, y + 11, vb, 0.9f, 0.9f, 0.9f);
-                y += PropPanel::kRowH;
+                const auto& w = L.widgets[wi++];
+                draw_numbox(w, lab[w.comp]);
               }
               // 2D pad
               const auto& pad = L.widgets[wi++];
               quad(pad.x1, pad.y1, pad.x2, pad.y2, 0.10f, 0.10f, 0.16f, 1.0f);
               border(pad.x1, pad.y1, pad.x2, pad.y2, 0.45f, 0.45f, 0.65f);
-              // handle at centre (X horizontal, Y vertical within a ±window)
               {
                 double px = 0, py = 0;
                 try { px = std::stod(tok(fd.argOffset + 0)); } catch(...) {}
@@ -1667,51 +1577,63 @@ void Renderer::Draw(const draw_params_s &params,
               border(bo.x1, bo.y1, bo.x2, bo.y2, 0.5f, 0.55f, 0.7f);
               draw_text(bo.x1 + 6, bo.y1 + 12, "Snap to object", 0.9f, 0.9f, 1.0f);
               y = bg.y2 + 4;
-              // Altitude readout (obj.pos.z as meters — terrain height not available here)
               {
                 char ab[80];
                 snprintf(ab, sizeof(ab), "Altitude: %.6f meter", obj.pos.z);
                 draw_text(L.panel_x + PropPanel::kPad, y + 11, ab, 0.8f, 0.8f, 0.6f);
                 y += PropPanel::kRowH;
               }
-            } else if (is_ori || is_rgb) {
+            } else if (is_ori) {
               const char* lab[3] = {"Alpha", "Beta", "Gamma"};
-              const char* rgbl[3] = {"R", "G", "B"};
               for (int c = 0; c < 3; ++c) {
                 const auto& w = L.widgets[wi++];
-                draw_text(L.panel_x + PropPanel::kPad, w.y1 + 12,
-                          is_rgb ? rgbl[c] : lab[c], 0.85f, 0.85f, 0.85f);
+                draw_text(L.panel_x + PropPanel::kPad, w.y1 + 12, lab[w.comp], 0.85f, 0.85f, 0.85f);
                 draw_text(L.panel_x + PropPanel::kPad + 40, w.y1 + 12,
-                          tok(fd.argOffset + c).c_str(), 1.0f, 1.0f, 1.0f);
-                // track
+                          tok(fd.argOffset + w.comp).c_str(), 1.0f, 1.0f, 1.0f);
                 int cy = (w.y1 + w.y2) / 2;
                 quad(w.x1, cy - 2, w.x2, cy + 2, 0.2f, 0.2f, 0.3f, 1.0f);
                 border(w.x1, cy - 2, w.x2, cy + 2, 0.5f, 0.5f, 0.7f);
-                float v = 0.f; try { v = std::stof(tok(fd.argOffset + c)); } catch(...) {}
-                float norm = is_rgb ? std::max(0.f, std::min(1.f, v / 255.f))
-                                    : std::max(0.f, std::min(1.f, (v + 3.14159f) / (2.f * 3.14159f)));
+                float v = 0.f; try { v = std::stof(tok(fd.argOffset + w.comp)); } catch(...) {}
+                float norm = std::max(0.f, std::min(1.f, (v + 3.14159f) / (2.f * 3.14159f)));
                 int tx = w.x1 + (int)(norm * (w.x2 - w.x1 - 6));
-                bool drag = (task_tree_view.prop_field_index_ == fi * 3 + c);
+                bool drag = (task_tree_view.prop_field_index_ == fi * 3 + w.comp);
                 quad(tx, cy - 5, tx + 6, cy + 5, drag ? 1.0f : 0.9f, drag ? 1.0f : 0.9f, drag ? 0.0f : 0.9f, 1.0f);
+                y = w.y2;
+              }
+            } else if (is_rgb) {
+              const char* rgbl[3] = {"R", "G", "B"};
+              float rgb[3] = {0,0,0};
+              for (int c = 0; c < 3; ++c) {
+                const auto& w = L.widgets[wi++];
+                draw_text(L.panel_x + PropPanel::kPad, w.y1 + 12, rgbl[w.comp], 0.85f, 0.85f, 0.85f);
+                draw_text(L.panel_x + PropPanel::kPad + 24, w.y1 + 12,
+                          tok(fd.argOffset + w.comp).c_str(), 1.0f, 1.0f, 1.0f);
+                int cy = (w.y1 + w.y2) / 2;
+                quad(w.x1, cy - 2, w.x2, cy + 2, 0.2f, 0.2f, 0.3f, 1.0f);
+                border(w.x1, cy - 2, w.x2, cy + 2, 0.5f, 0.5f, 0.7f);
+                float v = 0.f; try { v = std::stof(tok(fd.argOffset + w.comp)); } catch(...) {}
+                rgb[w.comp] = std::max(0.f, std::min(1.f, v));
+                float norm = rgb[w.comp];
+                int tx = w.x1 + (int)(norm * (w.x2 - w.x1 - 6));
+                bool drag = (task_tree_view.prop_field_index_ == fi * 3 + w.comp);
+                quad(tx, cy - 5, tx + 6, cy + 5, drag ? 1.0f : 0.9f, drag ? 1.0f : 0.9f, drag ? 0.0f : 0.9f, 1.0f);
+                // Swatch to the right of the last slider row.
+                if (c == 2) {
+                  int sw_x = w.x2 + 4, sw_y1 = L.widgets[wi - 3].y1, sw_y2 = w.y2;
+                  quad(sw_x, sw_y1, sw_x + 18, sw_y2, rgb[0], rgb[1], rgb[2], 1.0f);
+                  border(sw_x, sw_y1, sw_x + 18, sw_y2, 0.8f, 0.8f, 0.8f);
+                }
                 y = w.y2;
               }
             } else if (is_str) {
               const auto& w = L.widgets[wi++];
-              bool editing = (task_tree_view.prop_text_edit_field_ == fi * 3 + 0);
+              bool multiline = (tn == "VarString" || tn == "String256");
+              int field_id = fi * 3 + 0;
+              bool editing = (caret_field == field_id);
               quad(w.x1, w.y1, w.x2, w.y2, 0.12f, 0.12f, 0.18f, 1.0f);
               border(w.x1, w.y1, w.x2, w.y2, editing ? 1.0f : 0.45f,
                      editing ? 1.0f : 0.45f, editing ? 1.0f : 0.65f);
-              std::string sv = editing ? (task_tree_view.prop_text_buf_ + "_") : tok(fd.argOffset);
-              // Wrap text for tall (VarString) boxes.
-              int max_chars = (w.x2 - w.x1 - 6) / 7;
-              int line = 0;
-              int box_lines = (w.y2 - w.y1) / PropPanel::kBoxH;
-              for (size_t p = 0; p < sv.size() && line < std::max(1, box_lines); p += max_chars, ++line) {
-                std::string seg = sv.substr(p, max_chars);
-                draw_text(w.x1 + 3, w.y1 + 12 + line * PropPanel::kBoxH, seg.c_str(), 1.0f, 1.0f, 1.0f);
-              }
-              if (sv.empty())
-                draw_text(w.x1 + 3, w.y1 + 12, "", 1.0f, 1.0f, 1.0f);
+              draw_edit_box(w, field_id, tok(fd.argOffset), multiline);
               y = w.y2 + 2;
             } else if (is_bool) {
               const auto& w = L.widgets[wi++];
@@ -1726,21 +1648,24 @@ void Renderer::Draw(const draw_params_s &params,
               if (v.size() > 38) v = v.substr(0, 35) + "...";
               draw_text(L.panel_x + PropPanel::kPad + 4, y + 11, v.c_str(), 0.5f, 0.5f, 0.5f);
               y += PropPanel::kRowH;
-            } else {
-              // numeric slider (Int/Real/Angle/Degrees)
+            } else if (is_int) {
               const auto& w = L.widgets[wi++];
-              draw_text(L.panel_x + PropPanel::kPad, w.y1 + 12,
-                        tok(fd.argOffset).c_str(), 1.0f, 1.0f, 1.0f);
-              int cy = (w.y1 + w.y2) / 2;
-              quad(w.x1, cy - 2, w.x2, cy + 2, 0.2f, 0.2f, 0.3f, 1.0f);
-              border(w.x1, cy - 2, w.x2, cy + 2, 0.5f, 0.5f, 0.7f);
+              draw_numbox(w, nullptr);
+              y = w.y2;
+            } else {
+              // Real32/Real64/RangeReal32/Angle/Degrees: slider + editable box.
+              const auto& sl = L.widgets[wi++];   // NumSlider
+              const auto& bx = L.widgets[wi++];   // NumBox
+              int cy = (sl.y1 + sl.y2) / 2;
+              quad(sl.x1, cy - 2, sl.x2, cy + 2, 0.2f, 0.2f, 0.3f, 1.0f);
+              border(sl.x1, cy - 2, sl.x2, cy + 2, 0.5f, 0.5f, 0.7f);
               float v = 0.f; try { v = std::stof(tok(fd.argOffset)); } catch(...) {}
-              // map a ±100 window onto the track
               float norm = std::max(0.f, std::min(1.f, (v - std::floor(v / 200.f) * 200.f) / 200.f));
-              int tx = w.x1 + (int)(norm * (w.x2 - w.x1 - 6));
+              int tx = sl.x1 + (int)(norm * (sl.x2 - sl.x1 - 6));
               bool drag = (task_tree_view.prop_field_index_ == fi * 3 + 0);
               quad(tx, cy - 5, tx + 6, cy + 5, drag ? 1.0f : 0.9f, drag ? 1.0f : 0.9f, drag ? 0.0f : 0.9f, 1.0f);
-              y = w.y2;
+              draw_numbox(bx, nullptr);
+              y = bx.y2;
             }
             y += 4;
           }

@@ -737,64 +737,14 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 				return;
 			}
 			
-			if (task_editor_open_) {
-				int box_x = (window_state_.viewport_width_ - edit_box_w_) / 2;
-				int box_y = (window_state_.viewport_height_ - edit_box_h_) / 2;
-				
-				// Check Save button click first!
-				const int save_btn_w = 84;
-				const int save_btn_h = 26;
-				const int save_btn_x = box_x + edit_box_w_ - save_btn_w - 14;
-				const int save_btn_y_opengl = box_y + edit_box_h_ - 40;
-				int btn_y1 = window_state_.viewport_height_ - (save_btn_y_opengl + save_btn_h);
-				int btn_y2 = window_state_.viewport_height_ - save_btn_y_opengl;
-
-				if (x >= save_btn_x && x <= save_btn_x + save_btn_w && y >= btn_y1 && y <= btn_y2) {
-					// Trigger Save!
-					if (selected_object_index_ >= 0) {
-						auto& obj = level_.GetLevelObjects().GetObjects()[selected_object_index_];
-						std::string finalStr = edit_string_;
-						finalStr.erase(std::remove(finalStr.begin(), finalStr.end(), '\r'), finalStr.end());
-						finalStr.erase(std::remove(finalStr.begin(), finalStr.end(), '\n'), finalStr.end());
-						
-						obj.qscLine = finalStr;
-						level_.GetLevelObjects().ParseTaskLine(obj.qscLine, obj);
-						
-						int savedIndex = selected_object_index_;
-						SaveAndReloadObjects();
-						auto& objects = level_.GetLevelObjects().GetObjects();
-						if (objects.empty()) selected_object_index_ = -1;
-						else selected_object_index_ = std::min(savedIndex, (int)objects.size() - 1);
-						Logger::Get().Log(LogLevel::INFO, "[App] Saved task changes via Save Button click.");
-					}
-					task_editor_open_ = false;
-					edit_cursor_pos_ = 0;
-					edit_scroll_x_ = 0;
-					return;
-				}
-
-				if (x >= box_x && x <= box_x + edit_box_w_ && y >= box_y && y <= box_y + edit_box_h_) {
-					int rel_x = x - (box_x + 20);
-					int char_w = 9;
-					edit_cursor_pos_ = std::max(0, std::min((int)edit_string_.size(), edit_scroll_x_ + std::max(0, rel_x) / char_w));
-					if (!(glutGetModifiers() & GLUT_ACTIVE_SHIFT)) {
-						edit_selection_start_ = edit_cursor_pos_;
-					}
-					edit_selection_end_ = edit_cursor_pos_;
-					edit_dragging_ = true;
-					return;
-				}
-			}
-
 			// C2: Property editor click handling (IGI2-style left panel)
 			if (prop_editor_open_ && selected_object_index_ >= 0) {
 				auto& objects = level_.GetLevelObjects().GetObjects();
 				if (selected_object_index_ < (int)objects.size()) {
 					LevelObject& obj = objects[selected_object_index_];
-					const auto& schemas = GetBuiltinSchemas();
-					auto it = schemas.find(obj.type);
-					if (it != schemas.end()) {
-						const TaskSchema& schema = it->second;
+					const TaskSchema* scp = GetSchema(obj.type);
+					if (scp) {
+						const TaskSchema& schema = *scp;
 						PropPanel::Layout L = PropPanel::BuildLayout(schema);
 						// Clicks inside the panel are consumed by the panel.
 						if (x >= L.panel_x && x <= L.panel_x + L.panel_w &&
@@ -808,12 +758,15 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 								}
 								return 0.f;
 							};
+							// Commit any in-progress text edit before switching focus.
+							CommitPropTextEdit();
 							for (const auto& w : L.widgets) {
 								if (!inRect(w)) continue;
 								using K = PropPanel::WidgetKind;
 								if (w.kind == K::NoteBox) {
 									prop_text_edit_field_ = -2; // sentinel: editing note
 									prop_text_buf_ = obj.name;
+									prop_text_caret_ = (int)prop_text_buf_.size();
 								} else if (w.kind == K::SnapGround) {
 									PushUndoState();
 									input_.keys_ |= MK_MANIP_S;
@@ -827,7 +780,19 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 								} else if (w.kind == K::StringBox) {
 									prop_text_edit_field_ = w.fieldIndex * 3 + w.comp;
 									int argIdx = schema[w.fieldIndex].argOffset + w.comp;
+									prop_text_buf_ = (argIdx < (int)obj.argTokens.size()) ? StripQuotes(obj.argTokens[argIdx]) : "";
+									prop_text_caret_ = (int)prop_text_buf_.size();
+								} else if (w.kind == K::NumBox) {
+									// Click to type AND arm scrub-drag (motion will scrub).
+									prop_text_edit_field_ = w.fieldIndex * 3 + w.comp;
+									int argIdx = schema[w.fieldIndex].argOffset + w.comp;
 									prop_text_buf_ = (argIdx < (int)obj.argTokens.size()) ? obj.argTokens[argIdx] : "";
+									prop_text_caret_ = (int)prop_text_buf_.size();
+									prop_field_index_  = w.fieldIndex * 3 + w.comp;
+									prop_drag_start_x_ = x;
+									prop_drag_start_y_ = y;
+									PushUndoState();
+									prop_drag_start_val_ = tokOf(argIdx);
 								} else if (w.kind == K::Checkbox) {
 									int argIdx = schema[w.fieldIndex].argOffset + w.comp;
 									if (argIdx < (int)obj.argTokens.size()) {
@@ -846,7 +811,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 									prop_drag_start_val_  = tokOf(off + 0);
 									prop_drag_start_val2_ = tokOf(off + 1);
 								} else {
-									// PosZSlider / OriSlider / NumSlider — single-value drag
+									// PosZSlider / OriSlider / RgbSlider / NumSlider — single-value drag
 									prop_field_index_  = w.fieldIndex * 3 + w.comp;
 									prop_drag_start_x_ = x;
 									prop_drag_start_y_ = y;
@@ -1007,12 +972,16 @@ void App::Input_OnMotion(int x, int y) {
 		auto& objects = level_.GetLevelObjects().GetObjects();
 		if (selected_object_index_ < (int)objects.size()) {
 			auto& obj = objects[selected_object_index_];
-			const auto& schemas = GetBuiltinSchemas();
-			auto it = schemas.find(obj.type);
-			if (it != schemas.end()) {
-				const TaskSchema& schema = it->second;
+			const TaskSchema* scp = GetSchema(obj.type);
+			if (scp) {
+				const TaskSchema& schema = *scp;
 				int fi   = prop_field_index_ / 3;
 				int comp = prop_field_index_ % 3;
+				// A real drag cancels any pending NumBox text-edit (scrub wins).
+				if ((std::abs(x - prop_drag_start_x_) > 2 || std::abs(y - prop_drag_start_y_) > 2) &&
+				    prop_text_edit_field_ == prop_field_index_) {
+					prop_text_edit_field_ = -1;
+				}
 				if (fi < (int)schema.size()) {
 					const FieldDef& fd = schema[fi];
 					const std::string& tn = fd.typeName;
@@ -1055,11 +1024,13 @@ void App::Input_OnMotion(int x, int y) {
 					} else {
 						glm::dvec3 oldPos = obj.pos;
 						glm::dvec3 oldRot = obj.rot;
-						// Orientation / numeric horizontal slider.
-						float sens = is_ori ? 0.01f : (tn == "Int16" || tn == "Int32" || tn == "EnumInt32" ? 0.1f : 0.05f);
-						float nv = prop_drag_start_val_ + dxp * sens;
-						int argIdx = fd.argOffset + comp;
+						// Orientation / RGB / numeric horizontal slider or NumBox scrub.
+						bool isRgb = (tn == "RGB" || tn == "Colour");
 						bool isInt = (tn == "Int16" || tn == "Int32" || tn == "EnumInt32");
+						float sens = is_ori ? 0.01f : (isRgb ? 0.005f : (isInt ? 0.1f : 0.05f));
+						float nv = prop_drag_start_val_ + dxp * sens;
+						if (isRgb) nv = std::max(0.f, std::min(1.f, nv));
+						int argIdx = fd.argOffset + comp;
 						if (argIdx >= 0 && argIdx < (int)obj.argTokens.size()) {
 							char buf[64];
 							if (isInt) snprintf(buf, sizeof(buf), "%d", (int)std::lround(nv));
@@ -1158,27 +1129,15 @@ void App::Input_OnSpecial(int key, int x, int y) {
 		return;
 	}
 
-	if (task_editor_open_) {
-		// Task editor handles its own input or blocks others
-		if (key == GLUT_KEY_LEFT) {
-			edit_cursor_pos_ = std::max(0, edit_cursor_pos_ - 1);
-		}
-		if (key == GLUT_KEY_RIGHT) {
-			edit_cursor_pos_ = std::min((int)edit_string_.size(), edit_cursor_pos_ + 1);
-		}
-		if (key == GLUT_KEY_HOME) {
-			edit_cursor_pos_ = 0;
-		}
-		if (key == GLUT_KEY_END) {
-			edit_cursor_pos_ = (int)edit_string_.size();
-		}
-
-		int visibleChars = std::max(1, (edit_box_w_ - 40) / 9);
-		if (edit_cursor_pos_ < edit_scroll_x_) {
-			edit_scroll_x_ = edit_cursor_pos_;
-		} else if (edit_cursor_pos_ > edit_scroll_x_ + visibleChars) {
-			edit_scroll_x_ = edit_cursor_pos_ - visibleChars;
-		}
+	// C2: caret movement while a property text/numeric box is being edited.
+	if (prop_text_edit_field_ != -1) {
+		int n = (int)prop_text_buf_.size();
+		if (prop_text_caret_ < 0) prop_text_caret_ = 0;
+		if (prop_text_caret_ > n) prop_text_caret_ = n;
+		if (key == GLUT_KEY_LEFT)  prop_text_caret_ = std::max(0, prop_text_caret_ - 1);
+		if (key == GLUT_KEY_RIGHT) prop_text_caret_ = std::min(n, prop_text_caret_ + 1);
+		if (key == GLUT_KEY_HOME)  prop_text_caret_ = 0;
+		if (key == GLUT_KEY_END)   prop_text_caret_ = n;
 		return;
 	}
 
@@ -1476,65 +1435,40 @@ static constexpr movement_key_s MOVEMENT_KEYS[] = {
 void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	auto& config = Config::Get();
 
-	// C2: Property text editor input
+	// C2: Property text editor input (caret-based)
 	if (prop_text_edit_field_ != -1) {
-		if (key == 27) { // ESC — cancel
+		int& caret = prop_text_caret_;
+		if (caret < 0) caret = 0;
+		if (caret > (int)prop_text_buf_.size()) caret = (int)prop_text_buf_.size();
+		bool multiline = IsPropFieldMultiline(prop_text_edit_field_);
+		if (key == 27) { // ESC — cancel (revert)
 			prop_text_edit_field_ = -1;
 			return;
 		}
-		if (key == 13) { // Enter — commit
-			if (selected_object_index_ >= 0) {
-				auto& objects = level_.GetLevelObjects().GetObjects();
-				if (selected_object_index_ < (int)objects.size()) {
-					auto& obj = objects[selected_object_index_];
-					if (prop_text_edit_field_ == -2) {
-						// Note edit: write to obj.name (and arg[2] if present).
-						obj.name = prop_text_buf_;
-						if (obj.argTokens.size() > 2) {
-							std::string tokenVal = prop_text_buf_;
-							if (tokenVal.find('"') == std::string::npos) tokenVal = "\"" + tokenVal + "\"";
-							obj.argTokens[2] = tokenVal;
-						}
-						obj.modified = true;
-						obj.qscLine = level_.GetLevelObjects().GenerateTaskLine(obj);
-						level_.GetLevelObjects().ParseTaskLine(obj.qscLine, obj);
-					} else {
-						const auto& schemas = GetBuiltinSchemas();
-						auto it = schemas.find(obj.type);
-						if (it != schemas.end()) {
-							const TaskSchema& schema = it->second;
-							int fi   = prop_text_edit_field_ / 3;
-							int comp = prop_text_edit_field_ % 3;
-							if (fi < (int)schema.size()) {
-								int argIdx = schema[fi].argOffset + comp;
-								if (argIdx < (int)obj.argTokens.size()) {
-									// Support quotes for strings if not present
-									std::string tokenVal = prop_text_buf_;
-									if (tokenVal.find('"') == std::string::npos && tokenVal != "-1" && tokenVal != "0" && tokenVal != "1") {
-										if (schema[fi].typeName.find("String") != std::string::npos || schema[fi].typeName == "DropDownCombo") {
-											tokenVal = "\"" + tokenVal + "\"";
-										}
-									}
-									obj.argTokens[argIdx] = tokenVal;
-									obj.modified = true;
-									obj.qscLine = level_.GetLevelObjects().GenerateTaskLine(obj);
-									level_.GetLevelObjects().ParseTaskLine(obj.qscLine, obj);
-								}
-							}
-						}
-					}
-				}
+		if (key == 13) { // Enter
+			if (multiline) {              // VarString/String256: insert newline
+				prop_text_buf_.insert(prop_text_buf_.begin() + caret, '\n');
+				caret++;
+			} else {                      // single-line: commit
+				CommitPropTextEdit();
 			}
-			prop_text_edit_field_ = -1;
 			return;
 		}
-		if (key == 8) { // Backspace
-			if (!prop_text_buf_.empty())
-				prop_text_buf_.pop_back();
+		if (key == 8) { // Backspace — delete before caret
+			if (caret > 0) {
+				prop_text_buf_.erase(prop_text_buf_.begin() + (caret - 1));
+				caret--;
+			}
 			return;
 		}
-		if (key >= 32 && key <= 126) {
-			prop_text_buf_ += (char)key;
+		if (key == 127) { // Delete — delete at caret
+			if (caret < (int)prop_text_buf_.size())
+				prop_text_buf_.erase(prop_text_buf_.begin() + caret);
+			return;
+		}
+		if (key >= 32 && key <= 126) { // printable: insert at caret
+			prop_text_buf_.insert(prop_text_buf_.begin() + caret, (char)key);
+			caret++;
 			return;
 		}
 		return;
@@ -1741,97 +1675,6 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		return; // Block other keyboard input while picker is open
 	}
 
-	if (task_editor_open_) {
-		if (key == 27) { // ESC - Cancel and close (Discard edits!)
-			task_editor_open_ = false;
-			edit_cursor_pos_ = 0;
-			edit_scroll_x_ = 0;
-			return;
-		}
-		if (key == 8) { // Backspace
-			int s = std::min(edit_selection_start_, edit_selection_end_);
-			int e = std::max(edit_selection_start_, edit_selection_end_);
-			if (s != e && s != -1) {
-				edit_string_.erase(s, e - s);
-				edit_cursor_pos_ = s;
-				edit_selection_start_ = edit_selection_end_ = -1;
-			} else if (edit_cursor_pos_ > 0 && !edit_string_.empty()) {
-				edit_string_.erase(edit_cursor_pos_ - 1, 1);
-				edit_cursor_pos_--;
-			}
-			return;
-		}
-		if (key == 13) { // Enter - Multi-line
-			edit_string_.insert(edit_cursor_pos_, 1, '\n');
-			edit_cursor_pos_++;
-			return;
-		}
-		if (key == 1) { // Ctrl+A - Select All
-			edit_selection_start_ = 0;
-			edit_selection_end_ = (int)edit_string_.size();
-			edit_cursor_pos_ = (int)edit_string_.size();
-			return;
-		}
-		if (key == 3) { // Ctrl+C - Copy
-			int s = std::min(edit_selection_start_, edit_selection_end_);
-			int e = std::max(edit_selection_start_, edit_selection_end_);
-			if (s != e && s != -1) {
-				Utils::SetClipboardText(edit_string_.substr(s, e - s));
-			} else if (!edit_string_.empty()) {
-				Utils::SetClipboardText(edit_string_);
-			}
-			return;
-		}
-		if (key == 24) { // Ctrl+X - Cut
-			int s = std::min(edit_selection_start_, edit_selection_end_);
-			int e = std::max(edit_selection_start_, edit_selection_end_);
-			if (s != e && s != -1) {
-				Utils::SetClipboardText(edit_string_.substr(s, e - s));
-				edit_string_.erase(s, e - s);
-				edit_cursor_pos_ = s;
-				edit_selection_start_ = edit_selection_end_ = -1;
-			}
-			return;
-		}
-		if (key == 22) { // Ctrl+V - Paste
-			std::string pasteData = Utils::GetClipboardText();
-			if (!pasteData.empty()) {
-				int s = std::min(edit_selection_start_, edit_selection_end_);
-				int e = std::max(edit_selection_start_, edit_selection_end_);
-				if (s != e && s != -1) {
-					edit_string_.erase(s, e - s);
-					edit_cursor_pos_ = s;
-				}
-				edit_string_.insert(edit_cursor_pos_, pasteData);
-				edit_cursor_pos_ += (int)pasteData.size();
-				edit_selection_start_ = edit_selection_end_ = -1;
-			}
-			return;
-		}
-		if (key >= 32 && key <= 126) { // Printable characters
-			int s = std::min(edit_selection_start_, edit_selection_end_);
-			int e = std::max(edit_selection_start_, edit_selection_end_);
-			if (s != e && s != -1) {
-				edit_string_.erase(s, e - s);
-				edit_cursor_pos_ = s;
-				edit_selection_start_ = edit_selection_end_ = -1;
-			}
-			edit_string_.insert(edit_cursor_pos_, 1, key);
-			edit_cursor_pos_++;
-			return;
-		}
-
-		// Update scroll to keep cursor visible - use 9px for mono font
-		int visibleChars = std::max(1, (edit_box_w_ - 40) / 9);
-		if (edit_cursor_pos_ < edit_scroll_x_) {
-			edit_scroll_x_ = edit_cursor_pos_;
-		} else if (edit_cursor_pos_ > edit_scroll_x_ + visibleChars) {
-			edit_scroll_x_ = edit_cursor_pos_ - visibleChars;
-		}
-
-		return; // Consume all other keys while editor is open
-	}
-
 	// C3: Ctrl+F — toggle find bar (key 6 = Ctrl+F)
 	if (key == 6) {
 		find_open_       = !find_open_;
@@ -1862,24 +1705,13 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		return;
 	}
 
-	// Open Task Editor on Enter if an object is selected
+	// Open the property panel on Enter if an object is selected.
 	if (key == 13 && !(glutGetModifiers() & GLUT_ACTIVE_ALT)) {
 		if (selected_object_index_ >= 0) {
 			auto& objects = level_.GetLevelObjects().GetObjects();
 			if (selected_object_index_ < (int)objects.size()) {
-				auto& obj = objects[selected_object_index_];
-				task_editor_open_ = true;
-				std::string line = obj.qscLine.empty() ? level_.GetLevelObjects().GenerateTaskLine(obj) : obj.qscLine;
-
-				// Strip any newlines from the loaded line
-				line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
-				line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
-
-				edit_string_ = line;
-				edit_cursor_pos_ = (int)edit_string_.size();
-				edit_selection_start_ = edit_selection_end_ = -1;
-				edit_scroll_x_ = 0;
-				Logger::Get().Log(LogLevel::INFO, "[App] Pressed Enter on task from tree and opened Task Editor.");
+				prop_editor_open_ = true;
+				Logger::Get().Log(LogLevel::INFO, "[App] Pressed Enter on task from tree and opened property panel.");
 				return;
 			}
 		}
@@ -2532,14 +2364,6 @@ void App::Frame(float delta_seconds) {
 			.tree_scroll_offset = tree_scroll_offset_,
 			.tree_decl_expanded = tree_decl_expanded_,
 			.level_objects_ = &level_.GetLevelObjects(),
-			.task_editor_open_ = task_editor_open_,
-			.edit_string_ = edit_string_,
-			.edit_cursor_pos_ = edit_cursor_pos_,
-			.edit_selection_start_ = edit_selection_start_,
-			.edit_selection_end_ = edit_selection_end_,
-			.edit_box_w_ = edit_box_w_,
-			.edit_box_h_ = edit_box_h_,
-			.edit_scroll_x_ = edit_scroll_x_,
 			.task_picker_open_ = task_picker_open_,
 			.task_picker_selected_idx_ = task_picker_selected_idx_,
 			.task_picker_scroll_offset_ = task_picker_scroll_offset_,
@@ -2549,6 +2373,7 @@ void App::Frame(float delta_seconds) {
 			.prop_field_index_     = prop_field_index_,
 			.prop_text_edit_field_ = prop_text_edit_field_,
 			.prop_text_buf_        = prop_text_buf_,
+			.prop_text_caret_      = prop_text_caret_,
 			.find_open_            = find_open_,
 			.find_query_           = find_query_,
 			.find_result_idx_      = find_result_idx_,
@@ -2637,14 +2462,6 @@ void App::Frame(float delta_seconds) {
 		.tree_scroll_offset = tree_scroll_offset_,
 		.tree_decl_expanded = tree_decl_expanded_,
 		.level_objects_ = &level_.GetLevelObjects(),
-		.task_editor_open_ = task_editor_open_,
-		.edit_string_ = edit_string_,
-		.edit_cursor_pos_ = edit_cursor_pos_,
-		.edit_selection_start_ = edit_selection_start_,
-		.edit_selection_end_ = edit_selection_end_,
-		.edit_box_w_ = edit_box_w_,
-		.edit_box_h_ = edit_box_h_,
-		.edit_scroll_x_ = edit_scroll_x_,
 		.task_picker_open_ = task_picker_open_,
 		.task_picker_selected_idx_ = task_picker_selected_idx_,
 		.task_picker_scroll_offset_ = task_picker_scroll_offset_,
@@ -2654,6 +2471,7 @@ void App::Frame(float delta_seconds) {
 		.prop_field_index_     = prop_field_index_,
 		.prop_text_edit_field_ = prop_text_edit_field_,
 		.prop_text_buf_        = prop_text_buf_,
+		.prop_text_caret_      = prop_text_caret_,
 		.find_open_            = find_open_,
 		.find_query_           = find_query_,
 		.find_result_idx_      = find_result_idx_,
@@ -3479,6 +3297,90 @@ void App::UpdateMarkerManipulation() {
 	}
 }
 
+std::string App::StripQuotes(const std::string& s) {
+	if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
+		return s.substr(1, s.size() - 2);
+	return s;
+}
+
+// True if the field currently being text-edited is a multi-line box.
+bool App::IsPropFieldMultiline(int field) const {
+	if (field < 0) return false; // note box (-2) is single-line
+	if (selected_object_index_ < 0) return false;
+	const auto& objects = level_.GetLevelObjects().GetObjects();
+	if (selected_object_index_ >= (int)objects.size()) return false;
+	const TaskSchema* scp = GetSchema(objects[selected_object_index_].type);
+	if (!scp) return false;
+	int fi = field / 3;
+	if (fi < 0 || fi >= (int)scp->size()) return false;
+	const std::string& tn = (*scp)[fi].typeName;
+	return tn == "VarString" || tn == "String256";
+}
+
+// Commit the active text/numeric box (prop_text_buf_) back to the object and
+// objects.qsc, then clear edit focus. Handles the note (-2) and any field box.
+void App::CommitPropTextEdit() {
+	if (prop_text_edit_field_ == -1) return;
+	int field = prop_text_edit_field_;
+	prop_text_edit_field_ = -1;
+	if (selected_object_index_ < 0) return;
+	auto& objects = level_.GetLevelObjects().GetObjects();
+	if (selected_object_index_ >= (int)objects.size()) return;
+	auto& obj = objects[selected_object_index_];
+
+	if (field == -2) {
+		// Note edit -> obj.name (and arg[2] if present, keeping quotes).
+		obj.name = prop_text_buf_;
+		if (obj.argTokens.size() > 2)
+			obj.argTokens[2] = "\"" + StripQuotes(prop_text_buf_) + "\"";
+		obj.modified = true;
+		level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
+		return;
+	}
+
+	const TaskSchema* scp = GetSchema(obj.type);
+	if (!scp) return;
+	int fi = field / 3, comp = field % 3;
+	if (fi >= (int)scp->size()) return;
+	const FieldDef& fd = (*scp)[fi];
+	int argIdx = fd.argOffset + comp;
+	if (argIdx < 0 || argIdx >= (int)obj.argTokens.size()) return;
+
+	const std::string& tn = fd.typeName;
+	bool is_str = (tn.find("String") != std::string::npos || tn == "VarString" ||
+	               tn == "EnumString32" || tn == "DropDownCombo");
+	bool is_int = (tn == "Int16" || tn == "Int32" || tn == "EnumInt32");
+	bool is_pos = (tn == "ObjectPos" || tn == "Real32x3" || tn == "Real64x3");
+
+	std::string tokenVal;
+	if (is_str) {
+		// Preserve quoting: strings keep surrounding quotes in the QSC.
+		bool hadQuotes = obj.argTokens[argIdx].size() >= 2 &&
+		                 obj.argTokens[argIdx].front() == '"';
+		std::string body = StripQuotes(prop_text_buf_);
+		tokenVal = (hadQuotes || tn.find("String") != std::string::npos || tn == "DropDownCombo")
+		               ? ("\"" + body + "\"") : body;
+	} else if (is_int) {
+		long v = 0; try { v = std::lround(std::stod(prop_text_buf_)); } catch(...) {}
+		char buf[64]; snprintf(buf, sizeof(buf), "%ld", v); tokenVal = buf;
+	} else {
+		// Real / Angle / Degrees / RangeReal32 — float formatting.
+		double v = 0; try { v = std::stod(prop_text_buf_); } catch(...) {}
+		char buf[64]; snprintf(buf, sizeof(buf), "%.6f", v); tokenVal = buf;
+	}
+	obj.argTokens[argIdx] = tokenVal;
+
+	// Mirror typed coords into obj.pos for ObjectPos boxes.
+	if (is_pos) {
+		double v = 0; try { v = std::stod(prop_text_buf_); } catch(...) {}
+		if      (comp == 0) obj.pos.x = v;
+		else if (comp == 1) obj.pos.y = v;
+		else                obj.pos.z = v;
+	}
+	obj.modified = true;
+	level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
+}
+
 void App::PushUndoState() {
 	auto& objects = level_.GetLevelObjects().GetObjects();
 	object_undo_stack_.push_back(objects);
@@ -3845,18 +3747,8 @@ void App::ProcessTreeViewClick(int mx, int my) {
                         last_tree_click_time_ms_ = currentTime;
 
                         if (isDoubleClick) {
-                            task_editor_open_ = true;
-                            std::string line = obj.qscLine.empty() ? level_.GetLevelObjects().GenerateTaskLine(obj) : obj.qscLine;
-                            
-                            // Strip any newlines from the loaded line
-                            line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
-                            line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
-                            
-                            edit_string_ = line;
-                            edit_cursor_pos_ = (int)edit_string_.size();
-                            edit_selection_start_ = edit_selection_end_ = -1;
-                            edit_scroll_x_ = 0;
-                            Logger::Get().Log(LogLevel::INFO, "[App] Double clicked object from tree and opened Task Editor.");
+                            prop_editor_open_ = true;
+                            Logger::Get().Log(LogLevel::INFO, "[App] Double clicked object from tree and opened property panel.");
                         } else {
                             Logger::Get().Log(LogLevel::INFO, "[App] Selected object from tree: " + obj.type);
                         }

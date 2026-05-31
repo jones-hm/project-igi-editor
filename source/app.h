@@ -193,6 +193,7 @@ private:
 	int						prop_drag_start_y_     = 0;
 	int						prop_text_edit_field_  = -1;    // -2 = editing note
 	std::string				prop_text_buf_;
+	int						prop_text_caret_       = 0;     // caret index within prop_text_buf_
 
 	// C3: Ctrl+F find
 	bool					find_open_        = false;
@@ -284,6 +285,10 @@ private:
 	void					UpdateMarkerManipulation();
 	void					PropagateTransformToChildren(int parentIdx, const glm::dvec3& deltaPos, const glm::dmat3& deltaWorld, const glm::dvec3& pivot);
 	void					PushUndoState();
+	// C2: property-panel text-edit helpers.
+	void					CommitPropTextEdit();          // writes prop_text_buf_ to argTokens; clears edit state
+	bool					IsPropFieldMultiline(int field) const; // VarString/String256 box?
+	static std::string		StripQuotes(const std::string& s);
 	void					SaveAndReloadObjects();
 	void					Undo();
 	void					Redo();

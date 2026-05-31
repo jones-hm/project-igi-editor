@@ -30,7 +30,9 @@ enum class WidgetKind {
     SnapGround,    // button
     SnapObject,    // button
     OriSlider,     // horizontal orientation slider (Real32x9 component)
-    NumSlider,     // horizontal numeric slider (Int/Real/Angle)
+    RgbSlider,     // horizontal RGB slider (0..1) with swatch
+    NumSlider,     // horizontal numeric slider (Real/Angle/Degrees)
+    NumBox,        // editable numeric input box (Int/Real X/Y/Z) — click to type, drag to scrub
     StringBox,     // editable text box (String*/VarString)
     Checkbox,      // bool8 / PushButton
 };
@@ -72,6 +74,11 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema) {
     L.widgets.push_back({WidgetKind::NoteBox, kLeft + kPad, y, kLeft + kWidth - kPad, y + kBoxH, -1, 0});
     y += kBoxH + 6;
 
+    // Right-side editable box geometry (used for X/Y/Z, integer & float boxes).
+    const int boxW = 110;
+    const int boxX2 = kLeft + kWidth - kPad;
+    const int boxX1 = boxX2 - boxW;
+
     for (int fi = 0; fi < (int)schema.size(); ++fi) {
         const FieldDef& fd = schema[fi];
         const std::string& tn = fd.typeName;
@@ -82,13 +89,16 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema) {
                         tn == "EnumString32" || tn == "DropDownCombo");
         bool is_bool = (tn == "bool8" || tn == "PushButton");
         bool is_ro   = (tn == "Graph" || tn == "AnimData" || tn == "TrainPos1D");
+        bool is_int  = (tn == "Int16" || tn == "Int32" || tn == "EnumInt32");
 
         y += kRowH;  // field header line
 
         if (is_pos) {
-            // X/Y/Z value rows
-            int rows_top = y;
-            y += 3 * kRowH;
+            // X/Y/Z each: label row with an editable numeric box on the right.
+            for (int c = 0; c < 3; ++c) {
+                L.widgets.push_back({WidgetKind::NumBox, boxX1, y, boxX2, y + kBoxH, fi, c});
+                y += kBoxH + 2;
+            }
             // 2D pad (left) + vertical Z slider (right of pad)
             int pad_x1 = kLeft + kPad;
             int pad_y1 = y;
@@ -106,17 +116,25 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema) {
                                  kLeft + kPad + bw + 8 + bw, y + kBoxH, -1, 0});
             y += kBoxH + 4;
             y += kRowH;  // "Altitude: ... meter"
-            (void)rows_top;
-        } else if (is_ori || is_rgb) {
+        } else if (is_ori) {
+            // Three horizontal sliders Alpha/Beta/Gamma.
             for (int c = 0; c < 3; ++c) {
                 int sx1 = kLeft + kPad + 64;
                 int sx2 = kLeft + kWidth - kPad;
                 L.widgets.push_back({WidgetKind::OriSlider, sx1, y, sx2, y + kBoxH, fi, c});
                 y += kBoxH;
             }
+        } else if (is_rgb) {
+            // Three R/G/B sliders (0..1) + colour swatch on the right of each.
+            for (int c = 0; c < 3; ++c) {
+                int sx1 = kLeft + kPad + 64;
+                int sx2 = kLeft + kWidth - kPad - 24;
+                L.widgets.push_back({WidgetKind::RgbSlider, sx1, y, sx2, y + kBoxH, fi, c});
+                y += kBoxH;
+            }
         } else if (is_str) {
-            // VarString is taller (multi-line)
-            int h = (tn == "VarString") ? kBoxH * 3 : kBoxH;
+            // VarString / String256 are taller (multi-line).
+            int h = (tn == "VarString" || tn == "String256") ? kBoxH * 3 : kBoxH;
             L.widgets.push_back({WidgetKind::StringBox, kLeft + kPad, y,
                                  kLeft + kWidth - kPad, y + h, fi, 0});
             y += h + 2;
@@ -126,11 +144,16 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema) {
             y += kBoxH;
         } else if (is_ro) {
             y += kRowH;  // read-only grey value line, no widget
+        } else if (is_int) {
+            // Integer: editable numeric box (also drag-to-scrub), no slider.
+            L.widgets.push_back({WidgetKind::NumBox, boxX1, y, boxX2, y + kBoxH, fi, 0});
+            y += kBoxH;
         } else {
-            // numeric slider (Int/Real/Angle/Degrees)
-            int sx1 = kLeft + kPad + 64;
-            int sx2 = kLeft + kWidth - kPad;
+            // Real32/Real64/RangeReal32/Angle/Degrees: slider + editable box.
+            int sx1 = kLeft + kPad;
+            int sx2 = boxX1 - 8;
             L.widgets.push_back({WidgetKind::NumSlider, sx1, y, sx2, y + kBoxH, fi, 0});
+            L.widgets.push_back({WidgetKind::NumBox, boxX1, y, boxX2, y + kBoxH, fi, 0});
             y += kBoxH;
         }
         y += 4;  // gap between fields
@@ -192,14 +215,6 @@ public:
 		int tree_scroll_offset = 0; // For scrolling the object tree
 		bool tree_decl_expanded = false;
 		const class LevelObjects* level_objects_;
-		bool task_editor_open_;
-		std::string edit_string_;
-		int edit_cursor_pos_;
-		int edit_selection_start_;
-		int edit_selection_end_;
-		int edit_box_w_;
-		int edit_box_h_;
-		int edit_scroll_x_;
 		bool task_picker_open_;
 		int task_picker_selected_idx_;
 		int task_picker_scroll_offset_;
@@ -211,6 +226,7 @@ public:
 		int  prop_field_index_     = -1;
 		int  prop_text_edit_field_ = -1;
 		std::string prop_text_buf_;
+		int  prop_text_caret_      = 0;
 
 		// C3: Find bar
 		bool find_open_       = false;
