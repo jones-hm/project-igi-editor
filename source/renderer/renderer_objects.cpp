@@ -2057,26 +2057,21 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
         for (size_t i = 0; i < mesh.subMeshes.size(); ++i) {
             GLuint texture = 0;
             const int matSlot = mesh.subMeshes[i].materialSlot;
+            std::string resolvedTexId; // tracks the actual texture id string for ARGB detection
 
             if (textures.size() == 1) {
-                // Single-texture model: apply the same texture to every submesh
-                // (covers building floors, bone model parts, etc.)
                 texture = textures[0];
+                resolvedTexId = textureIds.empty() ? "" : textureIds[0];
             } else if (matSlot >= 0 && static_cast<size_t>(matSlot) < textures.size()) {
-                // Defer to materialSlot lookup from MEF render block data
                 texture = textures[matSlot];
+                resolvedTexId = (static_cast<size_t>(matSlot) < textureIds.size()) ? textureIds[matSlot] : "";
             } else if (matSlot > 0 && !textures.empty()) {
                 EnsureAiModelIdsLoaded();
                 if (ai_model_ids_.count(modelId) > 0) {
-                    // materialSlot is out of range — this happens for models like
-                    // sunglasses-bearing characters (009_01_1, 014_01_1, 014_02_1) where
-                    // the MEF render block references a slot beyond the DAT texture list.
-                    // Instead of blindly wrapping (which gives wrong textures), try to
-                    // resolve the texture from the global DAT or by direct name lookup.
+                    // materialSlot is out of range — sunglasses-bearing characters (009_01_1,
+                    // 014_01_1, 014_02_1) where the MEF block references a slot beyond the
+                    // local DAT texture list. Resolve via global DAT.
                     bool resolved = false;
-
-                    // 1. Try global DAT lookup: the texture for this slot may be listed
-                    //    under the same model in a different level's DAT.
                     EnsureGlobalTextureMapLoaded();
                     {
                         auto git = global_texture_map_.find(modelId);
@@ -2086,6 +2081,7 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
                             GLuint globalTex = GetOrLoadTexture(globalTexId);
                             if (globalTex) {
                                 texture = globalTex;
+                                resolvedTexId = globalTexId; // preserve for ARGB detection
                                 resolved = true;
                                 Logger::Get().Log(LogLevel::INFO,
                                     "[TEX Native] AI materialSlot out of range resolved via global DAT for modelId=" + modelId +
@@ -2095,10 +2091,9 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
                             }
                         }
                     }
-
                     if (!resolved) {
-                        // 2. Fallback: use last valid texture (better than wrong wrap)
                         texture = textures.back();
+                        resolvedTexId = textureIds.empty() ? "" : textureIds.back();
                         Logger::Get().Log(LogLevel::WARNING,
                             "[TEX Native] AI materialSlot out of range, using last texture for modelId=" + modelId +
                             " submeshIndex=" + std::to_string(i) +
@@ -2106,20 +2101,19 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
                             " textureCount=" + std::to_string(textures.size()));
                     }
                 } else {
-                    // materialSlot is out of range for non-AI model — wrap it (handles 1-based MEF slots and
-                    // sub-models whose slots reference the parent's texture list by index).
-                    texture = textures[static_cast<size_t>(matSlot) % textures.size()];
-                    Logger::Get().Log(
-                        LogLevel::WARNING,
+                    size_t wrapped = static_cast<size_t>(matSlot) % textures.size();
+                    texture = textures[wrapped];
+                    resolvedTexId = (wrapped < textureIds.size()) ? textureIds[wrapped] : "";
+                    Logger::Get().Log(LogLevel::WARNING,
                         "[TEX Native] materialSlot out of range, wrapping for modelId=" + modelId +
                         " submeshIndex=" + std::to_string(i) +
                         " materialSlot=" + std::to_string(matSlot) +
                         " textureCount=" + std::to_string(textures.size()) +
-                        " wrappedSlot=" + std::to_string(static_cast<size_t>(matSlot) % textures.size()));
+                        " wrappedSlot=" + std::to_string(wrapped));
                 }
             } else if (i < textures.size()) {
-                // Sequential index fallback for materialSlot == -1 (not assigned)
                 texture = textures[i];
+                resolvedTexId = (i < textureIds.size()) ? textureIds[i] : "";
             } else {
                 texture = fallbackTexture;
             }
@@ -2127,27 +2121,13 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
             mesh.subMeshes[i].textureID = texture;
             if (texture) {
                 ++assigned;
-                // Identify the DAT texture id backing this submesh.
-                const std::string tid = (matSlot >= 0 && static_cast<size_t>(matSlot) < textureIds.size())
-                    ? textureIds[static_cast<size_t>(matSlot)]
-                    : (i < textureIds.size() ? textureIds[i] : "");
-
                 // ARGB-format textures carry real per-texel alpha (sunglasses lenses,
-                // guard tower lattice, wire fences, etc.). Mark the sub-mesh for
-                // alpha blending so the transparent pass blends it correctly instead
-                // of the opaque-pass cutout hard-discarding the semi-transparent pixels.
-                if (TextureIdHasAlpha(tid)) {
+                // guard tower lattice, wire fences, etc.). Use resolvedTexId which
+                // captures the actual texture id in ALL code paths including out-of-range
+                // global-DAT lookups (where a naive matSlot index would give the wrong id).
+                if (TextureIdHasAlpha(resolvedTexId)) {
                     mesh.subMeshes[i].alphaMode = 2;
                     mesh.subMeshes[i].baseColorFactor.a = 0.95f;
-                }
-
-                // Per-slot visibility for sunglasses-bearing models
-                if (modelId == "009_01_1" || modelId == "014_01_1" || modelId == "014_02_1") {
-                    Logger::Get().Log(LogLevel::INFO,
-                        "[TEX Native] " + modelId + " submesh[" + std::to_string(i) +
-                        "] matSlot=" + std::to_string(matSlot) +
-                        " texId=" + tid +
-                        " glId=" + std::to_string(texture));
                 }
             }
         }
