@@ -434,6 +434,21 @@ static bool IsWeaponModel(const std::string& modelId) {
     return false;
 }
 
+// AI character models occupy the 000..030 model-number range in IGIModels.json
+// (e.g. 000_01_1 Jones .. 030_01_1). Only these get the semi-transparent pass so
+// their ARGB8888 alpha sub-meshes (sunglasses, etc.) blend correctly.
+static bool IsAIModel(const std::string& modelId) {
+    // Must look like NNN_..  (digits then underscore)
+    size_t i = 0;
+    int n = 0;
+    while (i < modelId.size() && modelId[i] >= '0' && modelId[i] <= '9') {
+        n = n * 10 + (modelId[i] - '0');
+        ++i;
+    }
+    if (i == 0 || i >= modelId.size() || modelId[i] != '_') return false;
+    return n >= 0 && n <= 30;
+}
+
 // METAL_DOOR_SLIDE_UP (model 506_xx) appears in levels 12/13/14 as an EditRigidObj
 // carrying a genuine multi-axis Euler tuple. It bypasses the engine's special door
 // transform and so needs a different Euler application order than other rigid objects.
@@ -1107,12 +1122,15 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
         // Is this a window/glass model? If so, render the whole mesh semi-transparent.
         const bool isWindowModel = window_model_ids_.count(obj.modelId) > 0;
-        const bool isTransparentObject = isWindowModel || isUndergroundContainer;
+        // AI character models (000..030): use the transparent pass for their ARGB8888
+        // alpha sub-meshes (sunglasses) but keep the body fully opaque.
+        const bool isAIChar = IsAIModel(obj.modelId);
+        const bool isTransparentObject = isWindowModel || isUndergroundContainer || isAIChar;
         if (!skipHullRender && isTransparentObject == isTransparentPass) {
             if (isTransparentObject) {
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                glUniform1f(loc_alpha, isUndergroundContainer ? 0.25f : 0.4f);
+                glUniform1f(loc_alpha, isAIChar ? 1.0f : (isUndergroundContainer ? 0.25f : 0.4f));
             }
 
             // Pull hull surfaces slightly toward camera to prevent Z-fighting with terrain.
