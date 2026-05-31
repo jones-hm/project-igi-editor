@@ -1603,15 +1603,15 @@ void Renderer::Draw(const draw_params_s &params,
 
           // Opaque panel background covering the left strip + border.
           quad(L.panel_x, L.panel_y, L.panel_x + L.panel_w, L.panel_y + L.panel_h,
-               0.06f, 0.06f, 0.09f, 0.85f);
+               0.0f, 0.0f, 0.0f, 0.45f);
           border(L.panel_x, L.panel_y, L.panel_x + L.panel_w, L.panel_y + L.panel_h,
-                 1.0f, 0.85f, 0.0f);
+                 1.0f, 1.0f, 1.0f);
 
           // Header text — track running screen y to mirror the layout.
           int ty = L.panel_y + PropPanel::kPad;
           char hdr[160];
           snprintf(hdr, sizeof(hdr), "QTasktype: %s", obj.type.c_str());
-          draw_text(L.panel_x + PropPanel::kPad, ty + 11, hdr, 1.0f, 0.9f, 0.1f);
+          draw_text(L.panel_x + PropPanel::kPad, ty + 11, hdr, 1.0f, 1.0f, 1.0f);
           ty += PropPanel::kRowH;
           draw_text(L.panel_x + PropPanel::kPad, ty + 11, "QTask Note (QTaskNote):", 1.0f, 0.9f, 0.2f);
           ty += PropPanel::kRowH;
@@ -1621,9 +1621,9 @@ void Renderer::Draw(const draw_params_s &params,
           {
             const auto& w = L.widgets[0];
             bool editing = (task_tree_view.prop_text_edit_field_ == -2);
-            quad(w.x1, w.y1, w.x2, w.y2, 0.10f, 0.10f, 0.06f, 0.85f);
-            border(w.x1, w.y1, w.x2, w.y2, editing ? 1.0f : 1.0f,
-                   editing ? 0.95f : 0.85f, editing ? 0.2f : 0.0f);
+            quad(w.x1, w.y1, w.x2, w.y2, 0.0f, 0.0f, 0.0f, 0.40f);
+            border(w.x1, w.y1, w.x2, w.y2, 1.0f,
+                   editing ? 0.95f : 1.0f, editing ? 0.2f : 1.0f);
             draw_edit_box(w, -2, obj.name, false);
           }
 
@@ -1659,9 +1659,9 @@ void Renderer::Draw(const draw_params_s &params,
               bool editing = (caret_field == field_id);
               if (label && label[0])
                 draw_text(L.panel_x + PropPanel::kPad, w.y1 + 12, label, 1.0f, 0.9f, 0.2f);
-              quad(w.x1, w.y1, w.x2, w.y2, 0.10f, 0.10f, 0.06f, 0.85f);
-              border(w.x1, w.y1, w.x2, w.y2, editing ? 1.0f : 1.0f,
-                     editing ? 0.95f : 0.85f, editing ? 0.2f : 0.0f);
+              quad(w.x1, w.y1, w.x2, w.y2, 0.0f, 0.0f, 0.0f, 0.40f);
+              border(w.x1, w.y1, w.x2, w.y2, 1.0f,
+                     editing ? 0.95f : 1.0f, editing ? 0.2f : 1.0f);
               draw_edit_box(w, field_id, tok(fd.argOffset + w.comp), false);
             };
 
@@ -1674,8 +1674,8 @@ void Renderer::Draw(const draw_params_s &params,
               }
               // 2D pad
               const auto& pad = L.widgets[wi++];
-              quad(pad.x1, pad.y1, pad.x2, pad.y2, 0.10f, 0.10f, 0.06f, 0.85f);
-              border(pad.x1, pad.y1, pad.x2, pad.y2, 1.0f, 0.85f, 0.0f);
+              quad(pad.x1, pad.y1, pad.x2, pad.y2, 0.0f, 0.0f, 0.0f, 0.40f);
+              border(pad.x1, pad.y1, pad.x2, pad.y2, 1.0f, 1.0f, 1.0f);
               {
                 double px = 0, py = 0;
                 try { px = std::stod(tok(fd.argOffset + 0)); } catch(...) {}
@@ -1691,8 +1691,8 @@ void Renderer::Draw(const draw_params_s &params,
               }
               // Z vertical slider
               const auto& zs = L.widgets[wi++];
-              quad(zs.x1, zs.y1, zs.x2, zs.y2, 0.10f, 0.10f, 0.06f, 0.85f);
-              border(zs.x1, zs.y1, zs.x2, zs.y2, 1.0f, 0.85f, 0.0f);
+              quad(zs.x1, zs.y1, zs.x2, zs.y2, 0.0f, 0.0f, 0.0f, 0.40f);
+              border(zs.x1, zs.y1, zs.x2, zs.y2, 1.0f, 1.0f, 1.0f);
               {
                 double pz = 0; try { pz = std::stod(tok(fd.argOffset + 2)); } catch(...) {}
                 const double zwin = 50.0;
@@ -1705,11 +1705,11 @@ void Renderer::Draw(const draw_params_s &params,
               // Snap buttons
               const auto& bg = L.widgets[wi++];
               const auto& bo = L.widgets[wi++];
-              quad(bg.x1, bg.y1, bg.x2, bg.y2, 0.10f, 0.10f, 0.06f, 0.85f);
-              border(bg.x1, bg.y1, bg.x2, bg.y2, 1.0f, 0.85f, 0.0f);
+              quad(bg.x1, bg.y1, bg.x2, bg.y2, 0.0f, 0.0f, 0.0f, 0.40f);
+              border(bg.x1, bg.y1, bg.x2, bg.y2, 1.0f, 1.0f, 1.0f);
               draw_text(bg.x1 + 6, bg.y1 + 12, "Snap to ground", 1.0f, 0.9f, 0.2f);
-              quad(bo.x1, bo.y1, bo.x2, bo.y2, 0.10f, 0.10f, 0.06f, 0.85f);
-              border(bo.x1, bo.y1, bo.x2, bo.y2, 1.0f, 0.85f, 0.0f);
+              quad(bo.x1, bo.y1, bo.x2, bo.y2, 0.0f, 0.0f, 0.0f, 0.40f);
+              border(bo.x1, bo.y1, bo.x2, bo.y2, 1.0f, 1.0f, 1.0f);
               draw_text(bo.x1 + 6, bo.y1 + 12, "Snap to object", 1.0f, 0.9f, 0.2f);
               y = bg.y2 + 4;
               {
@@ -1726,8 +1726,8 @@ void Renderer::Draw(const draw_params_s &params,
                 draw_text(L.panel_x + PropPanel::kPad + 40, w.y1 + 12,
                           tok(fd.argOffset + w.comp).c_str(), 1.0f, 1.0f, 0.85f);
                 int cy = (w.y1 + w.y2) / 2;
-                quad(w.x1, cy - 2, w.x2, cy + 2, 0.10f, 0.10f, 0.06f, 0.85f);
-                border(w.x1, cy - 2, w.x2, cy + 2, 1.0f, 0.85f, 0.0f);
+                quad(w.x1, cy - 2, w.x2, cy + 2, 0.0f, 0.0f, 0.0f, 0.40f);
+                border(w.x1, cy - 2, w.x2, cy + 2, 1.0f, 1.0f, 1.0f);
                 float v = 0.f; try { v = std::stof(tok(fd.argOffset + w.comp)); } catch(...) {}
                 float norm = std::max(0.f, std::min(1.f, (v + 3.14159f) / (2.f * 3.14159f)));
                 int tx = w.x1 + (int)(norm * (w.x2 - w.x1 - 6));
@@ -1744,8 +1744,8 @@ void Renderer::Draw(const draw_params_s &params,
                 draw_text(L.panel_x + PropPanel::kPad + 24, w.y1 + 12,
                           tok(fd.argOffset + w.comp).c_str(), 1.0f, 1.0f, 0.85f);
                 int cy = (w.y1 + w.y2) / 2;
-                quad(w.x1, cy - 2, w.x2, cy + 2, 0.10f, 0.10f, 0.06f, 0.85f);
-                border(w.x1, cy - 2, w.x2, cy + 2, 1.0f, 0.85f, 0.0f);
+                quad(w.x1, cy - 2, w.x2, cy + 2, 0.0f, 0.0f, 0.0f, 0.40f);
+                border(w.x1, cy - 2, w.x2, cy + 2, 1.0f, 1.0f, 1.0f);
                 float v = 0.f; try { v = std::stof(tok(fd.argOffset + w.comp)); } catch(...) {}
                 rgb[w.comp] = std::max(0.f, std::min(1.f, v));
                 float norm = rgb[w.comp];
@@ -1756,7 +1756,7 @@ void Renderer::Draw(const draw_params_s &params,
                 if (c == 2) {
                   int sw_x = w.x2 + 4, sw_y1 = L.widgets[wi - 3].y1, sw_y2 = w.y2;
                   quad(sw_x, sw_y1, sw_x + 18, sw_y2, rgb[0], rgb[1], rgb[2], 1.0f);
-                  border(sw_x, sw_y1, sw_x + 18, sw_y2, 1.0f, 0.85f, 0.0f);
+                  border(sw_x, sw_y1, sw_x + 18, sw_y2, 1.0f, 1.0f, 1.0f);
                 }
                 y = w.y2;
               }
@@ -1765,17 +1765,17 @@ void Renderer::Draw(const draw_params_s &params,
               bool multiline = (tn == "VarString" || tn == "String256");
               int field_id = fi * 3 + 0;
               bool editing = (caret_field == field_id);
-              quad(w.x1, w.y1, w.x2, w.y2, 0.10f, 0.10f, 0.06f, 0.85f);
-              border(w.x1, w.y1, w.x2, w.y2, editing ? 1.0f : 1.0f,
-                     editing ? 0.95f : 0.85f, editing ? 0.2f : 0.0f);
+              quad(w.x1, w.y1, w.x2, w.y2, 0.0f, 0.0f, 0.0f, 0.40f);
+              border(w.x1, w.y1, w.x2, w.y2, 1.0f,
+                     editing ? 0.95f : 1.0f, editing ? 0.2f : 1.0f);
               draw_edit_box(w, field_id, display_tok(fd.argOffset), multiline);
               y = w.y2 + 2;
             } else if (is_bool) {
               const auto& w = L.widgets[wi++];
               bool bv = false; try { bv = (std::stoi(tok(fd.argOffset)) != 0); } catch(...) {}
-              quad(w.x1, w.y1, w.x2, w.y2, 0.10f, 0.10f, 0.06f, 0.85f);
-              if (bv) quad(w.x1 + 2, w.y1 + 2, w.x2 - 2, w.y2 - 2, 1.0f, 0.85f, 0.0f, 0.9f);
-              border(w.x1, w.y1, w.x2, w.y2, 1.0f, 0.85f, 0.0f);
+              quad(w.x1, w.y1, w.x2, w.y2, 0.0f, 0.0f, 0.0f, 0.40f);
+              if (bv) quad(w.x1 + 2, w.y1 + 2, w.x2 - 2, w.y2 - 2, 1.0f, 1.0f, 1.0f, 0.9f);
+              border(w.x1, w.y1, w.x2, w.y2, 1.0f, 1.0f, 1.0f);
               draw_text(w.x2 + 6, w.y1 + 11, bv ? "TRUE" : "FALSE", 1.0f, 0.9f, 0.2f);
               y = w.y2;
             } else if (is_ro) {
@@ -1792,8 +1792,8 @@ void Renderer::Draw(const draw_params_s &params,
               const auto& sl = L.widgets[wi++];   // NumSlider
               const auto& bx = L.widgets[wi++];   // NumBox
               int cy = (sl.y1 + sl.y2) / 2;
-              quad(sl.x1, cy - 2, sl.x2, cy + 2, 0.10f, 0.10f, 0.06f, 0.85f);
-              border(sl.x1, cy - 2, sl.x2, cy + 2, 1.0f, 0.85f, 0.0f);
+              quad(sl.x1, cy - 2, sl.x2, cy + 2, 0.0f, 0.0f, 0.0f, 0.40f);
+              border(sl.x1, cy - 2, sl.x2, cy + 2, 1.0f, 1.0f, 1.0f);
               float v = 0.f; try { v = std::stof(tok(fd.argOffset)); } catch(...) {}
               float norm = std::max(0.f, std::min(1.f, (v - std::floor(v / 200.f) * 200.f) / 200.f));
               int tx = sl.x1 + (int)(norm * (sl.x2 - sl.x1 - 6));
