@@ -1524,7 +1524,7 @@ void Renderer::Draw(const draw_params_s &params,
           const TaskSchema& schema = *scp;
           int vh = params.view_define_->viewport_height_;
 
-          PropPanel::Layout L = PropPanel::BuildLayout(schema);
+          PropPanel::Layout L = PropPanel::BuildLayout(schema, task_tree_view.selected_obj_is_ai);
 
           // GL y for a screen-top-down y.
           auto gl_y = [&](int sy) { return vh - sy; };

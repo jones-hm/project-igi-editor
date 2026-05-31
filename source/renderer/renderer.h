@@ -62,7 +62,7 @@ static constexpr int kZSliderW   = 22;   // vertical Z slider width
 // Build the layout for one task type's schema. `is_multi` types (ObjectPos /
 // Real32x9 / RGB) expand to multiple sub-rows. Returns rows' y positions implicitly
 // via widget rects; panel_h is the total height.
-inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema) {
+inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = false) {
     using namespace TaskSchemaNS;
     Layout L;
     L.panel_x = kLeft; L.panel_y = kTop; L.panel_w = kWidth;
@@ -119,10 +119,11 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema) {
             y += kBoxH + 4;
             y += kRowH;  // "Altitude: ... meter"
         } else if (is_ori) {
-            // Three horizontal sliders Alpha/Beta/Gamma.
-            for (int c = 0; c < 3; ++c) {
-                int sx1 = kLeft + kPad + 64;
-                int sx2 = kLeft + kWidth - kPad;
+            // AI objects only expose Gamma (comp 2); non-AI exposes all three.
+            int sx1 = kLeft + kPad + 64;
+            int sx2 = kLeft + kWidth - kPad;
+            int c_start = is_ai ? 2 : 0;
+            for (int c = c_start; c < 3; ++c) {
                 L.widgets.push_back({WidgetKind::OriSlider, sx1, y, sx2, y + kBoxH, fi, c});
                 y += kBoxH;
             }
@@ -234,6 +235,7 @@ public:
 		bool find_open_       = false;
 		std::string find_query_;
 		int  find_result_idx_ = -1;
+		bool selected_obj_is_ai    = false;
 	};
 
 

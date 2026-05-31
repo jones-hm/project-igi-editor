@@ -316,6 +316,28 @@ void App::LoadAllCursors() {
 		cursor_tex_ids_[i] = LoadOneSpr(paths[i], cursor_tex_ws_[i], cursor_tex_hs_[i]);
 		if (cursor_tex_ids_[i]) cursor_loaded_count_++;
 	}
+
+	// Cache AITYPE_ model IDs from IGIModels.json
+	ai_model_ids_.clear();
+	{
+		std::string jsonPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModels.json";
+		std::ifstream jf(jsonPath);
+		if (jf) {
+			std::string content((std::istreambuf_iterator<char>(jf)), {});
+			size_t pos = 0;
+			while ((pos = content.find("\"AITYPE_", pos)) != std::string::npos) {
+				size_t idPos = content.find("\"ModelId\"", pos);
+				if (idPos != std::string::npos && idPos - pos < 200) {
+					size_t q1 = content.find('"', idPos + 9);
+					size_t q2 = (q1 != std::string::npos) ? content.find('"', q1 + 1) : std::string::npos;
+					if (q1 != std::string::npos && q2 != std::string::npos)
+						ai_model_ids_.insert(content.substr(q1 + 1, q2 - q1 - 1));
+				}
+				pos++;
+			}
+		}
+		Logger::Get().Log(LogLevel::INFO, "[App] Loaded " + std::to_string(ai_model_ids_.size()) + " AITYPE_ model IDs");
+	}
 }
 
 void App::UpdateCursorMode() {
@@ -748,7 +770,8 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					const TaskSchema* scp = GetSchema(obj.type);
 					if (scp) {
 						const TaskSchema& schema = *scp;
-						PropPanel::Layout L = PropPanel::BuildLayout(schema);
+						bool is_ai = ai_model_ids_.count(obj.modelId) > 0;
+						PropPanel::Layout L = PropPanel::BuildLayout(schema, is_ai);
 						// Clicks inside the panel are consumed by the panel.
 						if (x >= L.panel_x && x <= L.panel_x + L.panel_w &&
 						    y >= L.panel_y && y <= L.panel_y + L.panel_h) {
@@ -2380,6 +2403,9 @@ void App::Frame(float delta_seconds) {
 			.find_open_            = find_open_,
 			.find_query_           = find_query_,
 			.find_result_idx_      = find_result_idx_,
+			.selected_obj_is_ai    = (selected_object_index_ >= 0 &&
+				selected_object_index_ < (int)level_.GetLevelObjects().GetObjects().size() &&
+				ai_model_ids_.count(level_.GetLevelObjects().GetObjects()[selected_object_index_].modelId) > 0),
 		};
 		draw_params_.level_objects_ = &level_.GetLevelObjects();
 		draw_params_.selected_object_index_ = selected_object_index_;
@@ -2478,6 +2504,9 @@ void App::Frame(float delta_seconds) {
 		.find_open_            = find_open_,
 		.find_query_           = find_query_,
 		.find_result_idx_      = find_result_idx_,
+		.selected_obj_is_ai    = (selected_object_index_ >= 0 &&
+			selected_object_index_ < (int)level_.GetLevelObjects().GetObjects().size() &&
+			ai_model_ids_.count(level_.GetLevelObjects().GetObjects()[selected_object_index_].modelId) > 0),
 	};
 
 	renderer_.Draw(draw_params_, task_tree_view);

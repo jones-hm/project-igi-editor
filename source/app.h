@@ -184,6 +184,8 @@ private:
 	void                    UpdateCursorMode();
 	void                    DrawCustomCursor();
 
+	std::set<std::string>   ai_model_ids_;   // AITYPE_ model IDs from IGIModels.json
+
 	// C2: Typed task property editor
 	bool					prop_editor_open_      = false;
 	int						prop_field_index_      = -1;
