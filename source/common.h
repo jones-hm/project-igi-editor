@@ -41,13 +41,13 @@ constexpr int		MIN_LEVEL_NO = 1;
 constexpr int		MAX_LEVEL_NO = 14;
 
 // renderer
-constexpr float		RENDER_Z_NEAR = 2.8672f;      // 70cm near clip; ~143K:1 ratio — strong depth precision with decent close-range visibility
+extern float		RENDER_Z_NEAR;      // Near clip distance (dynamic from config)
 constexpr float		RENDER_Z_FAR  = 409600.03125f;
 constexpr float		RENDER_DEPTH_MIN = 0.06f;
 constexpr float		RENDER_DEPTH_MAX = 1.0f;
 constexpr float		FOVY_IN_DEGREE = 70.0f;
 constexpr float		RENDERER_MODEL_SCALE_DOWN = 0.001f;
-constexpr float		WORLD_Z_NEAR = RENDER_Z_NEAR / RENDERER_MODEL_SCALE_DOWN;
+extern float		WORLD_Z_NEAR;       // World near clip distance (dynamic from config)
 
 constexpr int		MAX_TERRAIN_VERTICES = 65536;	// tune this
 constexpr int		MAX_TERRAIN_INDICES = 1 << 20;	// tune this

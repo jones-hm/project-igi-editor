@@ -830,6 +830,10 @@ void LevelObjects::ParseTaskLine(const std::string& line, LevelObject& obj) {
             readDouble(5, obj.pos.z);
             readDouble(6, obj.rot.z);
             if (obj.argTokens.size() > 7) obj.modelId = unquote(obj.argTokens[7]);
+        } else if (obj.type == "AnimTask" || obj.type == "CutScene") {
+            readDouble(3, obj.pos.x);
+            readDouble(4, obj.pos.y);
+            readDouble(5, obj.pos.z);
         } else if (obj.type == "Heli" || obj.type == "Car") {
             readDouble(3, obj.pos.x);
             readDouble(4, obj.pos.y);
@@ -971,6 +975,10 @@ void LevelObjects::UpdateCoordinatesInLine(LevelObject& obj) {
             setToken(5, FormatQscDouble(saveZ));
             setToken(6, FormatQscDouble(obj.rot.z));
             if (!obj.modelId.empty() || obj.argTokens.size() > 7) setStringToken(7, obj.modelId);
+        } else if (obj.type == "AnimTask" || obj.type == "CutScene") {
+            setToken(3, FormatQscDouble(obj.pos.x));
+            setToken(4, FormatQscDouble(obj.pos.y));
+            setToken(5, FormatQscDouble(saveZ));
         } else if (obj.type == "Heli" || obj.type == "Car") {
             setToken(3, FormatQscDouble(obj.pos.x));
             setToken(4, FormatQscDouble(obj.pos.y));
@@ -1052,14 +1060,6 @@ void LevelObjects::UpdateCoordinatesInLine(LevelObject& obj) {
                     setStringToken(9, obj.modelId);
                 }
             }
-        } else if (obj.argTokens.size() > 8) {
-            setToken(3, FormatQscDouble(obj.pos.x));
-            setToken(4, FormatQscDouble(obj.pos.y));
-            setToken(5, FormatQscDouble(saveZ));
-            setToken(6, FormatQscDouble(obj.rot.x));
-            setToken(7, FormatQscDouble(obj.rot.y));
-            setToken(8, FormatQscDouble(obj.rot.z));
-            if (!obj.modelId.empty() || obj.argTokens.size() > 9) setStringToken(9, obj.modelId);
         }
     }
 

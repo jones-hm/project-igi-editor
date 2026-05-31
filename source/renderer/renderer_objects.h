@@ -62,6 +62,9 @@ private:
     std::set<std::string> window_model_ids_;
     bool window_ids_loaded_ = false;
 
+    std::set<std::string> ai_model_ids_;
+    bool ai_ids_loaded_ = false;
+
     std::map<std::string, float> portal_distances_;
     bool portal_distances_loaded_ = false;
 
@@ -83,7 +86,7 @@ private:
     int    pick_fbo_h_        = 0;
 
     void LoadAttachmentsRecursive(const std::string& modelId, bool isBuilding, std::unordered_set<std::string>& visited);
-    void DrawAttachmentsRecursive(const std::string& parentModelId, bool isBuilding, const glm::mat4& parentWorldMat,
+    void DrawAttachmentsRecursive(const std::string& topLevelModelId, const std::string& parentModelId, bool isBuilding, const glm::mat4& parentWorldMat,
                                    bool isTransparentPass, GLint loc_model, GLint loc_dirlight,
                                    GLint loc_ambient, GLint loc_useTex, GLint loc_tex, GLint loc_alpha,
                                    std::unordered_set<std::string>& drawn,
@@ -91,6 +94,7 @@ private:
     static bool IsVehicleType(const std::string& type);
     void EnsurePortalDistancesLoaded();
     void EnsureWindowModelIdsLoaded();
+    void EnsureAiModelIdsLoaded();
     void EnsureDeathZoneIdsLoaded();
     void EnsureMagicObjIdsLoaded();
     void InitSphereMesh();

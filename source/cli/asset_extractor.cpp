@@ -202,6 +202,27 @@ void AssetExtractor::EnsureAllLevelTextures(const std::string& igi_path,
     }
 }
 
+void AssetExtractor::ClearLevelAssets(int level_no, const std::string& output_dir) {
+    std::error_code ec;
+    std::string levelName = "level" + std::to_string(level_no);
+    const std::string modelsDir   = output_dir + "\\content\\models\\" + levelName;
+    const std::string texturesDir = output_dir + "\\content\\textures\\" + levelName;
+    const std::string cacheDir    = output_dir + "\\content\\cache";
+    const std::string texStamp    = cacheDir + "\\" + levelName + "_textures.stamp";
+    const std::string modelStamp  = cacheDir + "\\" + levelName + "_models.stamp";
+
+    if (fs::exists(modelsDir, ec)) {
+        fs::remove_all(modelsDir, ec);
+        Logger::Get().Log(LogLevel::INFO, "[AssetExtractor] Removed extracted models for level " + std::to_string(level_no));
+    }
+    if (fs::exists(texturesDir, ec)) {
+        fs::remove_all(texturesDir, ec);
+        Logger::Get().Log(LogLevel::INFO, "[AssetExtractor] Removed extracted textures for level " + std::to_string(level_no));
+    }
+    if (fs::exists(texStamp, ec)) fs::remove(texStamp, ec);
+    if (fs::exists(modelStamp, ec)) fs::remove(modelStamp, ec);
+}
+
 void AssetExtractor::CleanupExtractedAssets(const std::string& output_dir) {
     std::error_code ec;
     const std::string modelsDir   = output_dir + "\\content\\models";

@@ -16,6 +16,29 @@
 #include "../parsers/dat_parser.h"
 #include <sstream>
 
+// Strip pixel-format suffixes that appear in DAT texture IDs but aren't part
+// of the actual .tex filename on disk (e.g. "009_09_1_argb8888" → "009_09_1").
+static std::string StripTextureFormatSuffix(const std::string& texId) {
+    static const char* const kSuffixes[] = {
+        "_argb8888", "_rgb565", "_argb1555", "_argb4444",
+        "_a8r8g8b8", "_r5g6b5", "_a1r5g5b5", "_a4r4g4b4"
+    };
+    for (const char* suf : kSuffixes) {
+        const size_t sufLen = std::strlen(suf);
+        if (texId.size() > sufLen) {
+            // Case-insensitive suffix check
+            std::string tail = texId.substr(texId.size() - sufLen);
+            std::string sufLower(suf);
+            for (auto& c : tail)     c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            for (auto& c : sufLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (tail == sufLower) {
+                return texId.substr(0, texId.size() - sufLen);
+            }
+        }
+    }
+    return texId;
+}
+
 
 // ─── EnsurePortalDistancesLoaded ──────────────────────────────────────────────
 void Renderer_Objects::EnsurePortalDistancesLoaded() {
@@ -132,6 +155,61 @@ void Renderer_Objects::EnsureWindowModelIdsLoaded() {
     Logger::Get().Log(LogLevel::INFO,
         "[Renderer_Objects] Loaded " + std::to_string(window_model_ids_.size()) +
         " window/glass model IDs from IGIModels.json");
+}
+
+// ─── EnsureAiModelIdsLoaded ───────────────────────────────────────────────────
+void Renderer_Objects::EnsureAiModelIdsLoaded() {
+    if (ai_ids_loaded_) return;
+    ai_ids_loaded_ = true;
+
+    const std::string jsonPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModels.json";
+    if (!std::filesystem::exists(jsonPath)) return;
+
+    std::ifstream f(jsonPath);
+    if (!f.is_open()) return;
+
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+
+    size_t pos = 0;
+    while (pos < content.size()) {
+        size_t nameKey = content.find("\"ModelName\"", pos);
+        if (nameKey == std::string::npos) break;
+        size_t nameStart = content.find('"', nameKey + 11);
+        if (nameStart == std::string::npos) break;
+        ++nameStart;
+        size_t nameEnd = content.find('"', nameStart);
+        if (nameEnd == std::string::npos) break;
+        std::string modelName = content.substr(nameStart, nameEnd - nameStart);
+
+        size_t idKey = content.find("\"ModelId\"", nameEnd);
+        if (idKey == std::string::npos) break;
+        size_t idStart = content.find('"', idKey + 9);
+        if (idStart == std::string::npos) break;
+        ++idStart;
+        size_t idEnd = content.find('"', idStart);
+        if (idEnd == std::string::npos) break;
+        std::string modelId = content.substr(idStart, idEnd - idStart);
+
+        auto toUpper = [](std::string s) {
+            for (auto& c : s) c = (char)toupper((unsigned char)c);
+            return s;
+        };
+        const std::string upper = toUpper(modelName);
+        if (upper.find("AITYPE_") == 0) {
+            ai_model_ids_.insert(modelId);
+        }
+
+        pos = idEnd + 1;
+    }
+
+    // Also manually include specific hardcoded AI types known to have sunglasses but maybe missing prefix
+    ai_model_ids_.insert("009_01_1"); // Jach Priboi
+    ai_model_ids_.insert("014_01_1"); // Mafia Patrol
+    ai_model_ids_.insert("014_02_1"); // Mafia2 Patrol
+
+    Logger::Get().Log(LogLevel::INFO,
+        "[Renderer_Objects] Loaded " + std::to_string(ai_model_ids_.size()) +
+        " AI model IDs from IGIModels.json");
 }
 
 // ─── EnsureDeathZoneIdsLoaded ──────────────────────────────────────────────────
@@ -602,20 +680,16 @@ void Renderer_Objects::ClearCaches() {
     texture_cache_.clear();
     model_texture_map_cache_.clear();
     
-    global_texture_map_.clear();
-    global_texture_map_loaded_ = false;
+    // We explicitly DO NOT clear global_texture_map_, model_level_map_,
+    // texture_level_map_, window_model_ids_, portal_distances_, deathzone_ids_,
+    // or magicobj_ids_ here. These are populated from global sources (lod.qvm, names.qvm, 
+    // or scanning all 14 levels' DAT files) and their definitions are static across 
+    // level switches. Clearing them causes lazy re-loads that might fail if cache 
+    // stamps trick the asset extractor into skipping partial directories.
     texture_map_level_ = -1;
-    window_model_ids_.clear();
-    window_ids_loaded_ = false;
-    portal_distances_.clear();
-    portal_distances_loaded_ = false;
+    
     logged_draw_buildings_.clear();
-    model_level_map_.clear();
-    texture_level_map_.clear();
-    deathzone_ids_.clear();
-    deathzone_ids_loaded_ = false;
-    magicobj_ids_.clear();
-    magicobj_ids_loaded_ = false;
+
 }
 
 // ─── Shutdown ─────────────────────────────────────────────────────────────────
@@ -1172,7 +1246,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 rootWorldMat = rootWorldMat * parentRot;
 
                 std::unordered_set<std::string> drawn;
-                DrawAttachmentsRecursive(obj.modelId, obj.isBuilding, rootWorldMat, isTransparentPass,
+                DrawAttachmentsRecursive(obj.modelId, obj.modelId, obj.isBuilding, rootWorldMat, isTransparentPass,
                                           loc_model, loc_dirlight, loc_ambient,
                                           loc_useTex, loc_tex, loc_alpha, drawn);
 
@@ -1300,7 +1374,7 @@ void Renderer_Objects::LoadAttachmentsRecursive(const std::string& modelId, bool
 // (translate + rotate only), so children can position themselves relative to it.
 // The 40.96 scale is applied only at the leaf draw call.
 void Renderer_Objects::DrawAttachmentsRecursive(
-    const std::string& parentModelId, bool isBuilding, const glm::mat4& parentWorldMat,
+    const std::string& topLevelModelId, const std::string& parentModelId, bool isBuilding, const glm::mat4& parentWorldMat,
     bool isTransparentPass, GLint loc_model, GLint loc_dirlight,
     GLint loc_ambient, GLint loc_useTex, GLint loc_tex, GLint loc_alpha,
     std::unordered_set<std::string>& drawn,
@@ -1358,7 +1432,7 @@ void Renderer_Objects::DrawAttachmentsRecursive(
         if (!subMesh.fromRenderMesh) {
             std::string childKey = parentModelId + ">" + att.modelId;
             if (drawn.insert(childKey).second) {
-                DrawAttachmentsRecursive(att.modelId, isBuilding, childWorldMat, isTransparentPass,
+                DrawAttachmentsRecursive(topLevelModelId, att.modelId, isBuilding, childWorldMat, isTransparentPass,
                                          loc_model, loc_dirlight, loc_ambient,
                                          loc_useTex, loc_tex, loc_alpha, drawn, leafScale);
             }
@@ -1382,10 +1456,12 @@ void Renderer_Objects::DrawAttachmentsRecursive(
             const float subMaxHalfExtent = std::max(subMesh.halfExtents.x,
                 std::max(subMesh.halfExtents.y, subMesh.halfExtents.z));
             const bool isLargeSlab = (subMaxHalfExtent >= kSlabHalfExtent);
-            if (!subHasTex && isLargeSlab) {
+            EnsureAiModelIdsLoaded();
+            const bool isAiModel = (ai_model_ids_.count(topLevelModelId) > 0);
+            if (!subHasTex && (!isAiModel || isLargeSlab)) {
                 std::string childKey = parentModelId + ">" + att.modelId;
                 if (drawn.insert(childKey).second) {
-                    DrawAttachmentsRecursive(att.modelId, isBuilding, childWorldMat, isTransparentPass,
+                    DrawAttachmentsRecursive(topLevelModelId, att.modelId, isBuilding, childWorldMat, isTransparentPass,
                                              loc_model, loc_dirlight, loc_ambient,
                                              loc_useTex, loc_tex, loc_alpha, drawn, leafScale);
                 }
@@ -1420,7 +1496,7 @@ void Renderer_Objects::DrawAttachmentsRecursive(
             // Still recurse into children — they may need a different pass
             std::string childKey = parentModelId + ">" + att.modelId;
             if (drawn.insert(childKey).second) {
-                DrawAttachmentsRecursive(att.modelId, isBuilding, childWorldMat, isTransparentPass,
+                DrawAttachmentsRecursive(topLevelModelId, att.modelId, isBuilding, childWorldMat, isTransparentPass,
                                           loc_model, loc_dirlight, loc_ambient,
                                           loc_useTex, loc_tex, loc_alpha, drawn, leafScale);
             }
@@ -1502,7 +1578,7 @@ void Renderer_Objects::DrawAttachmentsRecursive(
         // Recurse into this attachment's own children
         std::string childKey = parentModelId + ">" + att.modelId;
         if (drawn.insert(childKey).second) {
-            DrawAttachmentsRecursive(att.modelId, isBuilding, childWorldMat, isTransparentPass,
+            DrawAttachmentsRecursive(topLevelModelId, att.modelId, isBuilding, childWorldMat, isTransparentPass,
                                       loc_model, loc_dirlight, loc_ambient,
                                       loc_useTex, loc_tex, loc_alpha, drawn, leafScale);
         }
@@ -1830,9 +1906,18 @@ GLuint Renderer_Objects::GetOrLoadTexture(const std::string& textureId) {
         return 0;
     }
 
-    const std::string texturePath = FindTextureFile(textureId);
+    // Strip pixel-format suffixes (e.g. "_argb8888") that appear in DAT entries
+    // but aren't part of the actual .tex filename on disk.
+    const std::string strippedId = StripTextureFormatSuffix(textureId);
+
+    // Try stripped ID first, then fall back to original if different
+    std::string texturePath = FindTextureFile(strippedId);
+    if (texturePath.empty() && strippedId != textureId) {
+        texturePath = FindTextureFile(textureId);
+    }
     if (texturePath.empty()) {
-        Logger::Get().Log(LogLevel::WARNING, "[TEX Native] Texture search FAILED for ID: " + textureId);
+        Logger::Get().Log(LogLevel::WARNING, "[TEX Native] Texture search FAILED for ID: " + textureId +
+            (strippedId != textureId ? " (stripped: " + strippedId + ")" : ""));
         return 0;
     }
 
@@ -1852,12 +1937,11 @@ GLuint Renderer_Objects::GetOrLoadTexture(const std::string& textureId) {
 
     const pic_s* pic = pics.pics_;
     Logger::Get().Log(
-        LogLevel::DEBUG,
-        "[TEX Native] Decoded textureId=" + textureId +
-        " path=" + texturePath +
-        " width=" + std::to_string(pic->width_) +
-        " height=" + std::to_string(pic->height_) +
-        " frames=" + std::to_string(pics.num_pic_));
+        LogLevel::INFO,
+        "[TEX Native] Loaded textureId=" + textureId +
+        " " + std::to_string(pic->width_) + "x" + std::to_string(pic->height_) +
+        " frames=" + std::to_string(pics.num_pic_) +
+        " path=" + texturePath);
 
     const GLuint texture = GL_RegisterTexture(pic, GL_REPEAT, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR, true);
     texture_cache_[cacheKey] = texture;
@@ -1943,16 +2027,57 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
                 // Defer to materialSlot lookup from MEF render block data
                 texture = textures[matSlot];
             } else if (matSlot > 0 && !textures.empty()) {
-                // materialSlot is out of range — wrap it (handles 1-based MEF slots and
-                // sub-models whose slots reference the parent's texture list by index).
-                texture = textures[static_cast<size_t>(matSlot) % textures.size()];
-                Logger::Get().Log(
-                    LogLevel::WARNING,
-                    "[TEX Native] materialSlot out of range, wrapping for modelId=" + modelId +
-                    " submeshIndex=" + std::to_string(i) +
-                    " materialSlot=" + std::to_string(matSlot) +
-                    " textureCount=" + std::to_string(textures.size()) +
-                    " wrappedSlot=" + std::to_string(static_cast<size_t>(matSlot) % textures.size()));
+                EnsureAiModelIdsLoaded();
+                if (ai_model_ids_.count(modelId) > 0) {
+                    // materialSlot is out of range — this happens for models like
+                    // sunglasses-bearing characters (009_01_1, 014_01_1, 014_02_1) where
+                    // the MEF render block references a slot beyond the DAT texture list.
+                    // Instead of blindly wrapping (which gives wrong textures), try to
+                    // resolve the texture from the global DAT or by direct name lookup.
+                    bool resolved = false;
+
+                    // 1. Try global DAT lookup: the texture for this slot may be listed
+                    //    under the same model in a different level's DAT.
+                    EnsureGlobalTextureMapLoaded();
+                    {
+                        auto git = global_texture_map_.find(modelId);
+                        if (git != global_texture_map_.end() &&
+                            static_cast<size_t>(matSlot) < git->second.size()) {
+                            const std::string& globalTexId = git->second[static_cast<size_t>(matSlot)];
+                            GLuint globalTex = GetOrLoadTexture(globalTexId);
+                            if (globalTex) {
+                                texture = globalTex;
+                                resolved = true;
+                                Logger::Get().Log(LogLevel::INFO,
+                                    "[TEX Native] AI materialSlot out of range resolved via global DAT for modelId=" + modelId +
+                                    " submeshIndex=" + std::to_string(i) +
+                                    " materialSlot=" + std::to_string(matSlot) +
+                                    " globalTexId=" + globalTexId);
+                            }
+                        }
+                    }
+
+                    if (!resolved) {
+                        // 2. Fallback: use last valid texture (better than wrong wrap)
+                        texture = textures.back();
+                        Logger::Get().Log(LogLevel::WARNING,
+                            "[TEX Native] AI materialSlot out of range, using last texture for modelId=" + modelId +
+                            " submeshIndex=" + std::to_string(i) +
+                            " materialSlot=" + std::to_string(matSlot) +
+                            " textureCount=" + std::to_string(textures.size()));
+                    }
+                } else {
+                    // materialSlot is out of range for non-AI model — wrap it (handles 1-based MEF slots and
+                    // sub-models whose slots reference the parent's texture list by index).
+                    texture = textures[static_cast<size_t>(matSlot) % textures.size()];
+                    Logger::Get().Log(
+                        LogLevel::WARNING,
+                        "[TEX Native] materialSlot out of range, wrapping for modelId=" + modelId +
+                        " submeshIndex=" + std::to_string(i) +
+                        " materialSlot=" + std::to_string(matSlot) +
+                        " textureCount=" + std::to_string(textures.size()) +
+                        " wrappedSlot=" + std::to_string(static_cast<size_t>(matSlot) % textures.size()));
+                }
             } else if (i < textures.size()) {
                 // Sequential index fallback for materialSlot == -1 (not assigned)
                 texture = textures[i];
@@ -1963,6 +2088,17 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
             mesh.subMeshes[i].textureID = texture;
             if (texture) {
                 ++assigned;
+                // Per-slot visibility for sunglasses-bearing models
+                if (modelId == "009_01_1" || modelId == "014_01_1" || modelId == "014_02_1") {
+                    const std::string& tid = (matSlot >= 0 && static_cast<size_t>(matSlot) < textureIds.size())
+                        ? textureIds[static_cast<size_t>(matSlot)]
+                        : (i < textureIds.size() ? textureIds[i] : "?");
+                    Logger::Get().Log(LogLevel::INFO,
+                        "[TEX Native] " + modelId + " submesh[" + std::to_string(i) +
+                        "] matSlot=" + std::to_string(matSlot) +
+                        " texId=" + tid +
+                        " glId=" + std::to_string(texture));
+                }
             }
         }
 
@@ -2506,18 +2642,21 @@ void Renderer_Objects::DrawAttachmentsForSpline(
     // Opaque pass
     {
         std::unordered_set<std::string> drawn;
-        DrawAttachmentsRecursive(modelId, isBuilding, unscaledWorldMat, /*isTransparentPass=*/false,
+        DrawAttachmentsRecursive(modelId, modelId, isBuilding, unscaledWorldMat, /*isTransparentPass=*/false,
                                  loc_model, loc_dirlight, loc_ambient, loc_useTex, loc_tex, loc_alpha, drawn, leafScale);
     }
 
     // Transparent pass (windows / glass)
     {
         std::unordered_set<std::string> drawn;
-        DrawAttachmentsRecursive(modelId, isBuilding, unscaledWorldMat, /*isTransparentPass=*/true,
+        DrawAttachmentsRecursive(modelId, modelId, isBuilding, unscaledWorldMat, /*isTransparentPass=*/true,
                                  loc_model, loc_dirlight, loc_ambient, loc_useTex, loc_tex, loc_alpha, drawn, leafScale);
     }
 
     glDisable(GL_POLYGON_OFFSET_FILL);
     glUseProgram(0);
 }
+
+
+
 

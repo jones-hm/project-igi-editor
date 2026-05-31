@@ -673,10 +673,6 @@ void QSC::Parse() {
 		if (*pc_ == ';') {
 			pc_++;
 		}
-		else {
-			Log(log_type_t::LOG_ERROR, __FILE__, __LINE__, "QSC::Parse\n");
-			break;
-		}
 	}
 }
 
@@ -775,6 +771,20 @@ QSC::func_s* QSC::ParseFunc() {
 
 
 	char* func_name_end = pc_;
+
+	// Handle assignments e.g. "v0 = Task_New("
+	char* temp_pc = pc_;
+	while (*temp_pc != 0 && (*temp_pc == ' ' || *temp_pc == '\t' || *temp_pc == '\r' || *temp_pc == '\n')) temp_pc++;
+	if (*temp_pc == '=') {
+		temp_pc++; // skip '='
+		while (*temp_pc != 0 && (*temp_pc == ' ' || *temp_pc == '\t' || *temp_pc == '\r' || *temp_pc == '\n')) temp_pc++;
+		pc_ = temp_pc;
+		func_name = pc_;
+		if (!Parser_SkipFuncName()) {
+			return nullptr;
+		}
+		func_name_end = pc_;
+	}
 
 	if (!Parser_ForwardToChar('(')) {
 		return nullptr;
@@ -954,21 +964,48 @@ bool QSC::ParseArgs(func_s* func) {
 			}
 		}
 		else {
-			func_s* nested_func = ParseFunc();
-			if (!nested_func) {
-				return false;
+			// Check if it's an identifier or a function call
+			char* temp_pc = pc_;
+			while (*temp_pc != 0 && IsValidNameChar(*temp_pc)) temp_pc++;
+			while (*temp_pc != 0 && (*temp_pc == ' ' || *temp_pc == '\t' || *temp_pc == '\r' || *temp_pc == '\n')) temp_pc++;
+			
+			if (*temp_pc == '(') {
+				func_s* nested_func = ParseFunc();
+				if (!nested_func) {
+					return false;
+				}
+
+				arg_s* new_arg = AllocArg();
+				if (!new_arg) {
+					return false;
+				}
+
+				new_arg->next_ = nullptr;
+				new_arg->type_ = arg_s::type_t::FUNC;
+				new_arg->func_ = nested_func;
+
+				AddArgToFunc(func, new_arg);
+			} else {
+				// It's an identifier argument. Treat as a string so FindFuncByStr can still read it.
+				char* ident_start = pc_;
+				if (!Parser_SkipFuncName()) {
+					return false;
+				}
+				char backup_c = *pc_;
+				*pc_ = '\0';
+
+				arg_s* new_arg = AllocArg();
+				if (!new_arg) {
+					return false;
+				}
+
+				new_arg->next_ = nullptr;
+				new_arg->type_ = arg_s::type_t::STR;
+				new_arg->str_ = ident_start;
+
+				AddArgToFunc(func, new_arg);
+				*pc_ = backup_c;
 			}
-
-			arg_s* new_arg = AllocArg();
-			if (!new_arg) {
-				return false;
-			}
-
-			new_arg->next_ = nullptr;
-			new_arg->type_ = arg_s::type_t::FUNC;
-			new_arg->func_ = nested_func;
-
-			AddArgToFunc(func, new_arg);
 
 			if (!Parser_SkipWhiteChar()) {
 				return false;
