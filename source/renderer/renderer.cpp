@@ -1553,6 +1553,14 @@ void Renderer::Draw(const draw_params_s &params,
             return (idx >= 0 && idx < (int)obj.argTokens.size()) ? obj.argTokens[idx] : std::string("-");
           };
 
+          // Like tok() but strips surrounding double-quotes for display.
+          auto display_tok = [&](int idx) -> std::string {
+            std::string v = tok(idx);
+            if (v.size() >= 2 && v.front() == '"' && v.back() == '"')
+              return v.substr(1, v.size() - 2);
+            return v;
+          };
+
           // Caret blink (on/off ~2Hz). ~7px per char matches the wrap heuristic.
           const bool caret_on = ((glutGet(GLUT_ELAPSED_TIME) / 500) & 1) == 0;
           const int  caret_field = task_tree_view.prop_text_edit_field_;
@@ -1760,7 +1768,7 @@ void Renderer::Draw(const draw_params_s &params,
               quad(w.x1, w.y1, w.x2, w.y2, 0.10f, 0.10f, 0.06f, 0.85f);
               border(w.x1, w.y1, w.x2, w.y2, editing ? 1.0f : 1.0f,
                      editing ? 0.95f : 0.85f, editing ? 0.2f : 0.0f);
-              draw_edit_box(w, field_id, tok(fd.argOffset), multiline);
+              draw_edit_box(w, field_id, display_tok(fd.argOffset), multiline);
               y = w.y2 + 2;
             } else if (is_bool) {
               const auto& w = L.widgets[wi++];
