@@ -2929,7 +2929,7 @@ void App::EditorProcessClick() {
 		}
 
 		Logger::Get().Log(LogLevel::INFO, "[App] Selected object index=" + std::to_string(pickedObject) + " model=" + obj.modelId + " type=" + (obj.isBuilding ? "building" : "object"));
-		printf("Selected Object [%d]: %s (%s)\n", selected_object_index_, 
+		printf("Selected Object [%d]: %s (%s)\n", selected_object_index_,
 			objects[selected_object_index_].name.c_str(), objects[selected_object_index_].modelId.c_str());
 		printf("  Pos: (%.0f, %.0f, %.0f)\n", (double)obj.pos.x, (double)obj.pos.y, (double)obj.pos.z);
 		printf("  Rot (Alpha/Beta/Gamma): (%.2f, %.2f, %.2f)\n", (double)obj.rot.x, (double)obj.rot.y, (double)obj.rot.z);
@@ -2938,6 +2938,26 @@ void App::EditorProcessClick() {
 		marker_manip_.start_y_ = mouse_state_.prior_y_;
 		marker_manip_.start_pos_ = obj.pos;
 		marker_manip_.start_rot_ = obj.rot;
+
+		// Scroll the TaskTree so the newly selected object is visible.
+		{
+			auto visibleList = GetVisibleTreeNodes();
+			int current_row = -1;
+			for (int i = 0; i < (int)visibleList.size(); ++i) {
+				if (visibleList[i] == selected_object_index_) { current_row = i; break; }
+			}
+			if (current_row >= 0) {
+				const int row_h   = 16;
+				const int start_y = 30;
+				int max_rows = (window_state_.viewport_height_ - 50 - start_y) / row_h;
+				if (max_rows > 0) {
+					if (current_row < tree_scroll_offset_)
+						tree_scroll_offset_ = current_row;
+					else if (current_row >= tree_scroll_offset_ + max_rows)
+						tree_scroll_offset_ = current_row - max_rows + 1;
+				}
+			}
+		}
 	}
 	else {
 		selected_object_index_ = -1;
