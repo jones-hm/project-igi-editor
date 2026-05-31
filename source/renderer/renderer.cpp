@@ -1678,8 +1678,14 @@ void Renderer::Draw(const draw_params_s &params,
               border(pad.x1, pad.y1, pad.x2, pad.y2, 1.0f, 1.0f, 1.0f);
               {
                 double px = 0, py = 0;
-                try { px = std::stod(tok(fd.argOffset + 0)); } catch(...) {}
-                try { py = std::stod(tok(fd.argOffset + 1)); } catch(...) {}
+                if (task_tree_view.prop_text_edit_field_ == fi * 3 + 0)
+                  try { px = std::stod(task_tree_view.prop_text_buf_); } catch(...) {}
+                else
+                  try { px = std::stod(tok(fd.argOffset + 0)); } catch(...) {}
+                if (task_tree_view.prop_text_edit_field_ == fi * 3 + 1)
+                  try { py = std::stod(task_tree_view.prop_text_buf_); } catch(...) {}
+                else
+                  try { py = std::stod(tok(fd.argOffset + 1)); } catch(...) {}
                 const double win = 50.0; // ± window mapped across the pad
                 int cx = pad.x1 + (pad.x2 - pad.x1) / 2;
                 int cy = pad.y1 + (pad.y2 - pad.y1) / 2;
@@ -1694,7 +1700,11 @@ void Renderer::Draw(const draw_params_s &params,
               quad(zs.x1, zs.y1, zs.x2, zs.y2, 0.0f, 0.0f, 0.0f, 0.40f);
               border(zs.x1, zs.y1, zs.x2, zs.y2, 1.0f, 1.0f, 1.0f);
               {
-                double pz = 0; try { pz = std::stod(tok(fd.argOffset + 2)); } catch(...) {}
+                double pz = 0;
+                if (task_tree_view.prop_text_edit_field_ == fi * 3 + 2)
+                  try { pz = std::stod(task_tree_view.prop_text_buf_); } catch(...) {}
+                else
+                  try { pz = std::stod(tok(fd.argOffset + 2)); } catch(...) {}
                 const double zwin = 50.0;
                 double f = (pz - std::floor(pz / zwin) * zwin) / zwin; // 0..1
                 int th = zs.y2 - (int)(f * (zs.y2 - zs.y1));
@@ -1813,7 +1823,11 @@ void Renderer::Draw(const draw_params_s &params,
               int cy = (sl.y1 + sl.y2) / 2;
               quad(sl.x1, cy - 2, sl.x2, cy + 2, 0.0f, 0.0f, 0.0f, 0.40f);
               border(sl.x1, cy - 2, sl.x2, cy + 2, 1.0f, 1.0f, 1.0f);
-              float v = 0.f; try { v = std::stof(tok(fd.argOffset)); } catch(...) {}
+              float v = 0.f;
+              if (task_tree_view.prop_text_edit_field_ == fi * 3 + 0)
+                try { v = std::stof(task_tree_view.prop_text_buf_); } catch(...) {}
+              else
+                try { v = std::stof(tok(fd.argOffset)); } catch(...) {}
               float norm = std::max(0.f, std::min(1.f, (v - std::floor(v / 200.f) * 200.f) / 200.f));
               int tx = sl.x1 + (int)(norm * (sl.x2 - sl.x1 - 6));
               bool drag = (task_tree_view.prop_field_index_ == fi * 3 + 0);

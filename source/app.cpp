@@ -3403,6 +3403,21 @@ void App::CommitPropTextEdit() {
 	}
 	obj.argTokens[argIdx] = tokenVal;
 
+	// Sync obj.rot after orientation field commits so the 3D marker updates.
+	bool is_ori_field = (tn == "Real32x9");
+	bool is_gamma_field = (tn == "Real32" && (fd.name == "Gamma" || fd.name == "Heading"));
+	if (is_ori_field) {
+		if (comp == 0 && fd.argOffset < (int)obj.argTokens.size())
+			try { obj.rot.x = std::stod(obj.argTokens[fd.argOffset]); } catch(...) {}
+		if (comp == 1 && fd.argOffset + 1 < (int)obj.argTokens.size())
+			try { obj.rot.y = std::stod(obj.argTokens[fd.argOffset + 1]); } catch(...) {}
+		if (comp == 2 && fd.argOffset + 2 < (int)obj.argTokens.size())
+			try { obj.rot.z = std::stod(obj.argTokens[fd.argOffset + 2]); } catch(...) {}
+	} else if (is_gamma_field) {
+		if (fd.argOffset < (int)obj.argTokens.size())
+			try { obj.rot.z = std::stod(obj.argTokens[fd.argOffset]); } catch(...) {}
+	}
+
 	// Mirror typed coords into obj.pos for ObjectPos boxes.
 	if (is_pos) {
 		double v = 0; try { v = std::stod(prop_text_buf_); } catch(...) {}
