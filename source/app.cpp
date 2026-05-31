@@ -806,11 +806,13 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 									input_.keys_ |= MK_MANIP_S;
 									UpdateMarkerManipulation();
 									input_.keys_ &= ~MK_MANIP_S;
+									mouse_state_.left_button_down_ = false;  // prevent drag from overwriting snap
 								} else if (w.kind == K::SnapObject) {
 									PushUndoState();
 									input_.keys_ |= MK_MANIP_O;
 									UpdateMarkerManipulation();
 									input_.keys_ &= ~MK_MANIP_O;
+									mouse_state_.left_button_down_ = false;  // prevent drag from overwriting snap
 								} else if (w.kind == K::StringBox) {
 									prop_text_edit_field_ = w.fieldIndex * 3 + w.comp;
 									int argIdx = schema[w.fieldIndex].argOffset + w.comp;
