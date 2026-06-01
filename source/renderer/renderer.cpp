@@ -964,7 +964,7 @@ void Renderer::Draw(const draw_params_s &params,
       // Translucent white & yellow background (white and yellow transparent)
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      glColor4f(0.06f, 0.06f, 0.09f, 0.85f);
+      glColor4f(0.0f, 0.0f, 0.0f, 0.45f);
       glBegin(GL_QUADS);
       glVertex2i(picker_x, card_bottom_y);
       glVertex2i(picker_x + picker_w, card_bottom_y);
