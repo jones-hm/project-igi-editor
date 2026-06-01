@@ -1047,6 +1047,7 @@ void App::Input_OnMotion(int x, int y) {
 						glm::dvec3 deltaPos = obj.pos - oldPos;
 						PropagateTransformToChildren(selected_object_index_, deltaPos, glm::dmat3(1.0), oldPos);
 						level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
+						viewer_.pos_ += glm::vec3(deltaPos);
 					} else if (is_pos && comp == 2) {
 						glm::dvec3 oldPos = obj.pos;
 						glm::dvec3 oldRot = obj.rot;
@@ -1059,6 +1060,7 @@ void App::Input_OnMotion(int x, int y) {
 						glm::dvec3 deltaPos = obj.pos - oldPos;
 						PropagateTransformToChildren(selected_object_index_, deltaPos, glm::dmat3(1.0), oldPos);
 						level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
+						viewer_.pos_ += glm::vec3(deltaPos);
 					} else {
 						glm::dvec3 oldPos = obj.pos;
 						glm::dvec3 oldRot = obj.rot;
