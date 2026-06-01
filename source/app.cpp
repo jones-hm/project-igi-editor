@@ -2970,6 +2970,8 @@ void App::EditorProcessClick() {
 				}
 			}
 		}
+
+		prop_editor_open_ = true;
 	}
 	else {
 		selected_object_index_ = -1;
