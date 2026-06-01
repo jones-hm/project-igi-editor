@@ -1082,6 +1082,10 @@ void App::Input_OnMotion(int x, int y) {
 							else if (comp == 1) obj.rot.y = nv;
 							else                obj.rot.z = nv;
 						}
+						// Sync single-rotation Real32 fields (Gamma/Heading) to obj.rot.z so
+						// UpdateCoordinatesInLine doesn't overwrite argTokens with stale obj.rot.
+						bool isSingleRot = (tn == "Real32" && (fd.name == "Gamma" || fd.name == "Heading"));
+						if (isSingleRot) obj.rot.z = (double)nv;
 						obj.modified = true;
 						if (is_ori) {
 							glm::dmat3 deltaWorld = BuildRotMatZXY(obj.rot) * glm::transpose(BuildRotMatZXY(oldRot));
@@ -3453,6 +3457,13 @@ void App::CommitPropTextEdit() {
 		if      (comp == 0) obj.pos.x = v;
 		else if (comp == 1) obj.pos.y = v;
 		else                obj.pos.z = v;
+	}
+	// Sync model field to obj.modelId so UpdateCoordinatesInLine doesn't
+	// overwrite the new model with the stale obj.modelId.
+	bool is_model_field = is_str && (fd.name == "Model" ||
+	                                 fd.name.find("Model") != std::string::npos);
+	if (is_model_field) {
+		obj.modelId = StripQuotes(prop_text_buf_);
 	}
 	obj.modified = true;
 	level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
