@@ -1361,8 +1361,9 @@ void App::Input_OnSpecial(int key, int x, int y) {
 	}
 
 	if (key == GLUT_KEY_F2) {
-		terrain_edit_enabled_ = !terrain_edit_enabled_;
-		printf("Terrain Editing: %s\n", terrain_edit_enabled_ ? "ENABLED" : "DISABLED");
+		show_hud_ = !show_hud_;
+		bridge_.SetEnabled(show_hud_);
+		Logger::Get().Log(LogLevel::INFO, std::string("[App] TaskTree ") + (show_hud_ ? "shown" : "hidden"));
 		return;
 	}
 
@@ -1717,6 +1718,13 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			return;
 		}
 		return; // Block other keyboard input while picker is open
+	}
+
+	// SHIFT+M: toggle magic object spheres
+	if ((key == 'M' || key == 'm') && (glutGetModifiers() & GLUT_ACTIVE_SHIFT)) {
+		show_magic_obj_spheres_ = !show_magic_obj_spheres_;
+		Logger::Get().Log(LogLevel::INFO, std::string("[App] Magic objects ") + (show_magic_obj_spheres_ ? "visible" : "hidden"));
+		return;
 	}
 
 	// C3: Ctrl+F — toggle find bar (key 6 = Ctrl+F)
@@ -2969,8 +2977,6 @@ void App::EditorProcessClick() {
 				}
 			}
 		}
-
-		prop_editor_open_ = true;
 	}
 	else {
 		selected_object_index_ = -1;
