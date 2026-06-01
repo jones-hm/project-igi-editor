@@ -1601,12 +1601,6 @@ void Renderer::Draw(const draw_params_s &params,
             }
           };
 
-          // Opaque panel background covering the left strip + border.
-          quad(L.panel_x, L.panel_y, L.panel_x + L.panel_w, L.panel_y + L.panel_h,
-               0.0f, 0.0f, 0.0f, 0.45f);
-          border(L.panel_x, L.panel_y, L.panel_x + L.panel_w, L.panel_y + L.panel_h,
-                 1.0f, 1.0f, 1.0f);
-
           // Header text — track running screen y to mirror the layout.
           int ty = L.panel_y + PropPanel::kPad;
           char hdr[160];
