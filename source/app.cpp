@@ -891,6 +891,50 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 				return; // Block all other interactions while paused
 			}
 
+			// Task picker mouse click: left-click on an item selects it
+			if (task_picker_open_) {
+				const int picker_x = 20;
+				const int picker_w = 520;
+				const int picker_items_top_y = 50; // items start below header (screen coords)
+				const int row_h = 16;
+
+				if (x >= picker_x && x <= picker_x + picker_w && y >= picker_items_top_y) {
+					int row = (y - picker_items_top_y) / row_h;
+					int target_idx = task_picker_scroll_offset_ + row;
+
+					// Build picker list (same logic as Input_OnSpecial picker handling)
+					auto& objects = level_.GetLevelObjects().GetObjects();
+					std::vector<int> picker_to_objects;
+					std::string search_lower = task_picker_search_;
+					std::transform(search_lower.begin(), search_lower.end(), search_lower.begin(),
+					               [](unsigned char c) { return std::tolower(c); });
+					for (int i = 0; i < (int)objects.size(); ++i) {
+						if (!objects[i].deleted) {
+							const auto& obj = objects[i];
+							std::string label = obj.type;
+							if (!obj.taskId.empty() && obj.taskId != "-1") {
+								label += " (" + obj.taskId;
+								if (!obj.name.empty()) label += ", \"" + obj.name + "\"";
+								label += ")";
+							} else if (!obj.name.empty()) {
+								label += " (\"" + obj.name + "\")";
+							}
+							std::string label_lower = label;
+							std::transform(label_lower.begin(), label_lower.end(), label_lower.begin(),
+							               [](unsigned char c) { return std::tolower(c); });
+							if (search_lower.empty() || label_lower.find(search_lower) != std::string::npos)
+								picker_to_objects.push_back(i);
+						}
+					}
+
+					if (target_idx >= 0 && target_idx < (int)picker_to_objects.size()) {
+						task_picker_selected_idx_ = target_idx;
+					}
+					mouse_state_.left_button_down_ = false;
+					return;
+				}
+			}
+
 			// Priority: TreeView HUD interaction
 			if (show_hud_ && x < 350 && !enableCameraMode) { // Tree is on the left
 				ProcessTreeViewClick(x, y);
