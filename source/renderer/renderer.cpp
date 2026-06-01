@@ -823,6 +823,14 @@ void Renderer::Draw(const draw_params_s &params,
       info_object_index = task_tree_view.selected_object_index_;
     }
 
+    // Suppress tooltip when mouse is over the TaskTree or property panel UI
+    {
+        bool over_tree  = task_tree_view.show_hud_ && task_tree_view.mouse_x_ < 350;
+        bool over_panel = task_tree_view.prop_editor_open_ &&
+                          task_tree_view.mouse_x_ < (PropPanel::kLeft + PropPanel::kWidth);
+        if (over_tree || over_panel) info_object_index = -1;
+    }
+
     if (info_object_index >= 0 && task_tree_view.level_objects_) {
       const auto &objects = task_tree_view.level_objects_->GetObjects();
       if (info_object_index < (int)objects.size()) {
@@ -921,11 +929,6 @@ void Renderer::Draw(const draw_params_s &params,
           draw_text_sm(text_x, text_y, buf, 0.0f, 1.0f, 0.0f);  // always green
           text_y += 15;
         }
-
-        snprintf(buf, sizeof(buf), "Pos: X: %.1f Y: %.1f Z: %.1f", obj.pos.x,
-                 obj.pos.y, obj.pos.z);
-        draw_text_sm(text_x, text_y, buf, 0.7f, 0.7f, 0.7f);
-        text_y += 15;
 
         if (!task_tree_view.status_msg_.empty() &&
             info_object_index == task_tree_view.selected_object_index_) {
