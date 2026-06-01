@@ -269,14 +269,19 @@ static GLuint LoadOneSpr(const char* path, int& w, int& h) {
 	const TEXImage& img = tex.images[0];
 
 	std::vector<uint8_t> rgba;
-	if (img.mode == 2) { // RGB565 — no alpha channel
+	if (img.mode == 2) { // RGB565 — no alpha channel; chroma-key dark pixels as transparent
 		rgba.reserve(img.width * img.height * 4);
 		for (size_t i = 0; i + 1 < img.pixels.size(); i += 2) {
 			uint16_t p = img.pixels[i] | ((uint16_t)img.pixels[i + 1] << 8);
-			rgba.push_back(((p >> 11) & 0x1F) << 3);
-			rgba.push_back(((p >> 5)  & 0x3F) << 2);
-			rgba.push_back( (p        & 0x1F) << 3);
-			rgba.push_back(255);
+			uint8_t r = ((p >> 11) & 0x1F) << 3;
+			uint8_t g = ((p >> 5)  & 0x3F) << 2;
+			uint8_t b =  (p        & 0x1F) << 3;
+			// Chroma-key: near-black pixels become transparent background
+			uint8_t a = (r < 30 && g < 30 && b < 30) ? 0 : 255;
+			rgba.push_back(r);
+			rgba.push_back(g);
+			rgba.push_back(b);
+			rgba.push_back(a);
 		}
 	} else { // ARGB8888 (modes 3, 67) — swizzle BGRA → RGBA
 		rgba.resize(img.pixels.size());
