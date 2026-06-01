@@ -945,7 +945,7 @@ void Renderer::Draw(const draw_params_s &params,
 
     if (task_tree_view.task_picker_open_ && task_tree_view.level_objects_) {
       int picker_x = 20;
-      int picker_w = 320;
+      int picker_w = 520;
       int viewport_h = params.view_define_->viewport_height_;
 
       // Proportional card layout:
@@ -994,7 +994,7 @@ void Renderer::Draw(const draw_params_s &params,
       glEnd();
 
       // Title
-      draw_text(picker_x + 15, 38, "SELECT SUBTREE TO CLONE", 1.0f, 0.9f, 0.1f); // Vibrant yellow/gold
+      draw_text(picker_x + 15, 38, "Select Task", 1.0f, 0.9f, 0.1f); // Vibrant yellow/gold
 
       // Search box at top right
       int box_left = picker_x + picker_w - 180;
