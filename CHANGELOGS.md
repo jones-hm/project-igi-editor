@@ -1,5 +1,76 @@
 # Changelogs
 
+## 2.5.0 - Property Panel Scrolling & Child Task Display
+This release adds a scrollable property editor and displays weapon/ammo fields for soldier units.
+
+### 📋 Enhanced Property Editor
+- **Vertical Panel Scrolling**: Property panel now supports mouse-wheel scrolling for large task schemas, with a visual scrollbar indicator.
+- **Child Task Fields Display**: Weapon, ammo, and AI sub-task fields now appear inline below parent task properties as read-only previews for quick reference.
+- **Panel Scroll Reset**: Scroll position automatically resets when selecting a new object, preventing disorientation.
+
+### 🎯 UI Improvements
+- **Compact Scrollbar**: Minimal scrollbar thumb appears only when content overflows the visible panel area.
+- **Keyboard-Free Navigation**: Intuitive mouse-wheel scrolling makes exploring large task hierarchies seamless without switching to the tree view.
+
+---
+
+## 2.4.0 - Position Editor Drag & All-Object Picking
+This update fixes position editing when the cursor hits window edges and enables clicking collision-only meshes.
+
+### 🖱️ Position Editor Edge Continuity
+- **Stuck Cursor Handling**: When your mouse hits the window edge, the position editor now remembers your last drag direction and continues moving the object smoothly.
+- **Per-Frame Delta Logic**: Switching from cumulative to per-frame drag delta prevents stalling when the cursor can't move further.
+- **Seamless Manipulation**: No need to re-position your mouse—object keeps moving in the direction you were pushing.
+
+### 🎯 Universal Object Picking
+- **Collision-Mesh Fallback**: Vehicles, cargo containers, and other collision-only models are now clickable in the viewport, even without render geometry.
+- **All Attachments Pickable**: MEF sub-models now serve as valid pick targets, allowing selection of child objects through any mesh surface.
+
+---
+
+## 2.3.0 - Font Toggle & Text Cursor Alignment
+This release adds live font switching and precise text cursor positioning in property textboxes.
+
+### 🔤 Font System Enhancements
+- **Live Font Toggle**: New "Font: Editor / Font: System" button in pause menu switches between bitmap fonts at runtime without reloading.
+- **Dynamic Font Switching**: All HUD text instantly updates when toggling fonts—no need to restart the editor.
+- **Clean UI**: Removed unused Debug button and replaced with functional font control.
+
+### ✏️ Text Editing Precision
+- **Cursor-to-Glyph Alignment**: Text cursor now sits exactly where typed characters will appear, not offset to the right.
+- **Per-Character Advances**: Cursor position calculated from actual glyph advance widths, supporting variable-width fonts.
+- **Arrow Key Navigation**: Caret movement with arrow keys now aligns perfectly with the rendered text.
+
+---
+
+## 2.2.0 - Building Interior Occlusion & Door Selection
+This release improves building visibility logic and allows selecting doors, lights, and cameras from outside.
+
+### 🏢 Smart Building Occlusion
+- **Selective Child Hiding**: Only interior sub-structures are hidden when viewing from outside; doors, lights, and security cameras remain clickable on exterior surfaces.
+- **Exterior Attachment Support**: Building-attached objects (doors, alarms, cameras) are now properly selectable from outside without hiding them.
+- **Ancestor Chain Traversal**: Complex nested building structures now correctly hide only true interior children, not surface attachments.
+
+### 🔍 Improved Selection
+- **Full Building Hierarchy Support**: Sub-children of buildings (nested MEF attachments) can now be selected from inside the building.
+- **Occlusion Depth Testing**: Building hulls render first in the picking pass, using GPU depth testing to properly occlude interior objects from outside views.
+
+---
+
+## 2.1.0 - Windows DPI Scaling & Windowed-Mode Precision
+This release fixes cursor precision in windowed mode on high-DPI displays.
+
+### 💻 High-DPI Support
+- **Per-Monitor DPI Awareness**: Editor now declares DPI awareness to Windows, ensuring GLUT delivers physical pixel coordinates.
+- **Windowed Mode Precision**: Slider, button, and textbox hit-tests now respond exactly under your cursor at 100%, 125%, and 150% display scaling.
+- **Runtime DPI Detection**: Fallback logic automatically detects display scaling if the OS manifest isn't detected.
+
+### 🎨 Widget Accuracy
+- **Pixel-Perfect Hit-Testing**: All interactive elements (sliders, text fields, buttons) respond with zero offset, even on scaled displays.
+- **Cross-Display Compatibility**: Works seamlessly with external monitors at different scaling factors.
+
+---
+
 ## 2.0.0 - Workspace Navigation & Map Selection
 This release introduces direct 3D interaction and enhanced state restoration.
 
