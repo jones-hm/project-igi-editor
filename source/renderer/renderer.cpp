@@ -81,7 +81,7 @@ static void DrawFontText(int x, int y_gl, const char* str, float r, float g, flo
 
   const float texW = (float)g_editorFont.texWidth;
   (void)texW;
-  const int spaceAdvance = (int)((g_editorFont.lineHeight > 0 ? g_editorFont.lineHeight / 2 : 4) * scale);
+  const float spaceAdvance = (g_editorFont.lineHeight > 0 ? g_editorFont.lineHeight / 2 : 4) * scale;
 
   glEnable(GL_TEXTURE_2D);
   glBindTexture(GL_TEXTURE_2D, g_editorFontTex);
@@ -89,15 +89,17 @@ static void DrawFontText(int x, int y_gl, const char* str, float r, float g, flo
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   glColor4f(r, g, b, 1.0f);
 
-  int pen_x = x;
-  int pen_y = y_gl; // top of current line in gl space (y up)
+  // Float pen so fractional per-glyph scaling accumulates smoothly — every 1-pt
+  // size step visibly changes width instead of rounding to the same integer.
+  float pen_x = (float)x;
+  float pen_y = (float)y_gl; // top of current line in gl space (y up)
 
   glBegin(GL_QUADS);
   for (const char* p = str; *p; ++p) {
     unsigned char c = (unsigned char)*p;
     if (c == '\n') {
-      pen_x = x;
-      pen_y -= (int)(g_editorFont.lineHeight * scale);
+      pen_x = (float)x;
+      pen_y -= g_editorFont.lineHeight * scale;
       continue;
     }
 
@@ -108,10 +110,10 @@ static void DrawFontText(int x, int y_gl, const char* str, float r, float g, flo
     }
 
     const FntGlyph& gl = it->second;
-    float x0 = (float)pen_x;
-    float x1 = (float)(pen_x + gl.width * scale);
-    float yTop = (float)pen_y;             // y up: top of glyph
-    float yBot = (float)(pen_y - gl.height * scale);
+    float x0 = pen_x;
+    float x1 = pen_x + gl.width * scale;
+    float yTop = pen_y;                    // y up: top of glyph
+    float yBot = pen_y - gl.height * scale;
 
     // Atlas V grows downward; gl V grows upward -> top of glyph uses v0.
     glTexCoord2f(gl.u0, gl.v0); glVertex2f(x0, yTop);
@@ -119,7 +121,7 @@ static void DrawFontText(int x, int y_gl, const char* str, float r, float g, flo
     glTexCoord2f(gl.u1, gl.v1); glVertex2f(x1, yBot);
     glTexCoord2f(gl.u0, gl.v1); glVertex2f(x0, yBot);
 
-    pen_x += (int)(gl.advance * scale);
+    pen_x += gl.advance * scale;
   }
   glEnd();
 
@@ -390,12 +392,13 @@ void Renderer::Draw(const draw_params_s &params,
     // chosen in the pause menu. 12 is the baseline; 10/18 scale the editor
     // bitmap glyphs and pick the matching GLUT bitmap for the fallback path.
     const int uiFontSize = Config::Get().systemFontSize;
-    const float uiFontScale = (uiFontSize == 10) ? 0.85f
-                            : (uiFontSize == 18) ? 1.5f : 1.0f;
-    void *uiGlutFont = (uiFontSize == 10) ? GLUT_BITMAP_HELVETICA_10
-                     : (uiFontSize == 18) ? GLUT_BITMAP_HELVETICA_18
+    // Continuous scale: 12 is the baseline; size changes in 1-pt steps. The editor
+    // bitmap font scales smoothly; the GLUT fallback picks the nearest bitmap.
+    const float uiFontScale = (float)uiFontSize / 12.0f;
+    void *uiGlutFont = (uiFontSize <= 11) ? GLUT_BITMAP_HELVETICA_10
+                     : (uiFontSize >= 15) ? GLUT_BITMAP_HELVETICA_18
                                           : GLUT_BITMAP_HELVETICA_12;
-    const int uiLineH = (int)(15 * uiFontScale);
+    const int uiLineH = std::max(10, (int)(15 * uiFontScale));
 
     // Pixel width of the first `count` chars of `str` in the active HUD font.
     // Mirrors DrawFontText's per-glyph advance exactly so callers (e.g. the text
@@ -514,10 +517,10 @@ void Renderer::Draw(const draw_params_s &params,
     // draw_text_sys: always uses GLUT system font (for Escape menu, Help, Debug).
     // Font size is chosen via Config::Get().systemFontSize (10, 12, or 18).
     const int sysFontSize = Config::Get().systemFontSize;
-    void* sysFontPtr = (sysFontSize == 10) ? GLUT_BITMAP_HELVETICA_10
-                     : (sysFontSize == 18) ? GLUT_BITMAP_HELVETICA_18
+    void* sysFontPtr = (sysFontSize <= 11) ? GLUT_BITMAP_HELVETICA_10
+                     : (sysFontSize >= 15) ? GLUT_BITMAP_HELVETICA_18
                                            : GLUT_BITMAP_HELVETICA_12;
-    const int sysLineH = (sysFontSize == 10) ? 13 : (sysFontSize == 18) ? 22 : 15;
+    const int sysLineH = (sysFontSize <= 11) ? 13 : (sysFontSize >= 15) ? 22 : 15;
     auto draw_text_sys = [&](int x, int y, const char *str, float r, float g,
                              float b) {
       std::stringstream ss(str);
@@ -1305,15 +1308,23 @@ void Renderer::Draw(const draw_params_s &params,
                         task_tree_view.mouse_y_ <= screen_btn_y + 15);
 
         if (i == FONT_ROW) {
+          // Whole row "Font: <type>  [-] <n> [+]" is centered as one group.
+          // Layout constants MUST match the click handler in app.cpp.
+          const int sz_box_w = 34, btn_w = 22, gap = 6;
+          const int label_w  = 96;   // "Font: Editor"/"Font: System" (~8px/char)
+          const int label_gap = 16;
+          const int controls_w = btn_w + gap + sz_box_w + gap + btn_w;
+          const int group_w = label_w + label_gap + controls_w;
+          int gx = menu_x + (menu_w - group_w) / 2;
+
           // Left: font-type toggle label.
-          draw_text_sys(menu_x + 24, screen_btn_y, font_btn_label,
+          draw_text_sys(gx, screen_btn_y, font_btn_label,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
           // Right: [-] [size] [+] size control.
-          const int sz_box_w = 34, btn_w = 22, gap = 6;
-          int plus_x  = menu_x + menu_w - 24 - btn_w;
-          int box_x   = plus_x - gap - sz_box_w;
-          int minus_x = box_x - gap - btn_w;
+          int minus_x = gx + label_w + label_gap;
+          int box_x   = minus_x + btn_w + gap;
+          int plus_x  = box_x + sz_box_w + gap;
           int row_top = gl_btn_y - 14, row_bot = gl_btn_y + 10;
 
           auto sbox = [&](int x1, int w, const char *txt) {
@@ -1443,10 +1454,10 @@ void Renderer::Draw(const draw_params_s &params,
       const int content_bot = menu_y + menu_h - 20;
       const int max_rows = (content_bot - content_top) / row_h;
 
-      // Background
+      // Background — same semi-transparent dark as the TaskTree panel
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      glColor4f(0.04f, 0.04f, 0.10f, 0.93f);
+      glColor4f(0.04f, 0.06f, 0.04f, 0.82f);  // dark green-tint, slightly transparent
       {
         int gy1 = vh - menu_y, gy2 = vh - (menu_y + menu_h);
         glBegin(GL_QUADS);
@@ -1455,7 +1466,8 @@ void Renderer::Draw(const draw_params_s &params,
         glEnd();
       }
       glDisable(GL_BLEND);
-      glColor3f(0.4f, 0.6f, 1.0f);
+      // Bright green border (matches TaskTree style)
+      glColor3f(0.0f, 1.0f, 0.0f);
       glLineWidth(2.0f);
       {
         int gy1 = vh - menu_y, gy2 = vh - (menu_y + menu_h);
@@ -1465,9 +1477,9 @@ void Renderer::Draw(const draw_params_s &params,
         glEnd();
       }
       glLineWidth(1.0f);
-
-      draw_text_sys(menu_x + menu_w / 2 - 52, menu_y + 18,
-                    "KEYBINDINGS  [Ctrl+H / scroll to close/scroll]", 0.6f, 0.85f, 1.0f);
+      // Yellow title, like TaskTree selected-item colour
+      draw_text(menu_x + menu_w / 2 - 96, menu_y + 18,
+                "KEYBINDINGS  [H / Ctrl+H to close]", 1.0f, 1.0f, 0.0f);
 
       // Draw visible rows from help_entries_
       const std::vector<std::string>* entries = task_tree_view.help_entries_;
@@ -1478,7 +1490,9 @@ void Renderer::Draw(const draw_params_s &params,
       for (int r = 0; r < max_rows && (clamped_scroll + r) < total; ++r) {
         const std::string& line = (*entries)[clamped_scroll + r];
         int ly = content_top + r * row_h;
-        draw_text_sys(content_x, ly + row_h - 4, line.c_str(), 0.9f, 0.9f, 0.6f);
+        // Alternate yellow / light-yellow rows like the TaskTree selection highlight
+        float lr = 1.0f, lg = (r & 1) ? 0.85f : 1.0f, lb = 0.0f;
+        draw_text(content_x, ly + row_h - 4, line.c_str(), lr, lg, lb);
       }
 
       // Vertical scrollbar track + thumb
@@ -1567,8 +1581,25 @@ void Renderer::Draw(const draw_params_s &params,
             glEnd();
           };
 
+          // Current render target — reassigned per object (parent or a child) so
+          // the shared field renderer reads values from / scopes edits to the right
+          // LevelObject. This is what gives children the identical parent interface.
+          const LevelObject* curObj = &obj;
+          const TaskSchema*  curSchema = &schema;
+          int curObjIdx = sel;
+          // Does the active text-edit / drag target the object currently drawn?
+          // prop_*_obj_index_ < 0 means "the parent" (selected object).
+          auto resolveEdit = [&](int tIdx) {
+            return task_tree_view.prop_edit_obj_index_ < 0 ? (tIdx == sel)
+                 : (task_tree_view.prop_edit_obj_index_ == tIdx);
+          };
+          auto resolveDrag = [&](int tIdx) {
+            return task_tree_view.prop_drag_obj_index_ < 0 ? (tIdx == sel)
+                 : (task_tree_view.prop_drag_obj_index_ == tIdx);
+          };
+
           auto tok = [&](int idx) -> std::string {
-            return (idx >= 0 && idx < (int)obj.argTokens.size()) ? obj.argTokens[idx] : std::string("-");
+            return (idx >= 0 && idx < (int)curObj->argTokens.size()) ? curObj->argTokens[idx] : std::string("-");
           };
 
           // Like tok() but strips surrounding double-quotes for display.
@@ -1581,12 +1612,6 @@ void Renderer::Draw(const draw_params_s &params,
 
           // Caret blink (on/off ~2Hz). ~7px per char matches the wrap heuristic.
           const bool caret_on = ((glutGet(GLUT_ELAPSED_TIME) / 500) & 1) == 0;
-          // A field-id match only means "editing" when the edit targets the PARENT
-          // object; otherwise a child edit sharing the same fi*3+comp code would
-          // light up the wrong (parent) box.
-          const bool parent_edit_active = (task_tree_view.prop_edit_obj_index_ < 0 ||
-                                           task_tree_view.prop_edit_obj_index_ == sel);
-          const int  caret_field = parent_edit_active ? task_tree_view.prop_text_edit_field_ : -999;
           int caret_idx = task_tree_view.prop_text_caret_;
           if (caret_idx < 0) caret_idx = 0;
           if (caret_idx > (int)task_tree_view.prop_text_buf_.size())
@@ -1595,7 +1620,7 @@ void Renderer::Draw(const draw_params_s &params,
           // edit-field key (fi*3+comp, or -2 for the note). `multiline` wraps.
           auto draw_edit_box = [&](const PropPanel::Widget& w, int field_id,
                                    const std::string& live_text, bool multiline) {
-            bool editing = (caret_field == field_id);
+            bool editing = (resolveEdit(curObjIdx) && task_tree_view.prop_text_edit_field_ == field_id);
             const std::string& txt = editing ? task_tree_view.prop_text_buf_ : live_text;
             const int cw = 7;
             int max_chars = std::max(1, (w.x2 - w.x1 - 6) / cw);
@@ -1648,11 +1673,16 @@ void Renderer::Draw(const draw_params_s &params,
             draw_edit_box(w, -2, obj.name, false);
           }
 
-          // Per-field rendering driven by the same layout pass.
-          int wi = 1; // widget cursor (0 was the note)
-          int y  = L.widgets[0].y2 + 6;
-          for (int fi = 0; fi < (int)schema.size(); ++fi) {
-            const FieldDef& fd = schema[fi];
+          // Shared per-field renderer: used for the parent task AND each child so
+          // both present the identical interface (pads, sliders, boxes). Reads from
+          // / scopes edits to `tObj`, consuming widgets sequentially from `wi`.
+          auto renderFields = [&](const LevelObject& tObj, const TaskSchema& tSchema,
+                                  int tObjIdx, int& wi, int& y) {
+            curObj = &tObj; curSchema = &tSchema; curObjIdx = tObjIdx;
+            auto editVal = [&](int code){ return resolveEdit(tObjIdx) && task_tree_view.prop_text_edit_field_ == code; };
+            auto dragVal = [&](int code){ return resolveDrag(tObjIdx) && task_tree_view.prop_field_index_ == code; };
+            for (int fi = 0; fi < (int)tSchema.size(); ++fi) {
+            const FieldDef& fd = tSchema[fi];
             const std::string& tn = fd.typeName;
             bool is_pos    = (tn == "ObjectPos");
             bool is_float3 = (tn == "Real32x3" || tn == "Real64x3");
@@ -1678,7 +1708,7 @@ void Renderer::Draw(const draw_params_s &params,
             // Helper: editable numeric box (NumBox) — label + box + caret.
             auto draw_numbox = [&](const PropPanel::Widget& w, const char* label) {
               int field_id = fi * 3 + w.comp;
-              bool editing = (caret_field == field_id);
+              bool editing = editVal(field_id);
               if (label && label[0])
                 draw_text(L.panel_x + PropPanel::kPad, w.y1 + 12, label, 1.0f, 0.9f, 0.2f);
               quad(w.x1, w.y1, w.x2, w.y2, 0.0f, 0.0f, 0.0f, 0.40f);
@@ -1700,19 +1730,18 @@ void Renderer::Draw(const draw_params_s &params,
               border(pad.x1, pad.y1, pad.x2, pad.y2, 1.0f, 1.0f, 1.0f);
               {
                 double px = 0, py = 0;
-                if (task_tree_view.prop_text_edit_field_ == fi * 3 + 0)
+                if (editVal(fi * 3 + 0))
                   try { px = std::stod(task_tree_view.prop_text_buf_); } catch(...) {}
                 else
                   try { px = std::stod(tok(fd.argOffset + 0)); } catch(...) {}
-                if (task_tree_view.prop_text_edit_field_ == fi * 3 + 1)
+                if (editVal(fi * 3 + 1))
                   try { py = std::stod(task_tree_view.prop_text_buf_); } catch(...) {}
                 else
                   try { py = std::stod(tok(fd.argOffset + 1)); } catch(...) {}
                 int cx = pad.x1 + (pad.x2 - pad.x1) / 2;
                 int cy = pad.y1 + (pad.y2 - pad.y1) / 2;
                 int hx, hy;
-                bool is_pad_dragging = (task_tree_view.prop_field_index_ == fi * 3 + 0 ||
-                                        task_tree_view.prop_field_index_ == fi * 3 + 1);
+                bool is_pad_dragging = (dragVal(fi * 3 + 0) || dragVal(fi * 3 + 1));
                 if (is_pad_dragging) {
                   // During drag: show marker at cursor position relative to pad center
                   int half_w = (pad.x2 - pad.x1) / 2;
@@ -1736,7 +1765,7 @@ void Renderer::Draw(const draw_params_s &params,
                 // drag, centred when idle. The previous modulo-50 mapping wrapped
                 // 0→1 every 50 world units, making the thumb flicker top↔bottom on
                 // the huge absolute Z coordinates.
-                bool drag = (task_tree_view.prop_field_index_ == fi * 3 + 2);
+                bool drag = dragVal(fi * 3 + 2);
                 int th;
                 if (drag) {
                   int raw_dy = task_tree_view.mouse_y_ - zs.y1;
@@ -1759,7 +1788,7 @@ void Renderer::Draw(const draw_params_s &params,
               y = bg.y2 + 4;
               {
                 char ab[80];
-                snprintf(ab, sizeof(ab), "Altitude: %.6f meter", obj.pos.z);
+                snprintf(ab, sizeof(ab), "Altitude: %.6f meter", tObj.pos.z);
                 draw_text(L.panel_x + PropPanel::kPad, y + 11, ab, 0.75f, 0.7f, 0.4f);
                 y += PropPanel::kRowH;
               }
@@ -1794,13 +1823,13 @@ void Renderer::Draw(const draw_params_s &params,
                 border(w.x1, cy - 2, track_x2, cy + 2, 1.0f, 1.0f, 1.0f);
                 // Slider thumb
                 float v = 0.f;
-                if (task_tree_view.prop_text_edit_field_ == fi * 3 + w.comp)
+                if (editVal(fi * 3 + w.comp))
                   try { v = std::stof(task_tree_view.prop_text_buf_); } catch(...) {}
                 else
                   try { v = std::stof(tok(fd.argOffset + w.comp)); } catch(...) {}
                 float norm = std::max(0.f, std::min(1.f, (v + 3.14159f) / (2.f * 3.14159f)));
                 int tx = w.x1 + (int)(norm * (track_x2 - w.x1 - 6));
-                bool drag = (task_tree_view.prop_field_index_ == fi * 3 + w.comp);
+                bool drag = dragVal(fi * 3 + w.comp);
                 quad(tx, cy - 5, tx + 6, cy + 5, 1.0f, drag ? 0.95f : 0.85f, drag ? 0.2f : 0.0f, 1.0f);
                 // Value text to the right of the slider
                 draw_text(track_x2 + 4, w.y1 + 12, tok(fd.argOffset + w.comp).c_str(), 1.0f, 1.0f, 0.85f);
@@ -1822,7 +1851,7 @@ void Renderer::Draw(const draw_params_s &params,
                 rgb[w.comp] = std::max(0.f, std::min(1.f, v));
                 float norm = rgb[w.comp];
                 int tx = w.x1 + (int)(norm * (w.x2 - w.x1 - 6));
-                bool drag = (task_tree_view.prop_field_index_ == fi * 3 + w.comp);
+                bool drag = dragVal(fi * 3 + w.comp);
                 quad(tx, cy - 5, tx + 6, cy + 5, 1.0f, drag ? 0.95f : 0.85f, drag ? 0.2f : 0.0f, 1.0f);
                 // Swatch to the right of the last slider row.
                 if (c == 2) {
@@ -1836,7 +1865,7 @@ void Renderer::Draw(const draw_params_s &params,
               const auto& w = L.widgets[wi++];
               bool multiline = (tn == "VarString" || tn == "String256");
               int field_id = fi * 3 + 0;
-              bool editing = (caret_field == field_id);
+              bool editing = editVal(field_id);
               quad(w.x1, w.y1, w.x2, w.y2, 0.0f, 0.0f, 0.0f, 0.40f);
               border(w.x1, w.y1, w.x2, w.y2, 1.0f,
                      editing ? 0.95f : 1.0f, editing ? 0.2f : 1.0f);
@@ -1869,79 +1898,39 @@ void Renderer::Draw(const draw_params_s &params,
               quad(sl.x1, cy - 2, sl.x2, cy + 2, 0.0f, 0.0f, 0.0f, 0.40f);
               border(sl.x1, cy - 2, sl.x2, cy + 2, 1.0f, 1.0f, 1.0f);
               float v = 0.f;
-              if (task_tree_view.prop_text_edit_field_ == fi * 3 + 0)
+              if (editVal(fi * 3 + 0))
                 try { v = std::stof(task_tree_view.prop_text_buf_); } catch(...) {}
               else
                 try { v = std::stof(tok(fd.argOffset)); } catch(...) {}
               float norm = std::max(0.f, std::min(1.f, (v - std::floor(v / 200.f) * 200.f) / 200.f));
               int tx = sl.x1 + (int)(norm * (sl.x2 - sl.x1 - 6));
-              bool drag = (task_tree_view.prop_field_index_ == fi * 3 + 0);
+              bool drag = dragVal(fi * 3 + 0);
               quad(tx, cy - 5, tx + 6, cy + 5, 1.0f, drag ? 0.95f : 0.85f, drag ? 0.2f : 0.0f, 1.0f);
               draw_numbox(bx, nullptr);
               y = bx.y2;
             }
-            y += 4;
-          }
+            y += 4;  // gap between fields
+            }
+          }; // end renderFields
 
-          // ── Child task sections (weapon/ammo/AI sub-tasks) — editable ──────────
-          // Remaining widgets (from wi onward) are the appended child widgets.
-          // They carry objIndex so values/edits resolve against the child object.
-          for (; wi < (int)L.widgets.size(); ++wi) {
-              const auto& w = L.widgets[wi];
-              int coIdx = w.objIndex;
-              if (coIdx < 0 || coIdx >= (int)objects.size()) continue;
-              const auto& cobj = objects[coIdx];
-              using K = PropPanel::WidgetKind;
-
-              if (w.kind == K::ChildHeader) {
-                  char sep[80];
-                  snprintf(sep, sizeof(sep), "-- %s --", cobj.type.c_str());
-                  draw_text(w.x1, w.y1 + 11, sep, 0.5f, 0.8f, 1.0f);
-                  continue;
+          // Render the parent task fields, then each child task with the SAME
+          // interface. Child fields are routed to their own LevelObject via the
+          // widget objIndex / resolveEdit / resolveDrag, so weapons/AI/EditRigidObj
+          // children get pads, sliders and boxes exactly like a top-level task.
+          int wi = 1;                        // widget 0 is the parent note box
+          int y  = L.widgets[0].y2 + 6;
+          renderFields(obj, schema, sel, wi, y);
+          for (const auto& [ci, cscp] : child_schemas) {
+              if (wi < (int)L.widgets.size() &&
+                  L.widgets[wi].kind == PropPanel::WidgetKind::ChildHeader) {
+                  const auto& hw = L.widgets[wi++];
+                  char sep[96];
+                  snprintf(sep, sizeof(sep), "%s", objects[ci].type.c_str());
+                  draw_text(hw.x1, hw.y1 + 11, sep, 0.45f, 0.85f, 1.0f);
+                  y = hw.y2 + 2;
               }
-
-              const TaskSchema* cscp = GetSchema(cobj.type);
-              if (!cscp || w.fieldIndex < 0 || w.fieldIndex >= (int)cscp->size()) continue;
-              const FieldDef& cfd = (*cscp)[w.fieldIndex];
-              int cArg = cfd.argOffset + w.comp;
-              std::string rawVal = (cArg >= 0 && cArg < (int)cobj.argTokens.size())
-                                 ? cobj.argTokens[cArg] : std::string("-");
-              std::string dispVal = rawVal;
-              if (dispVal.size() >= 2 && dispVal.front() == '"' && dispVal.back() == '"')
-                  dispVal = dispVal.substr(1, dispVal.size() - 2);
-
-              // Field label to the left of the box.
-              char lbl[80];
-              if (cfd.argCount > 1) snprintf(lbl, sizeof(lbl), "%s[%d]:", cfd.name.c_str(), w.comp);
-              else                  snprintf(lbl, sizeof(lbl), "%s:", cfd.name.c_str());
-              draw_text(L.panel_x + PropPanel::kPad, w.y1 + 12, lbl, 0.8f, 0.85f, 0.55f);
-
-              bool editing = (task_tree_view.prop_edit_obj_index_ == coIdx &&
-                              task_tree_view.prop_text_edit_field_ == w.fieldIndex * 3 + w.comp);
-
-              if (w.kind == K::Checkbox) {
-                  quad(w.x1, w.y1, w.x1 + 16, w.y2, 0.0f, 0.0f, 0.0f, 0.40f);
-                  border(w.x1, w.y1, w.x1 + 16, w.y2, 1.0f, 1.0f, 1.0f);
-                  int cur = 0; try { cur = std::stoi(rawVal); } catch(...) {}
-                  if (cur != 0) draw_text(w.x1 + 4, w.y1 + 12, "X", 1.0f, 1.0f, 0.3f);
-              } else {
-                  quad(w.x1, w.y1, w.x2, w.y2, 0.0f, 0.0f, 0.0f, 0.40f);
-                  border(w.x1, w.y1, w.x2, w.y2, 1.0f,
-                         editing ? 0.95f : 1.0f, editing ? 0.2f : 1.0f);
-                  const std::string& shown = editing ? task_tree_view.prop_text_buf_ : dispVal;
-                  draw_text(w.x1 + 3, w.y1 + 12, shown.c_str(), 1.0f, 1.0f, 0.85f);
-                  if (editing && caret_on) {
-                      int cc = caret_idx;
-                      const std::string& eb = task_tree_view.prop_text_buf_;
-                      if (cc > (int)eb.size()) cc = (int)eb.size();
-                      std::string before = eb.substr(0, cc);
-                      int cx = w.x1 + 3 + measure_text_width(before.c_str(), (int)before.size());
-                      glColor3f(1.0f, 0.95f, 0.2f);
-                      glBegin(GL_LINES);
-                      glVertex2i(cx, gl_y(w.y1 + 3)); glVertex2i(cx, gl_y(w.y1 + 16));
-                      glEnd();
-                  }
-              }
+              renderFields(objects[ci], *cscp, ci, wi, y);
+              y += 4;
           }
 
           // ── Scrollbar ────────────────────────────────────────────────────────────

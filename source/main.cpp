@@ -894,6 +894,10 @@ int main(int argc, char **argv) {
   UpdateEditorToolsMenuText();
   UpdateScaleMenuText();
 
+  // Start in fullscreen (ALT+ENTER toggles back to the windowed size below).
+  g_app.SetInitialFullscreen(wnd_w, wnd_h);
+  glutFullScreen();
+
   try {
     // enter main loop
     glutMainLoop();

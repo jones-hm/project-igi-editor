@@ -220,7 +220,7 @@ void Config::Load() {
                 else if (key == "CameraLock") data_.cameraLock = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Backup") data_.enableBackup = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "UseEditorFont") data_.useEditorFont = (val == "TRUE" || val == "true" || val == "1");
-                else if (key == "SystemFontSize") { int s = std::stoi(val); data_.systemFontSize = (s == 10 || s == 18) ? s : 12; }
+                else if (key == "SystemFontSize") { int s = std::stoi(val); data_.systemFontSize = std::max(8, std::min(32, s)); }
                 else if (key == "FindTaskName") data_.findTaskName = val;
                 else if (key == "FindTaskNote") data_.findTaskNote = val;
                 else if (key == "FindTaskID") data_.findTaskID = val;

@@ -14,8 +14,36 @@ struct AttachInfo {
     float r[9];                 // 3x3 rotation matrix (r00..r08)
 };
 
+// One pickable ATTA sub-model instance, captured during the picking pass so the
+// app can "promote" it into a real, editable EditRigidObj task at the same world
+// transform when the user clicks it.
+struct AttaPickEntry {
+    int          parentObjIndex = -1;
+    std::string  modelId;
+    glm::vec3    worldPos = glm::vec3(0.0f);
+    glm::mat3    worldRot = glm::mat3(1.0f);
+    float        scale = 1.0f;
+};
+
 class Renderer_Objects {
 public:
+    // Pick IDs at/above this base denote a picked ATTA sub-model (entry =
+    // returnedValue - kAttaPickBase); below it they are normal object indices.
+    static constexpr int kAttaPickBase = 0x800000; // 8388608
+
+    bool GetAttaPickEntry(int entry, AttaPickEntry& out) const {
+        if (entry < 0 || entry >= (int)atta_pick_entries_.size()) return false;
+        out = atta_pick_entries_[entry];
+        return true;
+    }
+    // Permanently suppress an ATTA (by its ORIGINAL model@worldPos key) once it has
+    // been promoted to a real task. Stays hidden even after the promoted object is
+    // moved away — otherwise the original ATTA reappears (looks like a clone/ghost
+    // and z-fights). Cleared on level load.
+    void SuppressAtta(const std::string& key) { suppressed_atta_keys_.insert(key); }
+    void ClearSuppressedAttas() { suppressed_atta_keys_.clear(); }
+    // Stable key "model@roundedWorldPos" used to match an ATTA against an EditRigidObj.
+    static std::string AttaOccupancyKey(const std::string& modelId, const glm::vec3& worldPos);
     Renderer_Objects();
     ~Renderer_Objects();
 
@@ -54,8 +82,17 @@ private:
     mutable std::map<std::string, int> model_level_map_;
     mutable std::map<std::string, int> texture_level_map_;
     std::map<std::string, std::vector<AttachInfo>> attachment_cache_;
+    // Per-pick-pass capture of pickable ATTA sub-models (see AttaPickEntry).
+    std::vector<AttaPickEntry> atta_pick_entries_;
+    // Keys (model@pos) of EditRigidObj tasks; an ATTA matching one is suppressed
+    // (it has been promoted to / duplicated by a real task). Rebuilt each frame.
+    std::unordered_set<std::string> editrigid_occupancy_;
+    // Persistent keys of ATTAs promoted this session (by their ORIGINAL position),
+    // so they stay hidden even after the promoted object is moved.
+    std::unordered_set<std::string> suppressed_atta_keys_;
     int texture_map_level_ = -1;
     GLuint shader_program_;
+    GLint  loc_glass_min_ = -1;  // u_glassMin location (glass sheen floor), set in Draw
     GLuint ubo_binding_point_;
     GLuint selection_vao_, selection_vbo_;
     std::unordered_set<std::string> logged_draw_buildings_;
@@ -91,13 +128,20 @@ private:
                                    GLint loc_ambient, GLint loc_useTex, GLint loc_tex, GLint loc_alpha,
                                    std::unordered_set<std::string>& drawn,
                                    glm::vec3 leafScale = glm::vec3(40.96f));
-    // Like DrawAttachmentsRecursive but uses the picking shader and assigns each
-    // attachment the same pick ID as its parent so clicking on ATTA sub-parts
-    // selects the parent LevelObject.
+    // Like DrawAttachmentsRecursive but uses the picking shader. Each ATTA sub-model
+    // that has no matching EditRigidObj (occupancy check) gets a UNIQUE pick ID
+    // (kAttaPickBase + entry) and is recorded in atta_pick_entries_ with its world
+    // transform, so the app can promote it into an editable task on click. ATTAs
+    // already promoted/duplicated by an EditRigidObj are skipped.
     void DrawAttachmentsForPicking(const std::string& parentModelId, bool isBuilding,
                                    const glm::mat4& parentWorldMat, float parentScale,
-                                   GLint loc_model, GLint loc_id, int pickId,
+                                   GLint loc_model, GLint loc_id, int parentObjIndex,
                                    std::unordered_set<std::string>& drawn);
+    // True if this ATTA has been promoted/duplicated (live occupancy OR persistent).
+    bool IsAttaPromoted(const std::string& modelId, const glm::vec3& worldPos) const {
+        const std::string k = AttaOccupancyKey(modelId, worldPos);
+        return editrigid_occupancy_.count(k) > 0 || suppressed_atta_keys_.count(k) > 0;
+    }
     static bool IsVehicleType(const std::string& type);
     void EnsurePortalDistancesLoaded();
     void EnsureWindowModelIdsLoaded();

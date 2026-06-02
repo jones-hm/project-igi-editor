@@ -510,6 +510,8 @@ uniform sampler2D u_texture;
 uniform int u_useTexture;
 uniform float u_alpha;     // material alpha (1.0 = opaque, <1.0 = transparent)
 uniform vec4 u_baseColor;  // Base color when no texture
+uniform float u_glassMin;  // glass sheen floor: clean (low-alpha) glass renders at
+                           // least this opaque so the pane is visible. 0 = not glass.
 
 out vec4 fragColor;
 
@@ -527,10 +529,22 @@ void main() {
     vec4 texColor = (u_useTexture != 0) ? texture(u_texture, v_uv) : u_baseColor;
 
     float finalAlpha = (u_useTexture != 0 ? texColor.a : 1.0) * u_alpha;
+
+    // Glass: even a perfectly clear pane (texture alpha ~0) must show a faint
+    // reflective sheen, so floor the alpha. Add a subtle specular highlight so the
+    // glass reads as a surface, not an empty hole.
+    if (u_glassMin > 0.0) {
+        finalAlpha = max(finalAlpha, u_glassMin);
+        light += vec3(spec * 1.5);
+    }
+
     fragColor = vec4(light * texColor.rgb, finalAlpha);
 
-    if (u_alpha >= 0.99 && texColor.a < 0.75) discard;
-    if (fragColor.a < 0.05) discard;
+    // Alpha-test cutout for foliage / fences / grilles only (alpha >= 0.9). Glass
+    // (lower alpha or u_glassMin set) is NEVER cut out — it blends so you can see
+    // through it while still seeing the pane.
+    if (u_glassMin <= 0.0 && u_alpha >= 0.9 && texColor.a < 0.75) discard;
+    if (fragColor.a < 0.01) discard;
 }
 )";
 
@@ -812,10 +826,17 @@ void Renderer_Objects::InitPickingFBO(int w, int h) {
 // clicking anywhere on an ATTA part selects the owning LevelObject.
 // Mirrors DrawAttachmentsRecursive's transform calculation; skips transparency,
 // lighting, and texture setup since the picking shader only cares about geometry.
+std::string Renderer_Objects::AttaOccupancyKey(const std::string& modelId, const glm::vec3& worldPos) {
+    char buf[160];
+    snprintf(buf, sizeof(buf), "%s@%lld,%lld,%lld", modelId.c_str(),
+             (long long)llround(worldPos.x), (long long)llround(worldPos.y), (long long)llround(worldPos.z));
+    return buf;
+}
+
 void Renderer_Objects::DrawAttachmentsForPicking(
     const std::string& parentModelId, bool isBuilding,
     const glm::mat4& parentWorldMat, float parentScale,
-    GLint loc_model, GLint loc_id, int pickId,
+    GLint loc_model, GLint loc_id, int parentObjIndex,
     std::unordered_set<std::string>& drawn)
 {
     const std::string prefix = isBuilding ? "building:" : "object:";
@@ -853,11 +874,23 @@ void Renderer_Objects::DrawAttachmentsForPicking(
         std::string childKey = parentModelId + ">" + att.modelId;
         bool recurse = drawn.insert(childKey).second;
 
-        if (subMesh.vertexCount > 0) {
-            // Scale matches the default leafScale=40.96 used by DrawAttachmentsRecursive
+        // Skip ATTAs already promoted to / duplicated by a real EditRigidObj task.
+        bool occupied = IsAttaPromoted(att.modelId, worldPos);
+
+        if (subMesh.vertexCount > 0 && !occupied) {
+            // Record this ATTA as a uniquely-pickable, promotable entry.
+            int entry = (int)atta_pick_entries_.size();
+            AttaPickEntry e;
+            e.parentObjIndex = parentObjIndex;
+            e.modelId        = att.modelId;
+            e.worldPos       = worldPos;
+            e.worldRot       = glm::mat3(childWorldMat); // pure rotation (no scale in childWorldMat)
+            e.scale          = parentScale;
+            atta_pick_entries_.push_back(e);
+
             glm::mat4 leafModel = glm::scale(childWorldMat, glm::vec3(40.96f * parentScale));
             glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(leafModel));
-            glUniform1i(loc_id, pickId);
+            glUniform1i(loc_id, kAttaPickBase + 1 + entry);
 
             if (!subMesh.subMeshes.empty()) {
                 for (const auto& sub : subMesh.subMeshes) {
@@ -873,7 +906,7 @@ void Renderer_Objects::DrawAttachmentsForPicking(
 
         if (recurse) {
             DrawAttachmentsForPicking(att.modelId, isBuilding, childWorldMat, parentScale,
-                                      loc_model, loc_id, pickId, drawn);
+                                      loc_model, loc_id, parentObjIndex, drawn);
         }
     }
 }
@@ -891,16 +924,30 @@ void Renderer_Objects::DrawForPicking(GLuint ubo_mats,
     const int DRAW_BUILDINGS = 16;
     const int DRAW_PROPS     = 32;
 
+    // Reset the per-pass ATTA pick capture and rebuild EditRigidObj occupancy so
+    // ATTAs already promoted to real tasks aren't offered for promotion again.
+    atta_pick_entries_.clear();
+    editrigid_occupancy_.clear();
+    for (const auto& o : objects) {
+        if (o.deleted || o.type != "EditRigidObj" || o.modelId.empty()) continue;
+        editrigid_occupancy_.insert(AttaOccupancyKey(o.modelId, glm::vec3(o.pos)));
+    }
+
     // Set picking render state
     glBindFramebuffer(GL_FRAMEBUFFER, pick_fbo_);
     glViewport(0, 0, pick_fbo_w_, pick_fbo_h_);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
+    // GL_LEQUAL so that QSC child tasks (drawn AFTER the parent hull + ATTA) can
+    // overwrite pick IDs written by ATTA sub-models at the same depth. Combined
+    // with culling OFF (below), every child EditRigidObj wins over the parent ATTA.
+    glDepthFunc(GL_LEQUAL);
     glDepthMask(GL_TRUE);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
+    // Match the visual pass: culling OFF. With back-face culling ON, child objects
+    // whose meshes have reversed/inconsistent winding (consoles, crates, lights in
+    // buildings) rendered visibly but were absent from the pick buffer.
+    glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
@@ -966,10 +1013,13 @@ void Renderer_Objects::DrawForPicking(GLuint ubo_mats,
             glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
         }
 
-        // Also draw ATTA sub-models with the same pick ID so clicking anywhere
-        // on an attachment surface selects its parent LevelObject.
+        // Render ATTA sub-models into the pick buffer, each with its OWN unique
+        // pick ID (kAttaPickBase + entry). Pure MEF attachments (ceiling lights,
+        // wall art, panels, crates that exist only in the building model and NOT
+        // in objects.qsc) become individually clickable — the app promotes them
+        // into real, editable EditRigidObj tasks. ATTAs that already have a
+        // matching EditRigidObj are skipped (occupancy check inside).
         {
-            // Unscaled world matrix (translate+rotate only) as expected by DrawAttachmentsForPicking
             glm::mat4 parentWorldMat(1.0f);
             parentWorldMat = glm::translate(parentWorldMat, glm::vec3(obj.pos));
             parentWorldMat = glm::rotate(parentWorldMat, (float)obj.rot.z, glm::vec3(0.f, 0.f, 1.f));
@@ -977,8 +1027,7 @@ void Renderer_Objects::DrawForPicking(GLuint ubo_mats,
             parentWorldMat = glm::rotate(parentWorldMat, (float)obj.rot.y, glm::vec3(0.f, 1.f, 0.f));
             std::unordered_set<std::string> drawn;
             DrawAttachmentsForPicking(obj.modelId, obj.isBuilding, parentWorldMat, obj.scale,
-                                      loc_model, loc_id, i + 1, drawn);
-            // Restore pick shader binding that DrawAttachmentsForPicking may have changed
+                                      loc_model, loc_id, i, drawn);
             glUseProgram(pick_shader_prog_);
             glBindBufferBase(GL_UNIFORM_BUFFER, ubo_binding_point_, ubo_mats);
         }
@@ -1047,6 +1096,15 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
     if (!shader_program_) return;
 
+    // Rebuild EditRigidObj occupancy so any ATTA that has been promoted to (or is
+    // duplicated by) a real EditRigidObj is suppressed in the attachment render —
+    // otherwise the promoted object would draw on top of its original ATTA.
+    editrigid_occupancy_.clear();
+    for (const auto& o : objects) {
+        if (o.deleted || o.type != "EditRigidObj" || o.modelId.empty()) continue;
+        editrigid_occupancy_.insert(AttaOccupancyKey(o.modelId, glm::vec3(o.pos)));
+    }
+
     // Bind our object shader
     glUseProgram(shader_program_);
 
@@ -1074,7 +1132,9 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     GLint loc_tex      = glGetUniformLocation(shader_program_, "u_texture");
     GLint loc_alpha    = glGetUniformLocation(shader_program_, "u_alpha");
     GLint loc_baseColor = glGetUniformLocation(shader_program_, "u_baseColor");
+    loc_glass_min_ = glGetUniformLocation(shader_program_, "u_glassMin");
     glUniform1f(loc_alpha, 1.0f); // default: fully opaque
+    glUniform1f(loc_glass_min_, 0.0f); // default: not glass
     glUniform4f(loc_baseColor, 1.0f, 1.0f, 1.0f, 1.0f); // default: white
 
     EnsurePortalDistancesLoaded();
@@ -1192,13 +1252,12 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         if (!mesh.fromRenderMesh) {
             skipHullRender = true;
         }
-        // Underground building containers: buildings with no own textures but with ATTA children.
-        // Render them semi-transparent in the transparent pass so the interior is visible.
+        // Underground/hollow building shells (no own textures, ATTA children) are
+        // now rendered OPAQUE like the game (the user's reference shows solid walls).
+        // The old semi-transparent treatment (0.25 / 0.65) made Level 12 look like a
+        // see-through mess. Kept as a flag = false so the transparent-pass routing
+        // below treats them as ordinary opaque geometry.
         bool isUndergroundContainer = false;
-        if (!hasAnyTexture && obj.isBuilding && !skipHullRender) {
-            std::string attKey = std::to_string(current_level_) + ":building:" + obj.modelId;
-            isUndergroundContainer = attachment_cache_.count(attKey) > 0;
-        }
 
         // Is this a window/glass model? If so, render the whole mesh semi-transparent.
         const bool isWindowModel = window_model_ids_.count(obj.modelId) > 0;
@@ -1224,7 +1283,11 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
             if (isTransparentObject) {
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                glUniform1f(loc_alpha, isUndergroundContainer ? 0.25f : 0.4f);
+                // Window glass: 0.55 gives visible reflectivity while still see-through.
+                // Underground shell: 0.65 makes it visibly semi-transparent.
+                glUniform1f(loc_alpha, isUndergroundContainer ? 0.65f : 0.55f);
+                // Clean (clear) glass panes get a sheen floor so they never vanish.
+                if (isWindowModel) glUniform1f(loc_glass_min_, 0.30f);
             }
 
             // Pull hull surfaces slightly toward camera to prevent Z-fighting with terrain.
@@ -1263,9 +1326,16 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                         float subAlpha = sub.baseColorFactor.a;
                         glUniform1f(loc_alpha, subAlpha);
-                        // Alpha-tested sub-meshes (baseAlpha ≈ 1.0) still write depth so that
-                        // geometry rendered after them (splines, etc.) can't bleed through.
-                        if (subAlpha >= 0.99f) glDepthMask(GL_TRUE);
+                        // Per-sub-mesh depth-write in the transparent pass. Only genuinely
+                        // see-through glass (low alpha) skips depth writes so it stays clear
+                        // from every angle; alpha-tested foliage / near-opaque panes keep
+                        // writing depth so leaves stay solid and don't blend into dark blobs.
+                        // (A previous opaque frame sub-mesh could otherwise leave depth-writes
+                        //  on for a following glass pane, making the front window opaque.)
+                        if (isTransparentPass)
+                            glDepthMask(subAlpha < 0.6f ? GL_FALSE : GL_TRUE);
+                        else if (subAlpha >= 0.99f)
+                            glDepthMask(GL_TRUE);
                     }
 
                     if (sub.textureID > 0) {
@@ -1325,6 +1395,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
             if (isTransparentObject) {
                 glDisable(GL_BLEND);
                 glUniform1f(loc_alpha, 1.0f);
+                glUniform1f(loc_glass_min_, 0.0f); // clear glass sheen for next object
             }
 
             glDisable(GL_POLYGON_OFFSET_FILL);
@@ -1552,6 +1623,19 @@ void Renderer_Objects::DrawAttachmentsRecursive(
         childWorldMat = glm::translate(childWorldMat, worldPos);
         childWorldMat = childWorldMat * parentRot * attLocalRot;
 
+        // If this ATTA has been promoted to a real EditRigidObj task, skip drawing
+        // it here — the task renders it now — but still recurse into its children
+        // so nested attachments keep showing.
+        if (IsAttaPromoted(att.modelId, worldPos)) {
+            std::string childKey = parentModelId + ">" + att.modelId;
+            if (drawn.insert(childKey).second) {
+                DrawAttachmentsRecursive(topLevelModelId, att.modelId, isBuilding, childWorldMat, isTransparentPass,
+                                         loc_model, loc_dirlight, loc_ambient,
+                                         loc_useTex, loc_tex, loc_alpha, drawn, leafScale);
+            }
+            continue;
+        }
+
         // Skip sub-models that have only collision fallback geometry (no XTRV/DNER render
         // vertices). These render as misshapen boxes with fabricated UVs.  Still recurse
         // into their children — those may have proper render geometry.
@@ -1632,9 +1716,11 @@ void Renderer_Objects::DrawAttachmentsRecursive(
         if (attIsWindow) {
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glUniform1f(loc_alpha, 0.4f);
+            glUniform1f(loc_alpha, 0.55f); // visible reflectivity, still see-through
+            glUniform1f(loc_glass_min_, 0.30f); // clean glass sheen floor
         } else {
             glUniform1f(loc_alpha, 1.0f);
+            glUniform1f(loc_glass_min_, 0.0f);
         }
 
         // Draw sub-model submeshes

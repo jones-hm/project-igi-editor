@@ -72,137 +72,118 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
     L.panel_x = kLeft; L.panel_y = kTop; L.panel_w = kWidth;
 
     int y = kTop + kPad;
-    y += kRowH;            // "QTasktype: <type>"  (read-only)
-    y += kRowH;            // "QTask Note (QTaskNote):"
-    // Note box
-    L.widgets.push_back({WidgetKind::NoteBox, kLeft + kPad, y, kLeft + kWidth - kPad, y + kBoxH, -1, 0});
-    y += kBoxH + 6;
 
     // Right-side editable box geometry (used for X/Y/Z, integer & float boxes).
     const int boxW = 110;
     const int boxX2 = kLeft + kWidth - kPad;
     const int boxX1 = boxX2 - boxW;
 
-    for (int fi = 0; fi < (int)schema.size(); ++fi) {
-        const FieldDef& fd = schema[fi];
-        const std::string& tn = fd.typeName;
-        bool is_pos    = (tn == "ObjectPos");
-        bool is_float3 = (tn == "Real32x3" || tn == "Real64x3");
-        bool is_ori    = (tn == "Real32x9");
-        bool is_rgb    = (tn == "RGB" || tn == "Colour");
-        bool is_str    = (tn.find("String") != std::string::npos || tn == "VarString" ||
-                          tn == "EnumString32" || tn == "DropDownCombo");
-        bool is_bool   = (tn == "bool8" || tn == "PushButton");
-        bool is_ro     = (tn == "Graph" || tn == "AnimData" || tn == "TrainPos1D");
-        bool is_int    = (tn == "Int16" || tn == "Int32" || tn == "EnumInt32");
+    // Emit every field widget for one schema. Used for BOTH the parent task and
+    // each child task so they share an identical interface (pads/sliders/boxes).
+    // All widgets pushed during the call are tagged with `objIndex` (-1 = parent).
+    auto emitFields = [&](const TaskSchemaNS::TaskSchema& sch, bool ai, int objIndex) {
+        size_t start = L.widgets.size();
+        for (int fi = 0; fi < (int)sch.size(); ++fi) {
+            const FieldDef& fd = sch[fi];
+            const std::string& tn = fd.typeName;
+            bool is_pos    = (tn == "ObjectPos");
+            bool is_float3 = (tn == "Real32x3" || tn == "Real64x3");
+            bool is_ori    = (tn == "Real32x9");
+            bool is_rgb    = (tn == "RGB" || tn == "Colour");
+            bool is_str    = (tn.find("String") != std::string::npos || tn == "VarString" ||
+                              tn == "EnumString32" || tn == "DropDownCombo");
+            bool is_bool   = (tn == "bool8" || tn == "PushButton");
+            bool is_ro     = (tn == "Graph" || tn == "AnimData" || tn == "TrainPos1D");
+            bool is_int    = (tn == "Int16" || tn == "Int32" || tn == "EnumInt32");
 
-        y += kRowH;  // field header line
+            y += kRowH;  // field header line
 
-        if (is_pos) {
-            // X/Y/Z each: label on the left with a compact editable box right after it.
-            const int pBoxX1 = kLeft + kPad + 20;     // just past the "X"/"Y"/"Z" label
-            const int pBoxX2 = pBoxX1 + 180;
-            for (int c = 0; c < 3; ++c) {
-                L.widgets.push_back({WidgetKind::NumBox, pBoxX1, y, pBoxX2, y + kBoxH, fi, c});
-                y += kBoxH + 2;
-            }
-            // 2D pad (left) + vertical Z slider (right of pad)
-            int pad_x1 = kLeft + kPad;
-            int pad_y1 = y;
-            L.widgets.push_back({WidgetKind::PosPad, pad_x1, pad_y1,
-                                 pad_x1 + kPadSize, pad_y1 + kPadSize, fi, 0});
-            int zs_x1 = pad_x1 + kPadSize + 10;
-            L.widgets.push_back({WidgetKind::PosZSlider, zs_x1, pad_y1,
-                                 zs_x1 + kZSliderW, pad_y1 + kPadSize, fi, 2});
-            y += kPadSize + 6;
-            // Snap buttons
-            int bw = (kWidth - 2 * kPad - 8) / 2;
-            L.widgets.push_back({WidgetKind::SnapGround, kLeft + kPad, y,
-                                 kLeft + kPad + bw, y + kBoxH, -1, 0});
-            L.widgets.push_back({WidgetKind::SnapObject, kLeft + kPad + bw + 8, y,
-                                 kLeft + kPad + bw + 8 + bw, y + kBoxH, -1, 0});
-            y += kBoxH + 4;
-            y += kRowH;  // "Altitude: ... meter"
-        } else if (is_float3) {
-            // Generic 3-component float (Speed, etc.) — just three labeled NumBoxes, no pad/snap
-            const int pBoxX1 = kLeft + kPad + 20;
-            const int pBoxX2 = pBoxX1 + 180;
-            for (int c = 0; c < 3; ++c) {
-                L.widgets.push_back({WidgetKind::NumBox, pBoxX1, y, pBoxX2, y + kBoxH, fi, c});
-                y += kBoxH + 2;
-            }
-        } else if (is_ori) {
-            // AI objects only expose Gamma (comp 2); non-AI exposes all three.
-            int sx1 = kLeft + kPad + 64;
-            int sx2 = kLeft + kWidth - kPad;
-            int c_start = is_ai ? 2 : 0;
-            for (int c = c_start; c < 3; ++c) {
-                L.widgets.push_back({WidgetKind::OriSlider, sx1, y, sx2, y + kBoxH, fi, c});
-                y += kBoxH;
-            }
-        } else if (is_rgb) {
-            // Three R/G/B sliders (0..1) + colour swatch on the right of each.
-            for (int c = 0; c < 3; ++c) {
+            if (is_pos) {
+                const int pBoxX1 = kLeft + kPad + 20;
+                const int pBoxX2 = pBoxX1 + 180;
+                for (int c = 0; c < 3; ++c) {
+                    L.widgets.push_back({WidgetKind::NumBox, pBoxX1, y, pBoxX2, y + kBoxH, fi, c});
+                    y += kBoxH + 2;
+                }
+                int pad_x1 = kLeft + kPad;
+                int pad_y1 = y;
+                L.widgets.push_back({WidgetKind::PosPad, pad_x1, pad_y1,
+                                     pad_x1 + kPadSize, pad_y1 + kPadSize, fi, 0});
+                int zs_x1 = pad_x1 + kPadSize + 10;
+                L.widgets.push_back({WidgetKind::PosZSlider, zs_x1, pad_y1,
+                                     zs_x1 + kZSliderW, pad_y1 + kPadSize, fi, 2});
+                y += kPadSize + 6;
+                int bw = (kWidth - 2 * kPad - 8) / 2;
+                L.widgets.push_back({WidgetKind::SnapGround, kLeft + kPad, y,
+                                     kLeft + kPad + bw, y + kBoxH, -1, 0});
+                L.widgets.push_back({WidgetKind::SnapObject, kLeft + kPad + bw + 8, y,
+                                     kLeft + kPad + bw + 8 + bw, y + kBoxH, -1, 0});
+                y += kBoxH + 4;
+                y += kRowH;  // "Altitude: ... meter"
+            } else if (is_float3) {
+                const int pBoxX1 = kLeft + kPad + 20;
+                const int pBoxX2 = pBoxX1 + 180;
+                for (int c = 0; c < 3; ++c) {
+                    L.widgets.push_back({WidgetKind::NumBox, pBoxX1, y, pBoxX2, y + kBoxH, fi, c});
+                    y += kBoxH + 2;
+                }
+            } else if (is_ori) {
                 int sx1 = kLeft + kPad + 64;
-                int sx2 = kLeft + kWidth - kPad - 24;
-                L.widgets.push_back({WidgetKind::RgbSlider, sx1, y, sx2, y + kBoxH, fi, c});
+                int sx2 = kLeft + kWidth - kPad;
+                int c_start = ai ? 2 : 0;
+                for (int c = c_start; c < 3; ++c) {
+                    L.widgets.push_back({WidgetKind::OriSlider, sx1, y, sx2, y + kBoxH, fi, c});
+                    y += kBoxH;
+                }
+            } else if (is_rgb) {
+                for (int c = 0; c < 3; ++c) {
+                    int sx1 = kLeft + kPad + 64;
+                    int sx2 = kLeft + kWidth - kPad - 24;
+                    L.widgets.push_back({WidgetKind::RgbSlider, sx1, y, sx2, y + kBoxH, fi, c});
+                    y += kBoxH;
+                }
+            } else if (is_str) {
+                int h = (tn == "VarString" || tn == "String256") ? kBoxH * 3 : kBoxH;
+                L.widgets.push_back({WidgetKind::StringBox, kLeft + kPad, y,
+                                     kLeft + kWidth - kPad, y + h, fi, 0});
+                y += h + 2;
+            } else if (is_bool) {
+                L.widgets.push_back({WidgetKind::Checkbox, kLeft + kPad, y,
+                                     kLeft + kWidth - kPad, y + kBoxH, fi, 0});
+                y += kBoxH;
+            } else if (is_ro) {
+                y += kRowH;  // read-only grey value line, no widget
+            } else if (is_int) {
+                L.widgets.push_back({WidgetKind::NumBox, boxX1, y, boxX2, y + kBoxH, fi, 0});
+                y += kBoxH;
+            } else {
+                int sx1 = kLeft + kPad;
+                int sx2 = boxX1 - 8;
+                L.widgets.push_back({WidgetKind::NumSlider, sx1, y, sx2, y + kBoxH, fi, 0});
+                L.widgets.push_back({WidgetKind::NumBox, boxX1, y, boxX2, y + kBoxH, fi, 0});
                 y += kBoxH;
             }
-        } else if (is_str) {
-            // VarString / String256 are taller (multi-line).
-            int h = (tn == "VarString" || tn == "String256") ? kBoxH * 3 : kBoxH;
-            L.widgets.push_back({WidgetKind::StringBox, kLeft + kPad, y,
-                                 kLeft + kWidth - kPad, y + h, fi, 0});
-            y += h + 2;
-        } else if (is_bool) {
-            // Hit area covers full row width so label text is also clickable
-            L.widgets.push_back({WidgetKind::Checkbox, kLeft + kPad, y,
-                                 kLeft + kWidth - kPad, y + kBoxH, fi, 0});
-            y += kBoxH;
-        } else if (is_ro) {
-            y += kRowH;  // read-only grey value line, no widget
-        } else if (is_int) {
-            // Integer: editable numeric box (also drag-to-scrub), no slider.
-            L.widgets.push_back({WidgetKind::NumBox, boxX1, y, boxX2, y + kBoxH, fi, 0});
-            y += kBoxH;
-        } else {
-            // Real32/Real64/RangeReal32/Angle/Degrees: slider + editable box.
-            int sx1 = kLeft + kPad;
-            int sx2 = boxX1 - 8;
-            L.widgets.push_back({WidgetKind::NumSlider, sx1, y, sx2, y + kBoxH, fi, 0});
-            L.widgets.push_back({WidgetKind::NumBox, boxX1, y, boxX2, y + kBoxH, fi, 0});
-            y += kBoxH;
+            y += 4;  // gap between fields
         }
-        y += 4;  // gap between fields
-    }
+        if (objIndex != -1)
+            for (size_t i = start; i < L.widgets.size(); ++i) L.widgets[i].objIndex = objIndex;
+    };
 
-    // ── Child task sections (weapon/ammo/AI sub-tasks) — editable ─────────────
-    // Each child field becomes one editable box per component, tagged with the
-    // child's LevelObject index so the input handler routes edits to the child.
+    // Parent: type header + note box + fields.
+    y += kRowH;            // "QTasktype: <type>"
+    y += kRowH;            // "QTask Note (QTaskNote):"
+    L.widgets.push_back({WidgetKind::NoteBox, kLeft + kPad, y, kLeft + kWidth - kPad, y + kBoxH, -1, 0});
+    y += kBoxH + 6;
+    emitFields(schema, is_ai, -1);
+
+    // Children: a header label, then the SAME field widgets as a parent (routed
+    // to the child object via objIndex). Only present when the task has children.
     for (const auto& [childIdx, cscp] : children) {
         if (!cscp) continue;
-        const TaskSchema& cs = *cscp;
-        // Separator header (renderer draws the child type label).
         L.widgets.push_back({WidgetKind::ChildHeader, kLeft + kPad, y,
                              kLeft + kWidth - kPad, y + kRowH, -1, 0, childIdx});
         y += kRowH + 2;
-        const int cBoxX1 = kLeft + kPad + 150;          // value box left edge
-        const int cBoxX2 = kLeft + kWidth - kPad;
-        for (int cfi = 0; cfi < (int)cs.size(); ++cfi) {
-            const FieldDef& cfd = cs[cfi];
-            const std::string& tn = cfd.typeName;
-            bool is_str  = (tn.find("String") != std::string::npos || tn == "VarString" ||
-                            tn == "EnumString32" || tn == "DropDownCombo");
-            bool is_bool = (tn == "bool8" || tn == "PushButton");
-            int ncomp = cfd.argCount > 0 ? cfd.argCount : 1;
-            for (int c = 0; c < ncomp; ++c) {
-                WidgetKind k = is_bool ? WidgetKind::Checkbox
-                             : is_str  ? WidgetKind::StringBox
-                                       : WidgetKind::NumBox;
-                L.widgets.push_back({k, cBoxX1, y, cBoxX2, y + kBoxH, cfi, c, childIdx});
-                y += kBoxH + 2;
-            }
-        }
+        emitFields(*cscp, false, childIdx);
         y += 4;
     }
 
@@ -273,6 +254,7 @@ public:
 		int  prop_field_index_     = -1;
 		int  prop_text_edit_field_ = -1;
 		int  prop_edit_obj_index_  = -1;  // LevelObject targeted by active text edit (-1 = parent)
+		int  prop_drag_obj_index_  = -1;  // LevelObject targeted by active slider/pad drag (-1 = parent)
 		std::string prop_text_buf_;
 		int  prop_text_caret_      = 0;
 		int  prop_panel_scroll_    = 0;  // vertical scroll offset (pixels)
@@ -332,6 +314,14 @@ public:
 												int draw_parts) {
 		SetupUBOMats(vd);
 		return objects_.PickObjectAtScreen(x, y, w, h, ubo_mats_, objects, draw_parts, vd.pos_);
+	}
+	// Pass-throughs for ATTA promotion (see Renderer_Objects).
+	static constexpr int kAttaPickBase = Renderer_Objects::kAttaPickBase;
+	bool GetAttaPickEntry(int entry, AttaPickEntry& out) const { return objects_.GetAttaPickEntry(entry, out); }
+	void SuppressAtta(const std::string& key) { objects_.SuppressAtta(key); }
+	void ClearSuppressedAttas() { objects_.ClearSuppressedAttas(); }
+	static std::string AttaOccupancyKey(const std::string& modelId, const glm::vec3& worldPos) {
+		return Renderer_Objects::AttaOccupancyKey(modelId, worldPos);
 	}
 
 private:

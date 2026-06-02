@@ -531,9 +531,10 @@ void App::LoadLevel(int level_no) {
 		};
 
 		// ── Loading overlay ──────────────────────────────────────────────────
-		// Flush one frame with a "LOADING…" screen before the synchronous load
-		// so the user sees feedback instead of a frozen window.
-		{
+		// Staged progress: the load is synchronous, so we redraw + swap the bar at
+		// each milestone (10% → 100%). Reusable lambda fills proportionally to pct.
+		auto drawLoadBar = [&](int pct, const char* stage) {
+			pct = std::max(0, std::min(100, pct));
 			int vw = window_state_.viewport_width_;
 			int vh = window_state_.viewport_height_;
 			glViewport(0, 0, vw, vh);
@@ -546,8 +547,7 @@ void App::LoadLevel(int level_no) {
 			glMatrixMode(GL_MODELVIEW);
 			glPushMatrix(); glLoadIdentity();
 
-			// Dark green panel
-			int pw = 320, ph = 80;
+			int pw = 340, ph = 84;
 			int px = (vw - pw) / 2, py = (vh - ph) / 2;
 			glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 			glColor4f(0.0f, 0.15f, 0.0f, 0.9f);
@@ -555,32 +555,31 @@ void App::LoadLevel(int level_no) {
 			glVertex2i(px, py); glVertex2i(px+pw, py);
 			glVertex2i(px+pw, py+ph); glVertex2i(px, py+ph);
 			glEnd();
-			// Border
 			glColor3f(0.0f, 0.8f, 0.0f);
 			glBegin(GL_LINE_LOOP);
 			glVertex2i(px, py); glVertex2i(px+pw, py);
 			glVertex2i(px+pw, py+ph); glVertex2i(px, py+ph);
 			glEnd();
 			// Progress bar track
-			int bx = px+20, by = py+18, bw = pw-40, bh = 10;
+			int bx = px+20, by = py+18, bw = pw-40, bh = 12;
 			glColor3f(0.0f, 0.3f, 0.0f);
 			glBegin(GL_QUADS);
 			glVertex2i(bx, by); glVertex2i(bx+bw, by);
 			glVertex2i(bx+bw, by+bh); glVertex2i(bx, by+bh);
 			glEnd();
-			// Bar fill (indeterminate — full green bar)
-			glColor3f(0.0f, 0.8f, 0.0f);
+			// Proportional fill
+			int fw = bw * pct / 100;
+			glColor3f(0.1f, 0.95f, 0.1f);
 			glBegin(GL_QUADS);
-			glVertex2i(bx, by); glVertex2i(bx+bw, by);
-			glVertex2i(bx+bw, by+bh); glVertex2i(bx, by+bh);
+			glVertex2i(bx, by); glVertex2i(bx+fw, by);
+			glVertex2i(bx+fw, by+bh); glVertex2i(bx, by+bh);
 			glEnd();
 			glDisable(GL_BLEND);
 
-			// Text (GLUT bitmap, always available regardless of editor-font toggle)
-			char load_msg[64];
-			snprintf(load_msg, sizeof(load_msg), "Loading Level %d...", level_no);
+			char load_msg[96];
+			snprintf(load_msg, sizeof(load_msg), "Loading Level %d  -  %d%%  (%s)", level_no, pct, stage ? stage : "");
 			glColor3f(0.0f, 0.9f, 0.0f);
-			glRasterPos2i(px + pw/2 - (int)(strlen(load_msg)*4), py + ph - 20);
+			glRasterPos2i(px + 20, py + ph - 18);
 			for (const char* c = load_msg; *c; ++c)
 				glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, *c);
 
@@ -588,9 +587,11 @@ void App::LoadLevel(int level_no) {
 			glMatrixMode(GL_MODELVIEW);  glPopMatrix();
 			glEnable(GL_DEPTH_TEST);
 			glutSwapBuffers();
-		}
+		};
+		drawLoadBar(10, "reading level");
 		// ─────────────────────────────────────────────────────────────────────
 
+		drawLoadBar(25, "models & terrain");
 		glm::vec3 start_pos;
 		float start_yaw;
 		if (level_.Load(level_load_params_s, start_pos, start_yaw)) {
@@ -622,12 +623,15 @@ void App::LoadLevel(int level_no) {
 		}
 
 
+		drawLoadBar(60, "tracks");
 		// Step 2: Track Evaluation (Dynamic object placement along paths)
 		EvaluateTrainTrackPositions();
 
+		drawLoadBar(75, "snapping objects");
 		// Step 3: Always snap objects to terrain after any level load
 		Logger::Get().Log(LogLevel::INFO, "[App] Step 3: Snapping objects to terrain...");
 		SnapObjectsToTerrain();
+		drawLoadBar(90, "finalizing");
 
 		// AI rotation override: AI models (HumanSoldier, HumanAI) only have horizontal rotation
 		auto& objects = level_.GetLevelObjects().GetObjects();
@@ -671,6 +675,7 @@ void App::LoadLevel(int level_no) {
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 		Logger::Get().Log(LogLevel::INFO, "[App] LoadLevel() COMPLETE for level " + std::to_string(level_no));
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
+		drawLoadBar(100, "done");
 	}
 	catch (const std::exception& e) {
 		std::string errorMsg = "Error loading level " + std::to_string(level_no) + ":\n" + std::string(e.what());
@@ -879,6 +884,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 				int targetIdx = selected_object_index_;
 				if (targetIdx < 0) targetIdx = hover_object_index_;
 				if (targetIdx < 0) targetIdx = PickObjectAtScreenPos(cx, cy);
+				if (targetIdx >= Renderer::kAttaPickBase) targetIdx = -1; // ATTA: no orbit target
 
 				if (targetIdx >= 0) {
 					const auto& obj = level_.GetLevelObjects().GetObjects()[targetIdx];
@@ -915,18 +921,13 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 						// Apply the same vertical scroll the renderer uses so hit-tests align.
 						if (prop_panel_scroll_ > 0)
 							for (auto& w : L.widgets) { w.y1 -= prop_panel_scroll_; w.y2 -= prop_panel_scroll_; }
-						// Clicks inside the panel are consumed by the panel.
-						if (x >= L.panel_x && x <= L.panel_x + L.panel_w &&
-						    y >= L.panel_y && y <= L.panel_y + (L.panel_h - prop_panel_scroll_)) {
+						// The property panel is a foreground overlay: ANY click anywhere in
+						// the left panel strip is consumed so background 3D objects are never
+						// selected/manipulated while the editor is open.
+						if (x >= 0 && x <= L.panel_x + L.panel_w) {
 							// +4px tolerance on all sides for pixel-perfect feel at any DPI
 							auto inRect = [&](const PropPanel::Widget& w) {
 								return x >= w.x1 - 4 && x <= w.x2 + 4 && y >= w.y1 - 4 && y <= w.y2 + 4;
-							};
-							auto tokOf = [&](int idx) -> float {
-								if (idx >= 0 && idx < (int)obj.argTokens.size()) {
-									try { return std::stof(obj.argTokens[idx]); } catch(...) {}
-								}
-								return 0.f;
 							};
 							// Commit any in-progress text edit before switching focus.
 							CommitPropTextEdit();
@@ -934,91 +935,90 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 								if (!inRect(w)) continue;
 								using K = PropPanel::WidgetKind;
 								if (w.kind == K::ChildHeader) { return; } // separator: not interactive
-								// Child task field: route the edit to the child LevelObject.
-								if (w.objIndex >= 0 && w.objIndex != selected_object_index_) {
-									if (w.objIndex >= (int)objects.size()) return;
-									LevelObject& cobj = objects[w.objIndex];
-									const TaskSchema* cscp = GetSchema(cobj.type);
-									if (!cscp || w.fieldIndex >= (int)cscp->size()) return;
-									int cArg = (*cscp)[w.fieldIndex].argOffset + w.comp;
-									if (w.kind == K::Checkbox) {
-										if (cArg >= 0 && cArg < (int)cobj.argTokens.size()) {
-											int cur = 0; try { cur = std::stoi(cobj.argTokens[cArg]); } catch(...) {}
-											cobj.argTokens[cArg] = (cur == 0) ? "1" : "0";
-											cobj.modified = true;
-											level_.GetLevelObjects().UpdateCoordinatesInLine(cobj);
-										}
-									} else { // StringBox / NumBox → text edit
-										PushUndoState();
-										prop_edit_obj_index_  = w.objIndex;
-										prop_text_edit_field_ = w.fieldIndex * 3 + w.comp;
-										prop_text_buf_ = (cArg >= 0 && cArg < (int)cobj.argTokens.size())
-										               ? StripQuotes(cobj.argTokens[cArg]) : "";
-										prop_text_caret_ = (int)prop_text_buf_.size();
+
+								// Resolve the widget's target object: the selected parent, or
+								// one of its child tasks (w.objIndex). Edits/drags route there so
+								// children get the identical interface.
+								int tIdx = (w.objIndex >= 0) ? w.objIndex : selected_object_index_;
+								if (tIdx < 0 || tIdx >= (int)objects.size()) return;
+								LevelObject& tobj = objects[tIdx];
+								const TaskSchema* tscp = (tIdx == selected_object_index_) ? scp : GetSchema(tobj.type);
+								if (!tscp) return;
+								const TaskSchema& tsch = *tscp;
+								auto fieldArg = [&](int fidx, int comp) -> int {
+									return (fidx >= 0 && fidx < (int)tsch.size()) ? tsch[fidx].argOffset + comp : -1;
+								};
+								auto tTok = [&](int idx) -> float {
+									if (idx >= 0 && idx < (int)tobj.argTokens.size()) {
+										try { return std::stof(tobj.argTokens[idx]); } catch(...) {}
 									}
-									return;
-								}
-								// Parent field: edits target the selected object.
-								prop_edit_obj_index_ = selected_object_index_;
+									return 0.f;
+								};
+
 								if (w.kind == K::NoteBox) {
+									prop_edit_obj_index_ = tIdx;
 									prop_text_edit_field_ = -2; // sentinel: editing note
-									prop_text_buf_ = obj.name;
+									prop_text_buf_ = tobj.name;
 									prop_text_caret_ = (int)prop_text_buf_.size();
-								} else if (w.kind == K::SnapGround) {
-									PushUndoState();
-									input_.keys_ |= MK_MANIP_S;
-									UpdateMarkerManipulation();
-									input_.keys_ &= ~MK_MANIP_S;
-									mouse_state_.left_button_down_ = false;  // prevent drag from overwriting snap
-								} else if (w.kind == K::SnapObject) {
-									PushUndoState();
-									input_.keys_ |= MK_MANIP_O;
-									UpdateMarkerManipulation();
-									input_.keys_ &= ~MK_MANIP_O;
-									mouse_state_.left_button_down_ = false;  // prevent drag from overwriting snap
+								} else if (w.kind == K::SnapGround || w.kind == K::SnapObject) {
+									// Snap acts on the selected object's marker manipulation.
+									if (tIdx == selected_object_index_) {
+										int mk = (w.kind == K::SnapGround) ? MK_MANIP_S : MK_MANIP_O;
+										PushUndoState();
+										input_.keys_ |= mk;
+										UpdateMarkerManipulation();
+										input_.keys_ &= ~mk;
+										mouse_state_.left_button_down_ = false; // prevent drag overwriting snap
+									}
 								} else if (w.kind == K::StringBox) {
+									prop_edit_obj_index_ = tIdx;
 									prop_text_edit_field_ = w.fieldIndex * 3 + w.comp;
-									int argIdx = schema[w.fieldIndex].argOffset + w.comp;
-									prop_text_buf_ = (argIdx < (int)obj.argTokens.size()) ? StripQuotes(obj.argTokens[argIdx]) : "";
+									int argIdx = fieldArg(w.fieldIndex, w.comp);
+									prop_text_buf_ = (argIdx >= 0 && argIdx < (int)tobj.argTokens.size()) ? StripQuotes(tobj.argTokens[argIdx]) : "";
 									prop_text_caret_ = (int)prop_text_buf_.size();
 								} else if (w.kind == K::NumBox) {
 									// Click to type AND arm scrub-drag (motion will scrub).
+									prop_edit_obj_index_ = tIdx;
 									prop_text_edit_field_ = w.fieldIndex * 3 + w.comp;
-									int argIdx = schema[w.fieldIndex].argOffset + w.comp;
-									prop_text_buf_ = (argIdx < (int)obj.argTokens.size()) ? obj.argTokens[argIdx] : "";
+									int argIdx = fieldArg(w.fieldIndex, w.comp);
+									prop_text_buf_ = (argIdx >= 0 && argIdx < (int)tobj.argTokens.size()) ? tobj.argTokens[argIdx] : "";
 									prop_text_caret_ = (int)prop_text_buf_.size();
+									prop_drag_obj_index_ = tIdx;
 									prop_field_index_  = w.fieldIndex * 3 + w.comp;
 									prop_drag_start_x_ = x;
 									prop_drag_start_y_ = y;
 									PushUndoState();
-									prop_drag_start_val_ = tokOf(argIdx);
+									prop_drag_start_val_ = tTok(argIdx);
 								} else if (w.kind == K::Checkbox) {
-									int argIdx = schema[w.fieldIndex].argOffset + w.comp;
-									if (argIdx < (int)obj.argTokens.size()) {
-										int cur = 0; try { cur = std::stoi(obj.argTokens[argIdx]); } catch(...) {}
-										obj.argTokens[argIdx] = (cur == 0) ? "1" : "0";
-										obj.modified = true;
-										level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
+									int argIdx = fieldArg(w.fieldIndex, w.comp);
+									if (argIdx >= 0 && argIdx < (int)tobj.argTokens.size()) {
+										int cur = 0; try { cur = std::stoi(tobj.argTokens[argIdx]); } catch(...) {}
+										tobj.argTokens[argIdx] = (cur == 0) ? "1" : "0";
+										tobj.modified = true;
+										level_.GetLevelObjects().UpdateCoordinatesInLine(tobj);
 									}
 								} else if (w.kind == K::PosPad) {
 									// drag X and Y simultaneously — store field, use comp=0 marker
+									prop_drag_obj_index_ = tIdx;
 									prop_field_index_  = w.fieldIndex * 3 + 0;
 									prop_drag_start_x_ = x;
 									prop_drag_start_y_ = y;
 									PushUndoState();
-									int off = schema[w.fieldIndex].argOffset;
-									prop_drag_start_val_  = tokOf(off + 0);
-									prop_drag_start_val2_ = tokOf(off + 1);
+									int off = fieldArg(w.fieldIndex, 0);
+									prop_drag_start_val_  = tTok(off + 0);
+									prop_drag_start_val2_ = tTok(off + 1);
 								} else {
 									// PosZSlider / OriSlider / RgbSlider / NumSlider — single-value drag
+									prop_drag_obj_index_ = tIdx;
 									prop_field_index_  = w.fieldIndex * 3 + w.comp;
 									prop_drag_start_x_ = x;
 									prop_drag_start_y_ = y;
 									PushUndoState();
-									prop_drag_start_val_ = tokOf(schema[w.fieldIndex].argOffset + w.comp);
+									prop_drag_start_val_ = tTok(fieldArg(w.fieldIndex, w.comp));
 								}
 								return;
 							}
+								return; // consume any click in the panel strip (foreground overlay)
 						}
 					}
 				}
@@ -1043,15 +1043,20 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					mouse_state_.left_button_down_ = false;
 					if      (btn_hit(0, y)) { TogglePauseMenu(); }                    // Resume
 					else if (btn_hit(1, y)) {                                         // Font row: toggle + [-] size [+]
-						// Sub-region X bounds MUST match renderer.cpp font row layout.
-						int plus_x  = menu_x + menu_w - 46;
-						int minus_x = menu_x + menu_w - 114;
+						// Sub-region X bounds MUST match renderer.cpp centered font row layout.
+						const int sz_box_w = 34, btn_w = 22, gap = 6, label_w = 96, label_gap = 16;
+						const int controls_w = btn_w + gap + sz_box_w + gap + btn_w;
+						const int group_w = label_w + label_gap + controls_w;
+						int gx = menu_x + (menu_w - group_w) / 2;
+						int minus_x = gx + label_w + label_gap;
+						int box_x   = minus_x + btn_w + gap;
+						int plus_x  = box_x + sz_box_w + gap;
 						int& fs = Config::Get().systemFontSize;
-						if (x >= minus_x && x < minus_x + 22) {        // [-] decrease 18→12→10
-							fs = (fs >= 18) ? 12 : 10;
+						if (x >= minus_x && x < minus_x + 22) {        // [-] decrease by 1
+							fs = std::max(8, fs - 1);
 							Config::Save();
-						} else if (x >= plus_x && x < plus_x + 22) {   // [+] increase 10→12→18
-							fs = (fs <= 10) ? 12 : 18;
+						} else if (x >= plus_x && x < plus_x + 22) {   // [+] increase by 1
+							fs = std::min(32, fs + 1);
 							Config::Save();
 						} else if (x < minus_x) {                      // left label: toggle font type
 							Config::Get().useEditorFont = !Config::Get().useEditorFont;
@@ -1132,6 +1137,8 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			edit_dragging_ = false;
 			orbit_active_ = false;
 			prop_field_index_ = -1; // C2: stop dragging property field
+			prop_drag_obj_index_ = -1;
+			prop_drag_speed_ = 0.f;
 			prop_last_drag_dx_ = 0;
 			prop_last_drag_dy_ = 0;
 			status_message_.clear(); // Clear movement telemetry status when mouse is released
@@ -1226,8 +1233,10 @@ void App::Input_OnMotion(int x, int y) {
 	// C2: Property editor drag (2D pad / Z slider / orientation+numeric sliders)
 	if (prop_field_index_ >= 0 && !enableCameraMode && selected_object_index_ >= 0) {
 		auto& objects = level_.GetLevelObjects().GetObjects();
-		if (selected_object_index_ < (int)objects.size()) {
-			auto& obj = objects[selected_object_index_];
+		// The drag may target the selected parent or one of its child tasks.
+		int dragIdx = (prop_drag_obj_index_ >= 0) ? prop_drag_obj_index_ : selected_object_index_;
+		if (dragIdx >= 0 && dragIdx < (int)objects.size()) {
+			auto& obj = objects[dragIdx];
 			const TaskSchema* scp = GetSchema(obj.type);
 			if (scp) {
 				const TaskSchema& schema = *scp;
@@ -1243,76 +1252,14 @@ void App::Input_OnMotion(int x, int y) {
 					const std::string& tn = fd.typeName;
 					bool is_pos = (tn == "ObjectPos"); // only actual position type gets pad/camera-follow
 					bool is_ori = (tn == "Real32x9");
-					bool edge_cont = false; // set when edge-stuck continuation drives the move (camera not followed)
 						int dxp = x - prop_drag_start_x_;
-					int dyp = y - prop_drag_start_y_;
 
-					// Edge-stuck continuity for XY pad and Z slider:
-					// When the cursor hits the window edge the OS stops reporting motion (dx=dy=0).
-					// Detect this case and substitute the last known delta so the object keeps
-					// moving in the same direction as long as the button stays held.
-					if (is_pos) {
-						const int kEdge = 3;
-						bool at_edge = (x <= kEdge || y <= kEdge ||
-						                x >= window_state_.viewport_width_  - kEdge ||
-						                y >= window_state_.viewport_height_ - kEdge);
-						if (dx != 0) prop_last_drag_dx_ = dx;
-						if (dy != 0) prop_last_drag_dy_ = dy;
-						if (at_edge && dx == 0 && dy == 0) {
-							dx = prop_last_drag_dx_;
-							dy = prop_last_drag_dy_;
-							edge_cont = (dx != 0 || dy != 0);
-						}
-					}
-					auto writeArg = [&](int idx, float v) {
-						if (idx >= 0 && idx < (int)obj.argTokens.size()) {
-							char buf[64]; snprintf(buf, sizeof(buf), "%.6f", v);
-							obj.argTokens[idx] = buf;
-						}
-					};
-					if (is_pos && comp == 0) {
-						// Per-frame delta: dx/dy are the mouse movement THIS motion event only.
-						// The previous cumulative approach (nx = start + dxp*accel) stalled when the
-						// cursor reached the window edge because dxp/dyp stopped changing.
-						// Per-frame: cursor at edge → dx=dy=0 → no movement (natural stop, no stall).
-						glm::dvec3 oldPos = obj.pos;
-						float fdx = (float)dx;
-						float fdy = (float)dy;
-						float drag_speed = std::sqrt(fdx * fdx + fdy * fdy);
-						// accel = speed * 4 matches the feel of the old cumulative quadratic formula
-						// for typical drag distances (verified: 5px/frame over 20 frames ≈ 2000 units).
-						float accel = std::max(0.5f, drag_speed * 4.0f);
-						int off = fd.argOffset;
-						float cur_x = (off   < (int)obj.argTokens.size()) ? (float)std::atof(obj.argTokens[off  ].c_str()) : 0.f;
-						float cur_y = (off+1 < (int)obj.argTokens.size()) ? (float)std::atof(obj.argTokens[off+1].c_str()) : 0.f;
-						float nx = cur_x + fdx * accel;
-						float ny = cur_y - fdy * accel;
-						writeArg(fd.argOffset + 0, nx);
-						writeArg(fd.argOffset + 1, ny);
-						obj.pos.x = nx;
-						obj.pos.y = ny;
-						obj.modified = true;
-						glm::dvec3 deltaPos = obj.pos - oldPos;
-						PropagateTransformToChildren(selected_object_index_, deltaPos, glm::dmat3(1.0), oldPos);
-						level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
-						if (!edge_cont) viewer_.pos_ += glm::vec3(deltaPos);
-					} else if (is_pos && comp == 2) {
-						// Per-frame delta for Z — same fix as XY pad above.
-						glm::dvec3 oldPos = obj.pos;
-						float fdy = (float)dy;
-						float abs_fdy = std::abs(fdy);
-						float accel = std::max(0.5f, abs_fdy * 4.0f);
-						int off = fd.argOffset + 2;
-						float cur_z = (off < (int)obj.argTokens.size()) ? (float)std::atof(obj.argTokens[off].c_str()) : 0.f;
-						float nz = cur_z - fdy * accel;
-						writeArg(fd.argOffset + 2, nz);
-						obj.pos.z = nz;
-						obj.modified = true;
-						glm::dvec3 deltaPos = obj.pos - oldPos;
-						PropagateTransformToChildren(selected_object_index_, deltaPos, glm::dmat3(1.0), oldPos);
-						level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
-						if (!edge_cont) viewer_.pos_ += glm::vec3(deltaPos);
-					} else {
+						if (is_pos) {
+							// Position pad / Z slider use a per-frame velocity model
+							// (ApplyPropPositionDrag) so the object accelerates while held in a
+							// direction and keeps moving even when the cursor is pinned at the
+							// window edge. Raw motion events do nothing for position here.
+						} else {
 						glm::dvec3 oldPos = obj.pos;
 						glm::dvec3 oldRot = obj.rot;
 						// Orientation / RGB / numeric horizontal slider or NumBox scrub.
@@ -1335,18 +1282,101 @@ void App::Input_OnMotion(int x, int y) {
 						}
 						// Sync single-rotation Real32 fields (Gamma/Heading) to obj.rot.z so
 						// UpdateCoordinatesInLine doesn't overwrite argTokens with stale obj.rot.
-						bool isSingleRot = (tn == "Real32" && (fd.name == "Gamma" || fd.name == "Heading"));
+						// Gamma/Heading are stored as Angle/Degrees/Real32 — any of these
+						// must drive obj.rot.z so the 3D object actually turns when dragged.
+						bool isSingleRot = ((tn == "Real32" || tn == "Angle" || tn == "Degrees") &&
+						                    (fd.name == "Gamma" || fd.name == "Heading"));
 						if (isSingleRot) obj.rot.z = (double)nv;
 						obj.modified = true;
 						if (is_ori) {
 							glm::dmat3 deltaWorld = BuildRotMatZXY(obj.rot) * glm::transpose(BuildRotMatZXY(oldRot));
-							PropagateTransformToChildren(selected_object_index_, glm::dvec3(0), deltaWorld, oldPos);
+							PropagateTransformToChildren(dragIdx, glm::dvec3(0), deltaWorld, oldPos);
 						}
 						level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
 					}
 				}
 			}
 		}
+	}
+}
+
+// Per-frame velocity-ramped position drag for the property editor's 2D pad and Z
+// slider. Called once per frame while the field is held. The object accelerates
+// the longer the cursor is held away from the drag-start point (mirrors the
+// ALT+SHIFT camera boost) and keeps moving even when the cursor is pinned at the
+// window edge. The camera is intentionally NOT moved, so the object visibly
+// travels through the world.
+void App::ApplyPropPositionDrag() {
+	if (prop_field_index_ < 0) return;
+	auto& objects = level_.GetLevelObjects().GetObjects();
+	int dragIdx = (prop_drag_obj_index_ >= 0) ? prop_drag_obj_index_ : selected_object_index_;
+	if (dragIdx < 0 || dragIdx >= (int)objects.size()) return;
+	auto& obj = objects[dragIdx];
+	const TaskSchema* scp = GetSchema(obj.type);
+	if (!scp) return;
+	const TaskSchema& schema = *scp;
+	int fi = prop_field_index_ / 3;
+	int comp = prop_field_index_ % 3;
+	if (fi >= (int)schema.size()) return;
+	const FieldDef& fd = schema[fi];
+	if (fd.typeName != "ObjectPos") return;   // only the pad / Z slider use this model
+
+	int dispx = mouse_state_.prior_x_ - prop_drag_start_x_;
+	int dispy = mouse_state_.prior_y_ - prop_drag_start_y_;
+	const int   kDead   = 5;        // cursor dead zone around the drag start
+	const float kBase   = 25.0f;    // units/frame just past the dead zone
+	const float kGrowth = 1.05f;    // per-frame acceleration multiplier
+	const float kMax    = 8000.0f;  // speed cap (units/frame)
+
+	auto curArg = [&](int idx) -> double {
+		return (idx >= 0 && idx < (int)obj.argTokens.size()) ? std::atof(obj.argTokens[idx].c_str()) : 0.0;
+	};
+	auto writeArg = [&](int idx, double v) {
+		if (idx >= 0 && idx < (int)obj.argTokens.size()) {
+			char buf[64]; snprintf(buf, sizeof(buf), "%.6f", v);
+			obj.argTokens[idx] = buf;
+		}
+	};
+
+	glm::dvec3 oldPos = obj.pos;
+	bool moved = false;
+
+	if (comp == 0) {            // 2D pad → X / Y
+		float len = std::sqrt((float)(dispx * dispx + dispy * dispy));
+		if (len < (float)kDead) { prop_drag_speed_ = 0.f; return; }
+		prop_drag_speed_ = (prop_drag_speed_ < kBase) ? kBase : std::min(kMax, prop_drag_speed_ * kGrowth);
+		float ux = dispx / len, uy = dispy / len;
+		double nx = curArg(fd.argOffset + 0) + ux * prop_drag_speed_;
+		double ny = curArg(fd.argOffset + 1) - uy * prop_drag_speed_;  // screen-y down → world-y up
+		writeArg(fd.argOffset + 0, nx);
+		writeArg(fd.argOffset + 1, ny);
+		obj.pos.x = nx; obj.pos.y = ny;
+		moved = true;
+	} else if (comp == 1) {     // Y numeric box → Y only
+		if (std::abs(dispy) < kDead) { prop_drag_speed_ = 0.f; return; }
+		prop_drag_speed_ = (prop_drag_speed_ < kBase) ? kBase : std::min(kMax, prop_drag_speed_ * kGrowth);
+		float uy = (dispy < 0) ? 1.f : -1.f;   // drag up → +Y
+		double ny = curArg(fd.argOffset + 1) + uy * prop_drag_speed_;
+		writeArg(fd.argOffset + 1, ny);
+		obj.pos.y = ny;
+		moved = true;
+	} else if (comp == 2) {     // Z slider
+		if (std::abs(dispy) < kDead) { prop_drag_speed_ = 0.f; return; }
+		prop_drag_speed_ = (prop_drag_speed_ < kBase) ? kBase : std::min(kMax, prop_drag_speed_ * kGrowth);
+		float uy = (dispy < 0) ? 1.f : -1.f;   // drag up → +Z
+		double nz = curArg(fd.argOffset + 2) + uy * prop_drag_speed_;
+		writeArg(fd.argOffset + 2, nz);
+		obj.pos.z = nz;
+		moved = true;
+	}
+
+	if (moved) {
+		obj.modified = true;
+		glm::dvec3 deltaPos = obj.pos - oldPos;
+		PropagateTransformToChildren(dragIdx, deltaPos, glm::dmat3(1.0), oldPos);
+		level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
+		// Camera follows the object so it stays in view as it accelerates/travels.
+		viewer_.pos_ += glm::vec3(deltaPos);
 	}
 }
 
@@ -2072,6 +2102,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	}
 
 	if (key == 27) { // ESC
+		if (show_help_) { show_help_ = false; return; }
 		if (prop_editor_open_) { // close the property panel first
 			prop_editor_open_ = false;
 			prop_field_index_ = -1;
@@ -2080,6 +2111,17 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		}
 		TogglePauseMenu();
 		return;
+	}
+
+	// H or CTRL+H — toggle keybinding help panel (Ctrl+H arrives as ASCII 8).
+	// Only when not typing in a text field / picker / find bar.
+	if (prop_text_edit_field_ == -1 && !find_open_ && !task_picker_open_ && !pause_mode_) {
+		bool ctrl = !!(glutGetModifiers() & GLUT_ACTIVE_CTRL);
+		if (key == 'h' || key == 'H' || (key == 8 && ctrl)) {
+			show_help_ = !show_help_;
+			help_scroll_offset_ = 0;
+			return;
+		}
 	}
 
 	// Global shortcuts (work in both pause and normal mode)
@@ -2669,6 +2711,7 @@ void App::Frame(float delta_seconds) {
 		UpdateViewDefine();
 		if (mouse_state_.prior_x_ != last_pick_x_ || mouse_state_.prior_y_ != last_pick_y_) {
 			hover_object_index_ = PickObjectAtScreenPos(mouse_state_.prior_x_, mouse_state_.prior_y_);
+			if (hover_object_index_ >= Renderer::kAttaPickBase) hover_object_index_ = -1; // ATTA hovered (clickable; promote on click)
 			last_pick_x_ = mouse_state_.prior_x_;
 			last_pick_y_ = mouse_state_.prior_y_;
 		}
@@ -2699,6 +2742,7 @@ void App::Frame(float delta_seconds) {
 			.prop_field_index_     = prop_field_index_,
 			.prop_text_edit_field_ = prop_text_edit_field_,
 			.prop_edit_obj_index_  = prop_edit_obj_index_,
+			.prop_drag_obj_index_  = prop_drag_obj_index_,
 			.prop_text_buf_        = prop_text_buf_,
 			.prop_text_caret_      = prop_text_caret_,
 			.prop_panel_scroll_    = prop_panel_scroll_,
@@ -2726,12 +2770,11 @@ void App::Frame(float delta_seconds) {
 
 	ProcessInput(delta_seconds);
 
-	// Continuous position drag: re-apply prop drag every frame while button held.
-	// This ensures objects keep moving when the cursor is stationary at the screen edge.
+	// Per-frame position-drag velocity: the pad / Z slider accelerate while held in
+	// a direction and keep moving when the cursor is pinned at the window edge.
 	if (mouse_state_.left_button_down_ && prop_field_index_ >= 0 && selected_object_index_ >= 0 &&
 	    !Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera)) {
-		// Synthesise a motion event at the current cursor position to keep applying drag velocity.
-		Input_OnMotion(mouse_state_.prior_x_, mouse_state_.prior_y_);
+		ApplyPropPositionDrag();
 	}
 
 	if (edit_mode_ && terrain_edit_enabled_ && mouse_state_.left_button_down_) {
@@ -2747,6 +2790,7 @@ void App::Frame(float delta_seconds) {
 			hover_object_index_ = -1;
 		} else {
 			hover_object_index_ = PickObjectAtScreenPos(mouse_state_.prior_x_, mouse_state_.prior_y_);
+			if (hover_object_index_ >= Renderer::kAttaPickBase) hover_object_index_ = -1; // ATTA hovered (clickable; promote on click)
 		}
 		last_pick_x_ = mouse_state_.prior_x_;
 		last_pick_y_ = mouse_state_.prior_y_;
@@ -2819,6 +2863,7 @@ void App::Frame(float delta_seconds) {
 		.prop_field_index_     = prop_field_index_,
 		.prop_text_edit_field_ = prop_text_edit_field_,
 		.prop_edit_obj_index_  = prop_edit_obj_index_,
+		.prop_drag_obj_index_  = prop_drag_obj_index_,
 		.prop_text_buf_        = prop_text_buf_,
 		.prop_text_caret_      = prop_text_caret_,
 		.prop_panel_scroll_    = prop_panel_scroll_,
@@ -3230,6 +3275,11 @@ void App::EditorProcessClick() {
 
 	// Object edit mode: select the object under the mouse cursor
 	int pickedObject = PickObjectAtScreenPos(mouse_state_.prior_x_, mouse_state_.prior_y_);
+	// Clicked a pure MEF attachment → promote it to an editable EditRigidObj task.
+	if (pickedObject >= Renderer::kAttaPickBase) {
+		PromoteAttaToObject(pickedObject - Renderer::kAttaPickBase);
+		return;
+	}
 	if (pickedObject >= 0 && pickedObject < (int)objects.size()) {
 		selected_object_index_ = pickedObject;
 		const LevelObject& obj = objects[pickedObject];
@@ -3749,7 +3799,7 @@ void App::CommitPropTextEdit() {
 
 	// Sync obj.rot after orientation field commits so the 3D marker updates.
 	bool is_ori_field = (tn == "Real32x9");
-	bool is_gamma_field = (tn == "Real32" && (fd.name == "Gamma" || fd.name == "Heading"));
+	bool is_gamma_field = ((tn == "Real32" || tn == "Angle" || tn == "Degrees") && (fd.name == "Gamma" || fd.name == "Heading"));
 	if (is_ori_field) {
 		if (comp == 0 && fd.argOffset < (int)obj.argTokens.size())
 			try { obj.rot.x = std::stod(obj.argTokens[fd.argOffset]); } catch(...) {}
@@ -3854,7 +3904,81 @@ int App::PickObjectAtScreenPos(int screen_x, int screen_y) {
 	);
 }
 
+void App::PromoteAttaToObject(int entry) {
+	AttaPickEntry e;
+	if (!renderer_.GetAttaPickEntry(entry, e)) return;
+
+	auto& objects = level_.GetLevelObjects().GetObjects();
+	PushUndoState();
+
+	// Extract Euler angles in the editor's render order R = Rz(rz)*Rx(rx)*Ry(ry)
+	// from the captured world rotation matrix (glm column-major: m[col][row]).
+	const glm::mat3& m = e.worldRot;
+	float sx = std::max(-1.0f, std::min(1.0f, m[1][2]));
+	float rx = std::asin(sx);
+	float cx = std::cos(rx);
+	float ry, rz;
+	if (std::fabs(cx) > 1e-4f) {
+		ry = std::atan2(-m[0][2], m[2][2]);
+		rz = std::atan2(-m[1][0], m[1][1]);
+	} else { // gimbal lock
+		ry = 0.0f;
+		rz = std::atan2(m[0][1], m[0][0]);
+	}
+
+	LevelObject obj;
+	obj.qscFuncName  = "Task_New";
+	obj.type         = "EditRigidObj";
+	obj.name         = "";
+	obj.taskId       = "-1";
+	obj.modelId      = e.modelId;
+	obj.modelIdArgIdx = 9;
+	obj.pos          = glm::dvec3(e.worldPos);
+	obj.rot          = glm::vec3(rx, ry, rz);
+	obj.scale        = (e.scale > 0.f) ? e.scale : 1.0f;
+	obj.isBuilding   = false;
+	obj.deleted      = false;
+	obj.modified     = true;
+	// EditRigidObj arg layout: id, type, note, posX/Y/Z, oriX/Y/Z, model,
+	// dirlight RGB (1,1,1), dirlight ambient RGB (0,0,0).
+	obj.argTokens = {
+		"-1", "\"EditRigidObj\"", "\"\"",
+		"0", "0", "0",        // pos  (filled by UpdateCoordinatesInLine)
+		"0", "0", "0",        // ori  (filled by UpdateCoordinatesInLine)
+		"\"" + e.modelId + "\"",
+		"1", "1", "1", "0", "0", "0"
+	};
+
+	int parentIdx = e.parentObjIndex;
+	if (parentIdx >= 0 && parentIdx < (int)objects.size())
+		obj.parentIndex = parentIdx;
+
+	int newIdx = (int)objects.size();
+	objects.push_back(obj);
+	if (parentIdx >= 0 && parentIdx < (int)objects.size()) {
+		objects[parentIdx].childrenIndices.push_back(newIdx);
+		objects[parentIdx].modified = true;
+		objects[parentIdx].qscLine.clear(); // force subtree re-serialization on save
+	}
+	level_.GetLevelObjects().UpdateCoordinatesInLine(objects[newIdx]);
+
+	// Permanently hide the ORIGINAL ATTA (by its starting position) so it doesn't
+	// reappear as a ghost/clone once this promoted object is moved away.
+	renderer_.SuppressAtta(Renderer::AttaOccupancyKey(e.modelId, e.worldPos));
+
+	selected_object_index_ = newIdx;
+	marker_manip_.start_pos_ = objects[newIdx].pos;
+	marker_manip_.start_rot_ = objects[newIdx].rot;
+	status_message_ = "Promoted attachment '" + e.modelId + "' to editable object";
+	Logger::Get().Log(LogLevel::INFO,
+		"[App] Promoted ATTA '" + e.modelId + "' -> EditRigidObj idx=" + std::to_string(newIdx) +
+		" parent=" + std::to_string(parentIdx));
+}
+
 void App::LoadQSCForLevel(int level_no) {
+	// New level: forget ATTA suppressions from the previous one (a freshly loaded
+	// level's saved EditRigidObj tasks re-suppress their ATTAs via live occupancy).
+	renderer_.ClearSuppressedAttas();
 	try {
 		namespace fs = std::filesystem;
 
@@ -4093,6 +4217,14 @@ void App::SaveAndCompile() {
 		Logger::Get().Log(LogLevel::ERR, "[App] Failed to compile QSC. Detail: " + detail);
 		Utils::LogAndShowError("Compile failed. Error: " + detail, "IGI Editor - Compile Error");
 	}
+}
+
+void App::SetInitialFullscreen(int windowedW, int windowedH) {
+	// Mark fullscreen as active and remember the windowed size so ALT+ENTER can
+	// restore a sane window. main() calls glutFullScreen() to actually enter it.
+	window_state_.full_screen_ = true;
+	window_state_.old_viewport_width_  = windowedW;
+	window_state_.old_viewport_height_ = windowedH;
 }
 
 void App::SetInitialDrawParts(int parts) {

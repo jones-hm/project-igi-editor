@@ -69,6 +69,7 @@ public:
 	float					GetSelectedObjectScale() const;
 
 	// Command line initial settings
+	void					SetInitialFullscreen(int windowedW, int windowedH);
 	void					SetInitialDrawParts(int parts);
 	void					SetInitialStickToGround(bool stick);
 
@@ -89,6 +90,9 @@ public:
 	void					OnIdle();
 
 	int						PickObjectAtScreenPos(int screen_x, int screen_y);
+	// Promote a picked MEF ATTA sub-model (entry index from the pick pass) into a
+	// real, editable EditRigidObj task at the same world transform. Selects it.
+	void					PromoteAttaToObject(int entry);
 	std::vector<int>		GetVisibleTreeNodes();
 
 	// void					HandleMarkerInput(unsigned char key); // Removed
@@ -201,10 +205,12 @@ private:
 	int						prop_drag_start_y_     = 0;
 	int						prop_text_edit_field_  = -1;    // -2 = editing note
 	int						prop_edit_obj_index_   = -1;    // LevelObject targeted by the active text edit (-1 = selected/parent)
+	int						prop_drag_obj_index_   = -1;    // LevelObject targeted by the active slider/pad drag (-1 = selected/parent)
 	std::string				prop_text_buf_;
 	int						prop_text_caret_       = 0;     // caret index within prop_text_buf_
 	int						prop_last_drag_dx_     = 0;     // last non-zero X delta (for edge-stuck continuity)
 	int						prop_last_drag_dy_     = 0;     // last non-zero Y delta (for edge-stuck continuity)
+	float					prop_drag_speed_       = 0.f;   // ramping position-drag speed (units/frame) while held in a direction
 	int						prop_panel_scroll_     = 0;     // vertical scroll offset in pixels for prop panel
 
 	// C3: Ctrl+F find
@@ -294,6 +300,7 @@ private:
 	void					UpdateViewerVectors();
 	void					UpdateViewDefine();
 	void					EditorProcessClick();
+	void					ApplyPropPositionDrag();   // per-frame velocity-ramped position drag (pad / Z slider)
 	void					UpdateMarkerManipulation();
 	void					PropagateTransformToChildren(int parentIdx, const glm::dvec3& deltaPos, const glm::dmat3& deltaWorld, const glm::dvec3& pivot);
 	void					PushUndoState();
