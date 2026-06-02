@@ -807,6 +807,77 @@ void Renderer_Objects::InitPickingFBO(int w, int h) {
     pick_fbo_h_ = h;
 }
 
+// ─── DrawAttachmentsForPicking ────────────────────────────────────────────────
+// Draws ATTA sub-models of parentModelId with the parent's pick ID so that
+// clicking anywhere on an ATTA part selects the owning LevelObject.
+// Mirrors DrawAttachmentsRecursive's transform calculation; skips transparency,
+// lighting, and texture setup since the picking shader only cares about geometry.
+void Renderer_Objects::DrawAttachmentsForPicking(
+    const std::string& parentModelId, bool isBuilding,
+    const glm::mat4& parentWorldMat, float parentScale,
+    GLint loc_model, GLint loc_id, int pickId,
+    std::unordered_set<std::string>& drawn)
+{
+    const std::string prefix = isBuilding ? "building:" : "object:";
+    const std::string attKey = std::to_string(current_level_) + ":" + prefix + parentModelId;
+    auto ait = attachment_cache_.find(attKey);
+    if (ait == attachment_cache_.end()) return;
+
+    for (const auto& att : ait->second) {
+        // Find the attachment mesh (same cache lookup as DrawAttachmentsRecursive)
+        std::string subKey = std::to_string(current_level_) + ":" + prefix + att.modelId;
+        auto sit = mesh_cache_.find(subKey);
+        if (sit == mesh_cache_.end() || sit->second.vertexCount == 0) {
+            subKey = std::to_string(current_level_) + ":object:" + att.modelId;
+            sit = mesh_cache_.find(subKey);
+        }
+        if (sit == mesh_cache_.end()) continue;
+        const Mesh& subMesh = sit->second;
+
+        // Build ATTA world transform (identical logic to DrawAttachmentsRecursive)
+        glm::mat4 attLocalRot(
+            att.r[0], att.r[1], att.r[2], 0.f,
+            att.r[3], att.r[4], att.r[5], 0.f,
+            att.r[6], att.r[7], att.r[8], 0.f,
+            0.f,      0.f,      0.f,      1.f
+        );
+        glm::vec3 localOff(att.px, att.py, att.pz);
+        glm::vec3 worldPos = glm::vec3(parentWorldMat * glm::vec4(localOff, 1.f));
+        glm::mat4 parentRot = parentWorldMat;
+        parentRot[3] = glm::vec4(0.f, 0.f, 0.f, 1.f);
+        glm::mat4 childWorldMat(1.0f);
+        childWorldMat = glm::translate(childWorldMat, worldPos);
+        childWorldMat = childWorldMat * parentRot * attLocalRot;
+
+        // Recurse regardless of whether this node has pick-able geometry
+        std::string childKey = parentModelId + ">" + att.modelId;
+        bool recurse = drawn.insert(childKey).second;
+
+        if (subMesh.vertexCount > 0 && subMesh.fromRenderMesh) {
+            // Scale matches the default leafScale=40.96 used by DrawAttachmentsRecursive
+            glm::mat4 leafModel = glm::scale(childWorldMat, glm::vec3(40.96f * parentScale));
+            glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(leafModel));
+            glUniform1i(loc_id, pickId);
+
+            if (!subMesh.subMeshes.empty()) {
+                for (const auto& sub : subMesh.subMeshes) {
+                    if (sub.VAO == 0 || sub.vertexCount == 0) continue;
+                    glBindVertexArray(sub.VAO);
+                    glDrawArrays(GL_TRIANGLES, 0, sub.vertexCount);
+                }
+            } else if (subMesh.VAO) {
+                glBindVertexArray(subMesh.VAO);
+                glDrawArrays(GL_TRIANGLES, 0, subMesh.vertexCount);
+            }
+        }
+
+        if (recurse) {
+            DrawAttachmentsForPicking(att.modelId, isBuilding, childWorldMat, parentScale,
+                                      loc_model, loc_id, pickId, drawn);
+        }
+    }
+}
+
 // ─── DrawForPicking ───────────────────────────────────────────────────────────
 void Renderer_Objects::DrawForPicking(GLuint ubo_mats,
                                       const std::vector<LevelObject>& objects,
@@ -944,7 +1015,7 @@ void Renderer_Objects::DrawForPicking(GLuint ubo_mats,
         glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(model));
         glUniform1i(loc_id, i + 1); // ID 0 = background
 
-        // Draw hull submeshes only (ATTA attachments share parent ID via parent hull)
+        // Draw hull submeshes
         if (!mesh.subMeshes.empty()) {
             for (const auto& sub : mesh.subMeshes) {
                 if (sub.VAO == 0 || sub.vertexCount == 0) continue;
@@ -954,6 +1025,23 @@ void Renderer_Objects::DrawForPicking(GLuint ubo_mats,
         } else if (mesh.VAO) {
             glBindVertexArray(mesh.VAO);
             glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
+        }
+
+        // Also draw ATTA sub-models with the same pick ID so clicking anywhere
+        // on an attachment surface selects its parent LevelObject.
+        {
+            // Unscaled world matrix (translate+rotate only) as expected by DrawAttachmentsForPicking
+            glm::mat4 parentWorldMat(1.0f);
+            parentWorldMat = glm::translate(parentWorldMat, glm::vec3(obj.pos));
+            parentWorldMat = glm::rotate(parentWorldMat, (float)obj.rot.z, glm::vec3(0.f, 0.f, 1.f));
+            parentWorldMat = glm::rotate(parentWorldMat, (float)obj.rot.x, glm::vec3(1.f, 0.f, 0.f));
+            parentWorldMat = glm::rotate(parentWorldMat, (float)obj.rot.y, glm::vec3(0.f, 1.f, 0.f));
+            std::unordered_set<std::string> drawn;
+            DrawAttachmentsForPicking(obj.modelId, obj.isBuilding, parentWorldMat, obj.scale,
+                                      loc_model, loc_id, i + 1, drawn);
+            // Restore pick shader binding that DrawAttachmentsForPicking may have changed
+            glUseProgram(pick_shader_prog_);
+            glBindBufferBase(GL_UNIFORM_BUFFER, ubo_binding_point_, ubo_mats);
         }
     }
 

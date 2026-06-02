@@ -91,6 +91,13 @@ private:
                                    GLint loc_ambient, GLint loc_useTex, GLint loc_tex, GLint loc_alpha,
                                    std::unordered_set<std::string>& drawn,
                                    glm::vec3 leafScale = glm::vec3(40.96f));
+    // Like DrawAttachmentsRecursive but uses the picking shader and assigns each
+    // attachment the same pick ID as its parent so clicking on ATTA sub-parts
+    // selects the parent LevelObject.
+    void DrawAttachmentsForPicking(const std::string& parentModelId, bool isBuilding,
+                                   const glm::mat4& parentWorldMat, float parentScale,
+                                   GLint loc_model, GLint loc_id, int pickId,
+                                   std::unordered_set<std::string>& drawn);
     static bool IsVehicleType(const std::string& type);
     void EnsurePortalDistancesLoaded();
     void EnsureWindowModelIdsLoaded();
