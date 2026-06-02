@@ -82,14 +82,15 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
     for (int fi = 0; fi < (int)schema.size(); ++fi) {
         const FieldDef& fd = schema[fi];
         const std::string& tn = fd.typeName;
-        bool is_pos  = (tn == "ObjectPos" || tn == "Real32x3" || tn == "Real64x3");
-        bool is_ori  = (tn == "Real32x9");
-        bool is_rgb  = (tn == "RGB" || tn == "Colour");
-        bool is_str  = (tn.find("String") != std::string::npos || tn == "VarString" ||
-                        tn == "EnumString32" || tn == "DropDownCombo");
-        bool is_bool = (tn == "bool8" || tn == "PushButton");
-        bool is_ro   = (tn == "Graph" || tn == "AnimData" || tn == "TrainPos1D");
-        bool is_int  = (tn == "Int16" || tn == "Int32" || tn == "EnumInt32");
+        bool is_pos    = (tn == "ObjectPos");
+        bool is_float3 = (tn == "Real32x3" || tn == "Real64x3");
+        bool is_ori    = (tn == "Real32x9");
+        bool is_rgb    = (tn == "RGB" || tn == "Colour");
+        bool is_str    = (tn.find("String") != std::string::npos || tn == "VarString" ||
+                          tn == "EnumString32" || tn == "DropDownCombo");
+        bool is_bool   = (tn == "bool8" || tn == "PushButton");
+        bool is_ro     = (tn == "Graph" || tn == "AnimData" || tn == "TrainPos1D");
+        bool is_int    = (tn == "Int16" || tn == "Int32" || tn == "EnumInt32");
 
         y += kRowH;  // field header line
 
@@ -118,6 +119,14 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
                                  kLeft + kPad + bw + 8 + bw, y + kBoxH, -1, 0});
             y += kBoxH + 4;
             y += kRowH;  // "Altitude: ... meter"
+        } else if (is_float3) {
+            // Generic 3-component float (Speed, etc.) — just three labeled NumBoxes, no pad/snap
+            const int pBoxX1 = kLeft + kPad + 20;
+            const int pBoxX2 = pBoxX1 + 180;
+            for (int c = 0; c < 3; ++c) {
+                L.widgets.push_back({WidgetKind::NumBox, pBoxX1, y, pBoxX2, y + kBoxH, fi, c});
+                y += kBoxH + 2;
+            }
         } else if (is_ori) {
             // AI objects only expose Gamma (comp 2); non-AI exposes all three.
             int sx1 = kLeft + kPad + 64;
@@ -142,8 +151,9 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
                                  kLeft + kWidth - kPad, y + h, fi, 0});
             y += h + 2;
         } else if (is_bool) {
+            // Hit area covers full row width so label text is also clickable
             L.widgets.push_back({WidgetKind::Checkbox, kLeft + kPad, y,
-                                 kLeft + kPad + 14, y + 14, fi, 0});
+                                 kLeft + kWidth - kPad, y + kBoxH, fi, 0});
             y += kBoxH;
         } else if (is_ro) {
             y += kRowH;  // read-only grey value line, no widget
@@ -230,12 +240,17 @@ public:
 		int  prop_text_edit_field_ = -1;
 		std::string prop_text_buf_;
 		int  prop_text_caret_      = 0;
+		int  prop_panel_scroll_    = 0;  // vertical scroll offset (pixels)
 
 		// C3: Find bar
 		bool find_open_       = false;
 		std::string find_query_;
 		int  find_result_idx_ = -1;
 		bool selected_obj_is_ai    = false;
+
+		// Help panel (keybindings from qedkeybindings.qsc)
+		int  help_scroll_offset_    = 0;
+		const std::vector<std::string>* help_entries_ = nullptr;
 	};
 
 

@@ -844,6 +844,14 @@ void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 		else               { help_scroll_offset_++; }
 		return;
 	}
+	// Over property panel: scroll it
+	if (prop_editor_open_ &&
+	    x >= PropPanel::kLeft && x <= PropPanel::kLeft + PropPanel::kWidth) {
+		const int kScrollStep = PropPanel::kBoxH + 4;
+		if (direction > 0) prop_panel_scroll_ = std::max(0, prop_panel_scroll_ - kScrollStep);
+		else               prop_panel_scroll_ += kScrollStep;
+		return;
+	}
 	if (show_hud_ && x < 350) { // Over TreeView
 		if (direction > 0) {
 			if (tree_scroll_offset_ > 0) tree_scroll_offset_--;
@@ -1079,6 +1087,8 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			edit_dragging_ = false;
 			orbit_active_ = false;
 			prop_field_index_ = -1; // C2: stop dragging property field
+			prop_last_drag_dx_ = 0;
+			prop_last_drag_dy_ = 0;
 			status_message_.clear(); // Clear movement telemetry status when mouse is released
 
 			if (window_state_.cursor_visible_) {
@@ -1093,7 +1103,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 		int target = hover_object_index_ >= 0 ? hover_object_index_ : selected_object_index_;
 		if (target >= 0) {
 			selected_object_index_ = target;
-			prop_editor_open_ = true;
+			prop_editor_open_ = true; prop_panel_scroll_ = 0;
 		} else {
 			prop_editor_open_ = false;
 		}
@@ -1190,6 +1200,23 @@ void App::Input_OnMotion(int x, int y) {
 					bool is_ori = (tn == "Real32x9");
 					int dxp = x - prop_drag_start_x_;
 					int dyp = y - prop_drag_start_y_;
+
+					// Edge-stuck continuity for XY pad and Z slider:
+					// When the cursor hits the window edge the OS stops reporting motion (dx=dy=0).
+					// Detect this case and substitute the last known delta so the object keeps
+					// moving in the same direction as long as the button stays held.
+					if (is_pos) {
+						const int kEdge = 3;
+						bool at_edge = (x <= kEdge || y <= kEdge ||
+						                x >= window_state_.viewport_width_  - kEdge ||
+						                y >= window_state_.viewport_height_ - kEdge);
+						if (dx != 0) prop_last_drag_dx_ = dx;
+						if (dy != 0) prop_last_drag_dy_ = dy;
+						if (at_edge && dx == 0 && dy == 0) {
+							dx = prop_last_drag_dx_;
+							dy = prop_last_drag_dy_;
+						}
+					}
 					auto writeArg = [&](int idx, float v) {
 						if (idx >= 0 && idx < (int)obj.argTokens.size()) {
 							char buf[64]; snprintf(buf, sizeof(buf), "%.6f", v);
@@ -1957,7 +1984,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			auto& objects = level_.GetLevelObjects().GetObjects();
 			if (selected_object_index_ < (int)objects.size()) {
 				auto& obj = objects[selected_object_index_];
-				prop_editor_open_ = true;
+				prop_editor_open_ = true; prop_panel_scroll_ = 0;
 				if (obj.isContainer) {
 					obj.expanded = !obj.expanded;
 					Logger::Get().Log(LogLevel::INFO, "[App] Enter opened props + toggled expand for " + obj.type);
@@ -2626,6 +2653,7 @@ void App::Frame(float delta_seconds) {
 			.prop_text_edit_field_ = prop_text_edit_field_,
 			.prop_text_buf_        = prop_text_buf_,
 			.prop_text_caret_      = prop_text_caret_,
+			.prop_panel_scroll_    = prop_panel_scroll_,
 			.find_open_            = find_open_,
 			.find_query_           = find_query_,
 			.find_result_idx_      = find_result_idx_,
@@ -2744,6 +2772,7 @@ void App::Frame(float delta_seconds) {
 		.prop_text_edit_field_ = prop_text_edit_field_,
 		.prop_text_buf_        = prop_text_buf_,
 		.prop_text_caret_      = prop_text_caret_,
+		.prop_panel_scroll_    = prop_panel_scroll_,
 		.find_open_            = find_open_,
 		.find_query_           = find_query_,
 		.find_result_idx_      = find_result_idx_,
@@ -4064,7 +4093,7 @@ void App::ProcessTreeViewClick(int mx, int my) {
                         last_tree_click_time_ms_ = currentTime;
 
                         if (isDoubleClick) {
-                            prop_editor_open_ = true;
+                            prop_editor_open_ = true; prop_panel_scroll_ = 0;
                             Logger::Get().Log(LogLevel::INFO, "[App] Double clicked object from tree and opened property panel.");
                         } else {
                             Logger::Get().Log(LogLevel::INFO, "[App] Selected object from tree: " + obj.type);

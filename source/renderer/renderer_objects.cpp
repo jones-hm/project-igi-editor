@@ -853,7 +853,7 @@ void Renderer_Objects::DrawAttachmentsForPicking(
         std::string childKey = parentModelId + ">" + att.modelId;
         bool recurse = drawn.insert(childKey).second;
 
-        if (subMesh.vertexCount > 0 && subMesh.fromRenderMesh) {
+        if (subMesh.vertexCount > 0) {
             // Scale matches the default leafScale=40.96 used by DrawAttachmentsRecursive
             glm::mat4 leafModel = glm::scale(childWorldMat, glm::vec3(40.96f * parentScale));
             glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(leafModel));
@@ -999,7 +999,8 @@ void Renderer_Objects::DrawForPicking(GLuint ubo_mats,
 
         Mesh mesh = GetOrLoadMesh(obj.modelId, obj.isBuilding);
         if (mesh.vertexCount == 0) continue;
-        if (!mesh.fromRenderMesh) continue;
+        // Allow collision-only meshes (fromRenderMesh==false) as fallback pick hitboxes
+        // so vehicles, cargo, and any model without render vertices are still clickable.
 
         // Build model matrix (same convention as Draw())
         glm::mat4 model = glm::mat4(1.0f);

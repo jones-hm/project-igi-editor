@@ -1482,8 +1482,37 @@ void Renderer::Draw(const draw_params_s &params,
 
           PropPanel::Layout L = PropPanel::BuildLayout(schema, task_tree_view.selected_obj_is_ai);
 
+          // Append child-task sections (weapon, AI, etc.) to the layout.
+          // Each child gets a separator label row + its own schema fields.
+          // Child field indices are encoded as childIdx*10000 + fi*3+comp so
+          // the hit-test in app.cpp can distinguish parent vs child fields.
+          // (We only need to DISPLAY them here — editing child fields is done
+          //  by selecting the child in the task tree. The separator row is
+          //  draw-only, no widget.)
+          std::vector<std::pair<int,const TaskSchema*>> child_schemas; // (child obj idx, schema)
+          if (task_tree_view.level_objects_) {
+              for (int ci : obj.childrenIndices) {
+                  if (ci < 0 || ci >= (int)objects.size()) continue;
+                  const auto& child = objects[ci];
+                  if (child.deleted) continue;
+                  const TaskSchema* cscp = GetSchema(child.type);
+                  if (cscp && !cscp->empty()) child_schemas.push_back({ci, cscp});
+              }
+          }
+
+          // Apply vertical scroll: shift all widget Y positions.
+          const int scroll = task_tree_view.prop_panel_scroll_;
+          if (scroll > 0) {
+              for (auto& w : L.widgets) { w.y1 -= scroll; w.y2 -= scroll; }
+          }
+
           // GL y for a screen-top-down y.
           auto gl_y = [&](int sy) { return vh - sy; };
+
+          // Enable scissor clipping so scrolled content doesn't bleed outside the panel.
+          const int panel_vis_h = vh - PropPanel::kTop;
+          glEnable(GL_SCISSOR_TEST);
+          glScissor(PropPanel::kLeft, 0, PropPanel::kWidth + 20, panel_vis_h);
           // Filled quad in screen coords.
           auto quad = [&](int x1, int sy1, int x2, int sy2, float r, float g, float b, float a) {
             glEnable(GL_BLEND);
@@ -1815,6 +1844,69 @@ void Renderer::Draw(const draw_params_s &params,
             }
             y += 4;
           }
+
+          // ── Child task sections (weapon/ammo/AI sub-tasks shown read-only) ──────
+          for (auto& [ci, cscp] : child_schemas) {
+              const auto& child = objects[ci];
+              const TaskSchema& cschema = *cscp;
+              // Separator header
+              int sep_y = y - scroll + 4;
+              char sep_label[64];
+              snprintf(sep_label, sizeof(sep_label), "── %s ──", child.type.c_str());
+              draw_text(L.panel_x + PropPanel::kPad, sep_y + 11, sep_label, 0.5f, 0.8f, 1.0f);
+              y += PropPanel::kRowH + 4;
+
+              // Show each field as a read-only label + value (no editing; select child in tree to edit)
+              for (const auto& cfd : cschema) {
+                  int field_y = y - scroll;
+                  // Field name
+                  char fname[80];
+                  snprintf(fname, sizeof(fname), "%s:", cfd.name.c_str());
+                  draw_text(L.panel_x + PropPanel::kPad, field_y + 11, fname, 0.75f, 0.75f, 0.75f);
+                  // Value(s)
+                  int n = cfd.argCount;
+                  int off = cfd.argOffset;
+                  std::string val;
+                  for (int v = 0; v < n; ++v) {
+                      int ai = off + v;
+                      std::string tok = (ai >= 0 && ai < (int)child.argTokens.size()) ? child.argTokens[ai] : "-";
+                      if (!val.empty()) val += ", ";
+                      val += tok;
+                  }
+                  draw_text(L.panel_x + PropPanel::kPad + 140, field_y + 11, val.c_str(), 1.0f, 1.0f, 0.7f);
+                  y += PropPanel::kRowH;
+              }
+              y += 4;
+          }
+
+          // ── Scrollbar ────────────────────────────────────────────────────────────
+          {
+              const int total_h = y;       // total content height (approx)
+              const int vis_h   = panel_vis_h;
+              if (total_h > vis_h) {
+                  const int bar_x = PropPanel::kLeft + PropPanel::kWidth + 2;
+                  const int bar_w = 6;
+                  // Track
+                  glColor4f(0.1f, 0.1f, 0.1f, 0.8f);
+                  glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                  glBegin(GL_QUADS);
+                  glVertex2i(bar_x, gl_y(PropPanel::kTop)); glVertex2i(bar_x+bar_w, gl_y(PropPanel::kTop));
+                  glVertex2i(bar_x+bar_w, gl_y(PropPanel::kTop + vis_h)); glVertex2i(bar_x, gl_y(PropPanel::kTop + vis_h));
+                  glEnd();
+                  // Thumb
+                  float thumb_f = (float)vis_h / (float)total_h;
+                  int thumb_h  = std::max(20, (int)(vis_h * thumb_f));
+                  int thumb_y  = PropPanel::kTop + (int)((float)scroll / (float)(total_h - vis_h) * (vis_h - thumb_h));
+                  glColor4f(0.3f, 0.7f, 1.0f, 0.9f);
+                  glBegin(GL_QUADS);
+                  glVertex2i(bar_x, gl_y(thumb_y)); glVertex2i(bar_x+bar_w, gl_y(thumb_y));
+                  glVertex2i(bar_x+bar_w, gl_y(thumb_y + thumb_h)); glVertex2i(bar_x, gl_y(thumb_y + thumb_h));
+                  glEnd();
+                  glDisable(GL_BLEND);
+              }
+          }
+
+          glDisable(GL_SCISSOR_TEST);
         }
       }
     }

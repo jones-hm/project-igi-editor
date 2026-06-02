@@ -202,6 +202,9 @@ private:
 	int						prop_text_edit_field_  = -1;    // -2 = editing note
 	std::string				prop_text_buf_;
 	int						prop_text_caret_       = 0;     // caret index within prop_text_buf_
+	int						prop_last_drag_dx_     = 0;     // last non-zero X delta (for edge-stuck continuity)
+	int						prop_last_drag_dy_     = 0;     // last non-zero Y delta (for edge-stuck continuity)
+	int						prop_panel_scroll_     = 0;     // vertical scroll offset in pixels for prop panel
 
 	// C3: Ctrl+F find
 	bool					find_open_        = false;
