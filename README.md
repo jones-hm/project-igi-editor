@@ -6,50 +6,6 @@
 
 This project is built upon the foundational work of the [Project-IGI-Terrain](https://github.com/hjcminus/Project-IGI-Terrain) repository. Special thanks to [hjcminus](https://github.com/hjcminus) for their research and for bringing this codebase to light. It is built using C++17 and OpenGL, and it is cross-platform, but it is mainly tested on Windows.
 
-Written and maintained by **Heaven-HM**.
-
-> **Tip:** This editor was tested on **Project IGI Neonix Remastered** ([Nexus Mods Link](https://www.nexusmods.com/projectigi/mods/5)) and it is highly recommended to use that mod alongside this editor for HD Textures, Terrain, and enhanced Gameplay.
-> 
-> ![Project IGI Neonix Remastered](assets/screenshots/igi-neonix-remastered.png)
-
----
-
-## 🚀 Features
-
-- **3D Terrain Rendering & Sculpting**: Fully rendered real-time 3D terrain with active snapping, grid drawing, and heightmap editing brushes.
-- **Flight Camera & 3D Navigation**: Full 6-DOF fly cam with fine-grained pageup/pagedown speed controls and teleportation tools.
-- **Visual Task Tree Editor**: Visual tree-view workspace for managing mission objectives, inserting new tasks (`Task_New`), duplicating nodes, copying/pasting selections, deleting nodes, and multi-step **Undo/Redo** support.
-- **Advanced Splines & Waypoints**: Complete spline system for procedural railway paths, mesh repeats, linear/curved segment configuration, and pathing lines.
-- **AI Behavior & Mission Layout**: Edit NPC soldier structures, patrol nodes, custom scripts, weapon loadouts, ammunition inventory, and team layouts.
-- **Live Editor Real-Time Sync**: Direct communication between the editor and the IGI engine for instant visual and physical feedback.
-- **3D Object Placement & Manipulation**: Advanced 6-DOF controls for placing buildings, props, terminals, doors, cameras, and actors.
-- **IGI 2 Style Controls**: Seamless object translation and rotation using standard mouse-drag modifiers (Shift, Ctrl, A, B, G).
-- **Automated Path & Sync Pipeline**: Automatically handles compiler syncing, path mapping, and safe directory cleaning.
-
-### Current Testing Status
-- **Building Editor**: Working - fully tested with Building objects.
-- **Terrain Editor**: Working - 3D terrain heightmap rendering and snapping fully functional.
-- **Task Tree & Objectives**: Working - interactive tree management, copy/paste, deletion, and insertion of new tasks fully operational.
-- **AI & Waypoint System**: Working - full editing of NPC patrol nodes and properties.
-- **Model Format**: Uses proprietary **Native MEF Models** natively loaded by the integrated MEF parser for optimal accuracy and parity with the game engine.
-- **Level Tested**: Supports compiling/decompiling all 14 original game levels. Note that only the first few levels are fully tested and verified. Levels from Level 5 onwards may have bugs or issues; if you find any, please create an issue on GitHub and report them to us! Thank you!
-
-### ⚠️ Known Issues
-A comprehensive list of all known rendering, game, and engine issues can be found in our **[Known Issues Guide](docs/KNOWN_ISSUES.md)**.
-
----
-
-## 🔄 How It Works
-
-### Editor Flow
-* **Sync & Decompile**: Copies terrain and compiles/decompiles `QSC`/`QVM` files dynamically to keep level data in sync.
-* **Attachments (ATTA)**: If modifying attachments, decompiles/recompiles `MEF` files back to `.RES` to show changes.
-* **Asset Loading**: Loads icons, textures, and sprites from `qed` and level directories.
-* **Level Setup**: Parses QSC data, snaps MEF 3D models to the terrain heightmap, and positions the camera.
-* **Auto-Backup**: Automatically creates file backups on save if `backup = true` in config.
-
----
-
 ## 📸 Screenshots
 
 With the release of our premium modding features, we have expanded our workspace visualization with high-fidelity telemetry, dynamic objective tree views, and comprehensive level environment rendering.
@@ -100,6 +56,51 @@ With the release of our premium modding features, we have expanded our workspace
 *Debug Console showing IGIPath resolution and QVM compilation pipeline.*
 
 ---
+
+> **Tip:** This editor was tested on **Project IGI Neonix Remastered** ([Nexus Mods Link](https://www.nexusmods.com/projectigi/mods/5)) and it is highly recommended to use that mod alongside this editor for HD Textures, Terrain, and enhanced Gameplay.
+> 
+> ![Project IGI Neonix Remastered](assets/screenshots/igi-neonix-remastered.png)
+
+---
+
+
+
+## 🚀 Features
+
+- **3D Terrain Rendering & Sculpting**: Fully rendered real-time 3D terrain with active snapping, grid drawing, and heightmap editing brushes.
+- **Flight Camera & 3D Navigation**: Full 6-DOF fly cam with fine-grained pageup/pagedown speed controls and teleportation tools.
+- **Visual Task Tree Editor**: Visual tree-view workspace for managing mission objectives, inserting new tasks (`Task_New`), duplicating nodes, copying/pasting selections, deleting nodes, and multi-step **Undo/Redo** support.
+- **Advanced Splines & Waypoints**: Complete spline system for procedural railway paths, mesh repeats, linear/curved segment configuration, and pathing lines.
+- **AI Behavior & Mission Layout**: Edit NPC soldier structures, patrol nodes, custom scripts, weapon loadouts, ammunition inventory, and team layouts.
+- **Live Editor Real-Time Sync**: Direct communication between the editor and the IGI engine for instant visual and physical feedback.
+- **3D Object Placement & Manipulation**: Advanced 6-DOF controls for placing buildings, props, terminals, doors, cameras, and actors.
+- **IGI 2 Style Controls**: Seamless object translation and rotation using standard mouse-drag modifiers (Shift, Ctrl, A, B, G).
+- **Automated Path & Sync Pipeline**: Automatically handles compiler syncing, path mapping, and safe directory cleaning.
+
+### Current Testing Status
+- **Building Editor**: Working - fully tested with Building objects.
+- **Terrain Editor**: Working - 3D terrain heightmap rendering and snapping fully functional.
+- **Task Tree & Objectives**: Working - interactive tree management, copy/paste, deletion, and insertion of new tasks fully operational.
+- **AI & Waypoint System**: Working - full editing of NPC patrol nodes and properties.
+- **Model Format**: Uses proprietary **Native MEF Models** natively loaded by the integrated MEF parser for optimal accuracy and parity with the game engine.
+- **Level Tested**: Supports compiling/decompiling all 14 original game levels. Note that only the first few levels are fully tested and verified. Levels from Level 5 onwards may have bugs or issues; if you find any, please create an issue on GitHub and report them to us! Thank you!
+
+### ⚠️ Known Issues
+A comprehensive list of all known rendering, game, and engine issues can be found in our **[Known Issues Guide](docs/KNOWN_ISSUES.md)**.
+
+---
+
+## 🔄 How It Works
+
+### Editor Flow
+* **Sync & Decompile**: Copies terrain and compiles/decompiles `QSC`/`QVM` files dynamically to keep level data in sync.
+* **Attachments (ATTA)**: If modifying attachments, decompiles/recompiles `MEF` files back to `.RES` to show changes.
+* **Asset Loading**: Loads icons, textures, and sprites from `qed` and level directories.
+* **Level Setup**: Parses QSC data, snaps MEF 3D models to the terrain heightmap, and positions the camera.
+* **Auto-Backup**: Automatically creates file backups on save if `backup = true` in config.
+
+---
+
 
 ## 💻 Getting Started
 
@@ -292,3 +293,6 @@ If you encounter any issues or have suggestions, feel free to reach out:
 - **📧 Email**: [igiproz.hm@gmail.com](mailto:igiproz.hm@gmail.com)
 - **🌟 GitHub**: Follow the project on [Jones-HM GitHub](https://github.com/Jones-HM/).
 - **📺 YouTube**: Subscribe to [IGI Research Devs](https://www.youtube.com/@igi-research-devs) for guides and walkthroughs.
+
+## Author
+Written and maintained by **Heaven-HM**.
