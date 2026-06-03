@@ -128,8 +128,10 @@ static std::map<std::string, TaskSchema> ParseSchemas(const std::string& text) {
 // Public functions
 // ---------------------------------------------------------------------------
 
-bool PosMatch(const VerifyObj& a, const VerifyObj& b) {
-    return a.px == b.px && a.py == b.py && a.pz == b.pz;
+bool PosMatch(const VerifyObj& a, const VerifyObj& b, long long tol) {
+    return std::abs(a.px - b.px) <= tol &&
+           std::abs(a.py - b.py) <= tol &&
+           std::abs(a.pz - b.pz) <= tol;
 }
 
 bool OriMatch(const VerifyObj& a, const VerifyObj& b) {
@@ -249,7 +251,8 @@ std::vector<VerifyObj> ParseLog(const std::string& logPath, int levelNo,
 
 void CrossRef(LevelReport::Category& cat,
               const std::vector<VerifyObj>& logged,
-              bool matchOri) {
+              bool matchOri,
+              long long posTol) {
     std::vector<bool> consumed(logged.size(), false);
 
     for (const auto& exp : cat.expected) {
@@ -270,10 +273,10 @@ void CrossRef(LevelReport::Category& cat,
             continue;
         }
 
-        // Full match: same model, same pos, ori checked only when logged AND matches
+        // Full match: same model, same pos (within tolerance), ori checked only when logged AND matches
         auto it = std::find_if(logged.begin(), logged.end(), [&](const VerifyObj& q) {
             size_t idx = &q - &logged[0];
-            return !consumed[idx] && q.modelId == exp.modelId && PosMatch(q, exp) &&
+            return !consumed[idx] && q.modelId == exp.modelId && PosMatch(q, exp, posTol) &&
                    (!matchOri || (q.ori_logged && OriMatch(q, exp)));
         });
         if (it != logged.end()) {
@@ -291,7 +294,7 @@ void CrossRef(LevelReport::Category& cat,
         if (matchOri) {
             auto it2 = std::find_if(logged.begin(), logged.end(), [&](const VerifyObj& q) {
                 size_t idx = &q - &logged[0];
-                return !consumed[idx] && q.modelId == exp.modelId && PosMatch(q, exp);
+                return !consumed[idx] && q.modelId == exp.modelId && PosMatch(q, exp, posTol);
             });
             if (it2 != logged.end()) {
                 consumed[&*it2 - &logged[0]] = true;
@@ -536,9 +539,9 @@ LevelReport VerifyOneLevel(const std::string& igiPath,
     std::cout << "  Log: " << logged.size() << " entries parsed\n";
 
     // 5. Cross-reference
-    CrossRef(report.buildings, logged, true);
-    CrossRef(report.objects,   logged, true);
-    CrossRef(report.ai,        logged, false);
+    CrossRef(report.buildings, logged, true,  0);
+    CrossRef(report.objects,   logged, true,  0);
+    CrossRef(report.ai,        logged, false, 50); // AI are terrain-snapped on load; allow ±50 units
 
     return report;
 }

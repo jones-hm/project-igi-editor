@@ -49,7 +49,8 @@ struct LevelReport {
 // Helpers (exposed for testing)
 // ---------------------------------------------------------------------------
 
-bool PosMatch(const VerifyObj& a, const VerifyObj& b);
+// tol=0 → exact; tol>0 → allow ±tol on each axis (used for AI terrain-snap tolerance)
+bool PosMatch(const VerifyObj& a, const VerifyObj& b, long long tol = 0);
 bool OriMatch(const VerifyObj& a, const VerifyObj& b);
 
 std::map<std::string, std::string> LoadModelNames(const std::string& jsonPath);
@@ -73,9 +74,11 @@ std::vector<VerifyObj> ParseQscObjects(
 
 // Cross-reference cat.expected against logged.
 // matchOri=true for Buildings/Objects, false for AI.
+// posTol: position tolerance in game units (0=exact; 50 recommended for AI).
 void CrossRef(LevelReport::Category& cat,
               const std::vector<VerifyObj>& logged,
-              bool matchOri);
+              bool matchOri,
+              long long posTol = 0);
 
 // Full single-level pipeline: decompile QVM → parse QSC → parse log → cross-ref.
 LevelReport VerifyOneLevel(const std::string& igiPath,
