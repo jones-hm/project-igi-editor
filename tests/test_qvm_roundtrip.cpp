@@ -4,6 +4,7 @@
 #include <sstream>
 #include <regex>
 #include <cstdio>
+#include <filesystem>
 #include "parsers/qsc_lexer.h"
 #include "parsers/qsc_parser.h"
 #include "parsers/qvm_compiler.h"
@@ -336,3 +337,43 @@ TEST(QvmRoundTripTest, MultiCallDecompiledOutputIsValidQsc) {
     auto pr = qsc::Parse(lr.tokens);
     EXPECT_TRUE(pr.ok) << pr.error;
 }
+
+// ============================================================
+//  Game objects.qvm round-trips — all 14 levels
+//
+//  Parses the real objects.qvm, decompiles it to QSC, then
+//  verifies the decompiled output re-lexes and re-parses cleanly.
+//  Skipped automatically if the level file is missing.
+// ============================================================
+
+class QvmGameRoundTripTest : public ::testing::TestWithParam<int> {};
+
+TEST_P(QvmGameRoundTripTest, ObjectsQvmDecompilesAndReparses) {
+    int level = GetParam();
+    std::string qvmPath = Utils::GetIGIRootPath() +
+        "\\missions\\location0\\level" + std::to_string(level) + "\\objects.qvm";
+
+    if (!std::filesystem::exists(qvmPath))
+        GTEST_SKIP() << "objects.qvm missing for level " << level << ": " << qvmPath;
+
+    QVMFile qvm = QVM_Parse(qvmPath);
+    ASSERT_TRUE(qvm.valid) << "QVM_Parse failed for level " << level << ": " << qvm.error;
+
+    std::string decompiled = QVM_DecompileToString(qvm);
+    ASSERT_FALSE(decompiled.empty()) << "Decompile produced empty output for level " << level;
+
+    auto lr = qsc::Lex(decompiled);
+    ASSERT_TRUE(lr.ok) << "Lex failed after decompile of level " << level << ": " << lr.error;
+
+    auto pr = qsc::Parse(lr.tokens);
+    ASSERT_TRUE(pr.ok) << "Parse failed after decompile of level " << level << ": " << pr.error;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AllLevels,
+    QvmGameRoundTripTest,
+    ::testing::Range(1, 15),
+    [](const ::testing::TestParamInfo<int>& info) {
+        return "Level" + std::to_string(info.param);
+    }
+);
