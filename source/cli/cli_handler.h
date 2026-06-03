@@ -49,8 +49,8 @@ private:
                       const std::string &modelFilter, bool textMode = false);
   static int ParseTerrain(const std::string &filepath);
   static int ParseTEX(const std::string &filepath,
-                      const std::string &exportDir);
-  static int ParseFNT(const std::string &filepath);
+                      const std::string &exportArg, const std::string &mode = "");
+  static int ParseFNT(const std::string &filepath, const std::string &exportPngPath = "");
   static int ParseGraph(const std::string &filepath);
   static int ExtractLevelResources(int levelNo, const std::string &outDir);
   static int VerifyLevel(const VerifyLevelParams &params);

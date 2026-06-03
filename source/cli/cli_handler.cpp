@@ -21,9 +21,14 @@
 #include "parsers/tex_parser.h"
 #include "utils.h"
 #include <filesystem>
-
+#include <algorithm>
 
 #include <iostream>
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "../../third_party/tinygltf/stb_image.h"
+#include "../../third_party/tinygltf/stb_image_write.h"
 
 bool CLIHandler::IsCLICommand(int argc, char **argv) {
   for (int i = 1; i < argc; ++i) {
@@ -87,12 +92,11 @@ void CLIHandler::PrintHelp() {
       << "  --dat <file.dat> --output <file.json>  Write DAT JSON to file\n"
       << "  --dat <file.dat> --filter <model>      Include only entries matching model name\n"
       << "  --dat <file.dat> --text                Plain-text output instead of JSON\n"
-      << "  --terrain <file.lmp/.ctr>              Parse terrain structure\n"
-      << "  --tex <file.tex>                       Parse TEX texture and print info\n"
-      << "  --tex <file.tex> --export-tga <dir>    Export TEX images as TGA files to dir\n"
-      << "  --spr <file.spr>                       Parse SPR sprite and print info\n"
-      << "  --spr <file.spr> --export-tga <dir>    Export SPR images as TGA files to dir\n"
-      << "  --fnt <file.fnt>                       Parse ILFF FNT font and print info\n"
+      << "  --terrain <file>                       Parse terrain file\n"
+      << "  --tex <file.tex> [--export-tga <dir>]  Parse texture and export\n"
+      << "  --tex <in> [--ToPng <out>]             Convert TGA/PNG to PNG\n"
+      << "  --tex <in> [--ToTga <out>]             Convert TGA/PNG to TGA\n"
+      << "  --fnt <file.fnt> [--export-png <out>]  Parse ILFF FNT font and export atlas\n"
       << "  --graph <file.dat>                     Parse navigation graph .dat file\n"
       << "  --verify-level --level N [--level N ...] Verify levels: compare\n"
       << "      objects.qvm (ground truth) vs igi1ed.log (editor output)\n"
@@ -228,22 +232,33 @@ int CLIHandler::Process(int argc, char **argv) {
       }
     } else if (arg == "--terrain" && i + 1 < argc) {
       return ParseTerrain(argv[++i]);
-    } else if (arg == "--tex" && i + 1 < argc) {
+    } else if ((arg == "--tex" || arg == "--spr") && i + 1 < argc) {
       std::string inpath = argv[++i];
       if (i + 1 < argc && std::string(argv[i + 1]) == "--export-tga" &&
           i + 2 < argc) {
-        return ParseTEX(inpath, argv[i + 2]);
+        int ret = ParseTEX(inpath, argv[i + 2], "dir");
+        i += 2;
+        return ret;
+      } else if (i + 1 < argc && std::string(argv[i + 1]) == "--ToPng" &&
+                 i + 2 < argc) {
+        int ret = ParseTEX(inpath, argv[i + 2], "png");
+        i += 2;
+        return ret;
+      } else if (i + 1 < argc && std::string(argv[i + 1]) == "--ToTga" &&
+                 i + 2 < argc) {
+        int ret = ParseTEX(inpath, argv[i + 2], "tga");
+        i += 2;
+        return ret;
       }
-      return ParseTEX(inpath, "");
-    } else if (arg == "--spr" && i + 1 < argc) {
-      std::string inpath = argv[++i];
-      if (i + 1 < argc && std::string(argv[i + 1]) == "--export-tga" &&
-          i + 2 < argc) {
-        return ParseTEX(inpath, argv[i + 2]);
-      }
-      return ParseTEX(inpath, "");
+      return ParseTEX(inpath, "", "");
     } else if (arg == "--fnt" && i + 1 < argc) {
-      return ParseFNT(argv[++i]);
+      std::string inpath = argv[++i];
+      std::string outpath = "";
+      if (i + 1 < argc && std::string(argv[i + 1]) == "--export-png" && i + 2 < argc) {
+          outpath = argv[i + 2];
+          i += 2;
+      }
+      return ParseFNT(inpath, outpath);
     } else if (arg == "--graph" && i + 1 < argc) {
       return ParseGraph(argv[++i]);
     } else if (arg == "--extract-level" && i + 1 < argc) {
@@ -723,7 +738,27 @@ int CLIHandler::ParseMTP(const std::string &filepath) {
 }
 
 int CLIHandler::ParseTEX(const std::string &filepath,
-                         const std::string &exportDir) {
+                         const std::string &exportArg, const std::string &mode) {
+  std::string ext = filepath.substr(filepath.find_last_of(".") + 1);
+  std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+  if (ext == "png" || ext == "tga") {
+    int w, h, channels;
+    unsigned char* data = stbi_load(filepath.c_str(), &w, &h, &channels, 4);
+    if (!data) {
+        Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to load image: " + filepath);
+        return 1;
+    }
+    if (mode == "png") {
+        stbi_write_png(exportArg.c_str(), w, h, 4, data, w * 4);
+        std::cout << "[CLI] Converted " << filepath << " to " << exportArg << " (PNG)\n";
+    } else if (mode == "tga") {
+        stbi_write_tga(exportArg.c_str(), w, h, 4, data);
+        std::cout << "[CLI] Converted " << filepath << " to " << exportArg << " (TGA)\n";
+    }
+    stbi_image_free(data);
+    return 0;
+  }
+
   Logger::Get().Log(LogLevel::INFO, "[CLI] Parsing TEX file: " + filepath);
   TEXFile tex = TEX_Parse(filepath);
   if (!tex.valid) {
@@ -743,13 +778,21 @@ int CLIHandler::ParseTEX(const std::string &filepath,
     Logger::Get().Log(LogLevel::INFO, "[CLI]" + info);
     std::cout << info << "\n";
   }
-  if (!exportDir.empty()) {
-    int written = TEX_ExportTGA(tex, filepath, exportDir);
-    Logger::Get().Log(LogLevel::INFO, "[CLI] Exported " +
-                                          std::to_string(written) +
-                                          " TGA file(s) to: " + exportDir);
-    std::cout << "[CLI] Exported " << written
-              << " TGA file(s) to: " << exportDir << "\n";
+  if (!exportArg.empty()) {
+    if (mode == "png" && tex.images.size() == 1) {
+      stbi_write_png(exportArg.c_str(), tex.images[0].width, tex.images[0].height, 4, tex.images[0].pixels.data(), tex.images[0].width * 4);
+      std::cout << "[CLI] Exported PNG file to: " << exportArg << "\n";
+    } else if (mode == "tga" && tex.images.size() == 1) {
+      TEX_WriteTGA(exportArg, tex.images[0]);
+      std::cout << "[CLI] Exported TGA file to: " << exportArg << "\n";
+    } else {
+      int written = TEX_ExportTGA(tex, filepath, exportArg);
+      Logger::Get().Log(LogLevel::INFO, "[CLI] Exported " +
+                                            std::to_string(written) +
+                                            " TGA file(s) to: " + exportArg);
+      std::cout << "[CLI] Exported " << written
+                << " TGA file(s) to: " << exportArg << "\n";
+    }
   }
   return 0;
 }
@@ -947,7 +990,7 @@ int CLIHandler::ExtractLevelResources(int levelNo, const std::string &outDir) {
   return (totalExtracted + texCount + terrainCount > 0) ? 0 : 1;
 }
 
-int CLIHandler::ParseFNT(const std::string &filepath) {
+int CLIHandler::ParseFNT(const std::string &filepath, const std::string &exportPngPath) {
   Logger::Get().Log(LogLevel::INFO, "[CLI] Parsing FNT file: " + filepath);
   FntFont font = FNT_Parse(filepath);
   if (!font.valid) {
@@ -958,5 +1001,30 @@ int CLIHandler::ParseFNT(const std::string &filepath) {
   Logger::Get().Log(LogLevel::INFO, "[CLI]   Line Height: " + std::to_string(font.lineHeight));
   Logger::Get().Log(LogLevel::INFO, "[CLI]   Texture: " + std::to_string(font.texWidth) + "x" + std::to_string(font.texHeight));
   Logger::Get().Log(LogLevel::INFO, "[CLI]   Glyphs: " + std::to_string(font.glyphs.size()));
+
+  std::cout << "[CLI] Successfully parsed FNT: " << filepath << "\n";
+  std::cout << "[CLI]   Line Height: " << font.lineHeight << "\n";
+  std::cout << "[CLI]   Texture: " << font.texWidth << "x" << font.texHeight << "\n";
+  std::cout << "[CLI]   Glyphs: " << font.glyphs.size() << "\n";
+
+  std::vector<int> charCodes;
+  for (const auto& kv : font.glyphs) {
+      charCodes.push_back(kv.first);
+  }
+  std::sort(charCodes.begin(), charCodes.end());
+
+  std::string allChars;
+  for (int code : charCodes) {
+      allChars += static_cast<char>(code);
+  }
+  std::string out = "  Glyphs are '" + allChars + "'";
+  Logger::Get().Log(LogLevel::INFO, "[CLI]" + out);
+  std::cout << out << "\n";
+
+  if (!exportPngPath.empty() && !font.rgba.empty()) {
+      stbi_write_png(exportPngPath.c_str(), font.texWidth, font.texHeight, 4, font.rgba.data(), font.texWidth * 4);
+      std::cout << "[CLI] Exported FNT atlas to: " << exportPngPath << "\n";
+  }
+
   return 0;
 }
