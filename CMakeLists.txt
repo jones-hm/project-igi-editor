@@ -188,6 +188,11 @@ FetchContent_Declare(
     URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
+# Force gtest to use the DLL CRT (/MD, /MDd) so it matches the project.
+# Without this, gtest's internal_utils.cmake replaces /MD with /MT (static
+# CRT), causing __imp__calloc_dbg / _CrtDbgReport link errors when mixing
+# gtest.lib with DLL-CRT object files.
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 enable_testing()
 
@@ -198,6 +203,13 @@ add_executable(igi_tests
     tests/test_config.cpp
     tests/test_utils.cpp
 )
+
+# Explicit runtime so igi_tests always matches igi-editor (/MDd Debug, /MD Release).
+if (MSVC)
+    set_target_properties(igi_tests PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+    )
+endif()
 
 target_include_directories(igi_tests PRIVATE source)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
