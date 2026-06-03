@@ -164,24 +164,18 @@ And for detailed information about file formats of IGI game 👉 **[IGI File For
 
 ## ⌨️ Controls
 
-### Navigation
-| Key | Action |
-| :--- | :--- |
-| **W/S/A/D** | Movement (Forward/Backward/Left/Right) |
-| **Q/Z** | Vertical Movement (Up/Down) |
-| **F4** | Toggle Edit Cursor (Global Edit Mode) |
-| **F3** | Toggle Collision / Clipping |
-| **F2** | Toggle Terrain Painting Mode |
-| **PageUp/Dn** | Adjust Movement Speed |
-
 ### Object Manipulation (IGI 2 Style)
+
 Select an object in **Edit Mode (F4)** and use **LMB Drag** + Modifiers:
-- **Shift**: Move on XY Plane
-- **Ctrl**: Move on XZ Plane
-- **A / B / G**: Rotate Alpha / Beta / Gamma axes
-- **S**: Snap to Ground
-- **Space**: Reset Orientation
-- **F11**: Teleport camera to selected object
+
+| Modifier / Key | Action |
+| :--- | :--- |
+| **Shift** | Move on XY Plane |
+| **Ctrl** | Move on XZ Plane |
+| **A / B / G** | Rotate Alpha / Beta / Gamma axes |
+| **S** | Snap to Ground |
+| **Space** | Reset Orientation |
+| **F11** | Teleport camera to selected object instead |
 
 ---
 
