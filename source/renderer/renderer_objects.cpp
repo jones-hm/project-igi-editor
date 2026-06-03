@@ -944,7 +944,7 @@ bool Renderer_Objects::SuppressAttachmentInMef(const std::string& parentModelId,
 
 bool Renderer_Objects::UpdateAttaLocalPosInMef(
     const std::string& parentModelId, bool isBuilding,
-    int recordIndex, const glm::vec3& newLocalPos)
+    int recordIndex, const glm::vec3& newLocalPos, const glm::mat3& newLocalRot)
 {
     // 1. Update in-memory attachment cache so the editor renders at the new position.
     const std::string prefix = isBuilding ? "building:" : "object:";
@@ -987,9 +987,18 @@ bool Renderer_Objects::UpdateAttaLocalPosInMef(
             if (std::strcmp(fc, "ATTA") == 0) {
                 size_t base = off + 16 + (size_t)recordIndex * 68;
                 if (base + 68 <= e.data.size()) {
+                    // Write position
                     std::memcpy(e.data.data() + base + 16, &newLocalPos.x, 4);
                     std::memcpy(e.data.data() + base + 20, &newLocalPos.y, 4);
                     std::memcpy(e.data.data() + base + 24, &newLocalPos.z, 4);
+                    // Write rotation matrix: MEF stores r[9] as column-major floats
+                    // matching the GLM mat3 column layout [col][row].
+                    float rot9[9] = {
+                        newLocalRot[0][0], newLocalRot[0][1], newLocalRot[0][2],
+                        newLocalRot[1][0], newLocalRot[1][1], newLocalRot[1][2],
+                        newLocalRot[2][0], newLocalRot[2][1], newLocalRot[2][2]
+                    };
+                    std::memcpy(e.data.data() + base + 28, rot9, 36);
                     patched = true;
                 }
                 break;

@@ -731,9 +731,24 @@ static bool containsIgnoreCase(const std::string& str, const std::string& substr
 void App::FlushAttaProxiesToMef() {
 	for (auto& obj : level_.GetLevelObjects().GetObjects()) {
 		if (!obj.isAttaProxy || !obj.modified) continue;
+
+		// Position: convert world pos → local pos via stored inverse parent matrix.
 		glm::vec4 lp = obj.attaInvParentMat * glm::vec4(glm::vec3(obj.pos), 1.0f);
+		glm::vec3 localPos(lp);
+
+		// Rotation: rebuild world rotation matrix from Euler angles (Rz * Rx * Ry),
+		// then convert to local rotation: localRot = parentRotInv * worldRot.
+		// The upper-left 3×3 of attaInvParentMat IS parentRotInv.
+		glm::mat4 wr(1.0f);
+		wr = glm::rotate(wr, (float)obj.rot.z, glm::vec3(0,0,1));
+		wr = glm::rotate(wr, (float)obj.rot.x, glm::vec3(1,0,0));
+		wr = glm::rotate(wr, (float)obj.rot.y, glm::vec3(0,1,0));
+		glm::mat3 worldRot3(wr);
+		glm::mat3 parentRotInv = glm::mat3(obj.attaInvParentMat);
+		glm::mat3 localRot = parentRotInv * worldRot3;
+
 		renderer_.UpdateAttaLocalPosInMef(obj.attaParentModelId, obj.attaIsBuilding,
-		                                  obj.attaRecordIndex, glm::vec3(lp));
+		                                  obj.attaRecordIndex, localPos, localRot);
 		obj.modified = false;
 	}
 }
@@ -3947,13 +3962,27 @@ void App::PromoteAttaToObject(int entry) {
 	// launches the game, FlushAttaProxiesToMef() converts the proxy's world position
 	// back to local coordinates and patches the bytes directly in the MEF binary.
 	// No renaming, no QSC tasks, no game-engine warnings.
+	// Extract Euler angles (Rz * Rx * Ry order) from the captured world rotation matrix.
+	// GLM column-major: m[col][row]. For Rz*Rx*Ry: sin(rx)=m[1][2], etc.
+	const glm::mat3& m = e.worldRot;
+	float sx = std::max(-1.0f, std::min(1.0f, m[1][2]));
+	float rx = std::asin(sx);
+	float ry, rz;
+	if (std::fabs(std::cos(rx)) > 1e-4f) {
+		ry = std::atan2(-m[0][2], m[2][2]);
+		rz = std::atan2(-m[1][0], m[1][1]);
+	} else {
+		ry = 0.0f;
+		rz = std::atan2(m[0][1], m[0][0]);
+	}
+
 	LevelObject obj;
 	obj.type        = "EditRigidObj";
 	obj.name        = "ATTA_PROXY:" + e.immediateParentModelId + ":" + std::to_string(e.recordIndex);
 	obj.taskId      = "-1";
 	obj.modelId     = e.modelId;
 	obj.pos         = glm::dvec3(e.worldPos);
-	obj.rot         = glm::vec3(0.0f);
+	obj.rot         = glm::vec3(rx, ry, rz);
 	obj.scale       = (e.scale > 0.f) ? e.scale : 1.0f;
 	obj.isBuilding  = false;
 	obj.deleted     = false;

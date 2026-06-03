@@ -50,7 +50,7 @@ public:
         promoted_atta_records_.insert(parentModelId + ":" + std::to_string(recordIndex));
     }
     bool SuppressAttachmentInMef(const std::string& parentModelId, const std::string& attModelId, const glm::vec3& localPos);
-    bool UpdateAttaLocalPosInMef(const std::string& parentModelId, bool isBuilding, int recordIndex, const glm::vec3& newLocalPos);
+    bool UpdateAttaLocalPosInMef(const std::string& parentModelId, bool isBuilding, int recordIndex, const glm::vec3& newLocalPos, const glm::mat3& newLocalRot);
     // Stable key "model@roundedWorldPos" used to match an ATTA against an EditRigidObj.
     static std::string AttaOccupancyKey(const std::string& modelId, const glm::vec3& worldPos);
     Renderer_Objects();
