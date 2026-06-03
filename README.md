@@ -2,17 +2,15 @@
 
 **IGI Editor** is a professional 3D world and object manipulation toolkit for Project IGI. Inspired by the official [IGI 2 Editor](https://www.nexusmods.com/igi2covertstrike/mods/1) created by the original IGI Developers, it provides a modern interface for level research, object placement, and terrain modification.
 
-**Current Status: Version 2.6.0 (Properties Editor UI & Attachments Support)** - Professional 3D modding suite featuring click-to-select map selection, train and spline tools, a streamlined workspace menu, automated asset extraction, flawless native MEF model loading (including complex buildings and bone structures), integrated QVM decompilation, and a full headless CLI toolchain. Supports editing and compiling for all 14 original game levels with native asset parity.
+**Current Status: Version 2.6.0 (Properties Editor UI & Attachments Support)** - Professional 3D modding suite featuring click-to-select map selection, train and spline tools, a streamlined workspace menu, automated asset extraction, flawless native MEF model loading (including complex buildings and bone structures), integrated QVM decompilation, and a full headless CLI toolchain. It includes an **IGI 2 Style position and orientation properties editor, sliders, pushbuttons, etc.** The editor features fully integrated, **native support for game file formats (SPR, TEX, MEF, DAT, MTP) with absolutely no external tools required—which is huge**! Supports editing and compiling for all 14 original game levels with native asset parity.
 
 This project is built upon the foundational work of the [Project-IGI-Terrain](https://github.com/hjcminus/Project-IGI-Terrain) repository. Special thanks to [hjcminus](https://github.com/hjcminus) for their research and for bringing this codebase to light. It is built using C++17 and OpenGL, and it is cross-platform, but it is mainly tested on Windows.
 
 Written and maintained by **Heaven-HM**.
 
----
-
-## 📋 [Changelogs](CHANGELOGS.md)
-
-See the [CHANGELOGS.md](CHANGELOGS.md) for version history and detailed change logs.
+> **Tip:** This editor was tested on **Project IGI Neonix Remastered** ([Nexus Mods Link](https://www.nexusmods.com/projectigi/mods/5)) and it is highly recommended to use that mod alongside this editor for HD Textures, Terrain, and enhanced Gameplay.
+> 
+> ![Project IGI Neonix Remastered](assets/screenshots/igi-neonix-remastered.png)
 
 ---
 
@@ -39,14 +37,22 @@ See the [CHANGELOGS.md](CHANGELOGS.md) for version history and detailed change l
 ### ⚠️ Known Issues
 A comprehensive list of all known rendering, game, and engine issues can be found in our **[Known Issues Guide](docs/KNOWN_ISSUES.md)**.
 
+---
 
-### Future Work
-- **Expanded Sandbox Modding**: Expanding item drop coordinates, trigger boundary visualizers, and ammo boxes placements.
-- **Full Campaign Testing**: Continuing rigorous end-to-end testing across levels 4 through 14.
+## 🔄 How It Works
+
+### Editor Flow
+* **Sync & Decompile**: Copies terrain and compiles/decompiles `QSC`/`QVM` files dynamically to keep level data in sync.
+* **Attachments (ATTA)**: If modifying attachments, decompiles/recompiles `MEF` files back to `.RES` to show changes.
+* **Asset Loading**: Loads icons, textures, and sprites from `qed` and level directories.
+* **Level Setup**: Parses QSC data, snaps MEF 3D models to the terrain heightmap, and positions the camera.
+* **Auto-Backup**: Automatically creates file backups on save if `backup = true` in config.
+
+---
 
 ## 📸 Screenshots
 
-With the release of our premium modding features, we have expanded our workspace visualization with high-fidelity telemetry, dynamic objective tree views, and comprehensive level environment rendering. 
+With the release of our premium modding features, we have expanded our workspace visualization with high-fidelity telemetry, dynamic objective tree views, and comprehensive level environment rendering.
 
 ### 🖥️ Main Editor & Navigation
 
@@ -80,7 +86,7 @@ With the release of our premium modding features, we have expanded our workspace
 
 ### 📦 Object & Controls Editor
 
-![IGI Editor Controls](assets/screenshots/igi-editor-controls.png)
+![IGI Editor Controls](assets/screenshots/igi-editor-controls.png) </br>
 *HUD telemetry displaying precise translation, rotation, and selection info.*
 
 ### 🤖 AI Editor
@@ -93,25 +99,19 @@ With the release of our premium modding features, we have expanded our workspace
 ![IGI Editor Debug Screenshot](assets/screenshots/igi-editor-debug.png)
 *Debug Console showing IGIPath resolution and QVM compilation pipeline.*
 
-## 🕹️ CLI & GUI Command-Line Options
-
-The **IGI Editor** can be run as both a fully featured interactive 3D graphical suite and a high-performance, headless command-line asset tool:
-
-*   **GUI Editor Mode**: Launch the graphical user interface to edit level data. Supports options like `-level <num>` (1-14), custom dimensions (`-w`, `-h`), ground snapping (`-stick_to_ground`), and selective rendering bitmasks (`-draw_parts`).
-*   **Headless CLI Mode**: Perform high-speed operations directly from your terminal. Parsers are provided for 3D meshes (`--mef`), script compiles (`--qsc`), reverse engineering bytecode (`--qvm`), extracting resource libraries (`--res`), textures (`--mtp`, `--tex`), navigation systems (`--graph`), terrain geometries (`--terrain`), database archives (`--dat`), and automated level integrations (`--verify-level`).
-
-For a comprehensive list of all CLI commands, export options, selective rendering bitmask combinations, keyboard hotkeys, and hands-on examples, please check our detailed guide:
-👉 **[CLI & GUI Reference Guide](docs/CLI.md)**
-
-And for detailed information about file formats of IGI game 👉 **[IGI File Formats](docs/file-formats.md)**
 ---
- 
-## Folder Structure
+
+## 💻 Getting Started
+
+### Prerequisites
+- **OS**: Windows (x86)
+- **Compiler**: MSVC (Visual Studio 2022 recommended)
+- **Build System**: CMake
+- **QEditor**: Required for QSC/QVM compilation and decompilation.
+- **IGI Game**: Full installation of Project IGI required for level data and assets
 
 ### QEditor AppData Structure (`%APPDATA%/QEditor/`)
-
 The editor requires QEditor to be installed in AppData for QSC/QVM compilation and decompilation:
-
 - **`QFiles/IGI_QSC/`**: Original IGI level data (CTR, CMD, HMP, QSC scripts) organized by:
   - `missions/location0/level[1-14]/` - Level-specific scripts, AI, sounds, terrain
   - `ammo/`, `weapons/`, `common/` - Shared game data
@@ -123,29 +123,6 @@ The editor requires QEditor to be installed in AppData for QSC/QVM compilation a
 - **`QGraphs/`**: Area and graph data for levels
 - **`QMissions/`**: Mission configuration files
 - **`QWeapons/`**: Weapon group and modification data
-
-### Local Repository Folders
-- **`shaders/`**: Core OpenGL GLSL shader source files
-- **`bin/`**: Pre-compiled binaries and required dynamic libraries (DLLs)
-- **`assets/`**: Editor assets (icons, screenshots in `assets/screenshots/`)
-
-## 🛠️ Future Roadmap
-
-With the successful release of **Version 2.0.0**, core features like the **Native MEF Parser**, **Asset Extractor**, **QVM Toolchain**, **Task Tree Editor**, **Train & Spline Engine**, **Click-to-Select Map View**, and **Headless CLI** have been fully realized. Future milestones include:
-- **Visual 3D Graph Editor (Coming Soon)**: A full-featured Visual 3D Graph Editor displaying interactive nodes and visuals to seamlessly construct game logic, path routes, and area connections.
-- **Weapon & Item Configurator**: Rich telemetry overlays and visual UI for modifying active gun parameters, ammunition slots, and dropping custom inventory directly onto the battlefield.
-- **Full 14 Levels campaign run**: Complete, verified playthroughs of all custom compiled maps to guarantee total end-to-end stability.
-
----
-
-## 💻 Getting Started
-
-### Prerequisites
-- **OS**: Windows (x86)
-- **Compiler**: MSVC (Visual Studio 2022 recommended)
-- **Build System**: CMake
-- **QEditor**: Required for QSC/QVM compilation and decompilation.
-- **IGI Game**: Full installation of Project IGI required for level data and assets
 
 ### Build Instructions
 1. Clone the repository.
@@ -166,107 +143,36 @@ With the successful release of **Version 2.0.0**, core features like the **Nativ
    .\bin\Release\igi1ed.exe -level 1 -draw_parts 49 -stick_to_ground
    ```
 
-   #### 🎨 Selective Loading and Drawing (`-draw_parts` Bitmask)
-   You can customize what parts of the level to load and render using the `-draw_parts` bitmask argument:
-   
-   * **Only Buildings with Terrain** (Bitmask: `17` = `1` Terrain + `16` Buildings)
-     ```powershell
-     .igi1ed.exe -level 1 -draw_parts 17 -stick_to_ground
-     ```
-   * **Only Objects/Props with Terrain** (Bitmask: `33` = `1` Terrain + `32` Objects/Props)
-     ```powershell
-     .igi1ed.exe -level 1 -draw_parts 33 -stick_to_ground
-     ```
-   * **Only AI Units with Terrain** (Bitmask: `65` = `1` Terrain + `64` AI)
-     ```powershell
-     .igi1ed.exe -level 1 -draw_parts 65 -stick_to_ground
-     ```
-     *(Note: AI models are stored as non-building objects (props) inside the engine. To visually render the 3D meshes of the AI units, combine with props to get `-draw_parts 97` which is `1` + `32` + `64`)*
+#### 🎨 Selective Loading and Drawing (`-draw_parts` Bitmask)
+You can customize what parts of the level to load and render using the `-draw_parts` bitmask argument:
 
-### 🧪 Unit Testing & Status
-
-We use **GoogleTest** (gtest) for a comprehensive test suite covering the core parsers and utilities. Tests run automatically as part of the build with `ctest`.
-
-#### Current Test Status
-
-| Module / Test Suite | Status | Passing Tests | Coverage |
-| --- | :---: | :---: | --- |
-| **QSC Lexer** (`QscLexerTest`) | ✅ | 52/52 | All token types, keywords, comments, operators, escape sequences, positions, error recovery |
-| **QSC Parser** (`QscParserTest`) | ✅ | 37/37 | All AST node types, operator precedence, control flow, error cases, counter tracking |
-| **QVM Round-Trip** (`QvmRoundTripTest`) | ✅ | 20/20 | Compile→write→parse→decompile cycle, identifier/string pools, structural re-parse |
-| **Configuration** (`ConfigTest`) | ✅ | 10/10 | Defaults, field ranges, singleton behaviour, keybinding load |
-| **String Utilities** (`UtilsTest`) | ✅ | 35/35 | `Trim`, `Split`, `TryParse<T>`, `ToString<T>` with edge cases |
-| **Overall** | ✅ | **158/158 (100%)** | |
-
-#### Test Files
-
-| File | Tests | What it covers |
-| --- | :---: | --- |
-| `tests/test_qsc_lexer.cpp` | 52 | Tokenisation of every token kind, comment stripping, escape sequences, qualified identifiers, source positions, all error paths |
-| `tests/test_qsc_parser.cpp` | 37 | AST structure for calls, `if`/`else`, `while`, all binary/unary operators, precedence, right-associativity, empty programs, error paths |
-| `tests/test_qvm_roundtrip.cpp` | 20 | Full compile → disk → parse → decompile pipeline for 12 QSC variants; QVM pool checks; re-lex/re-parse of decompiler output |
-| `tests/test_config.cpp` | 10 | Config singleton, level range, font/render defaults, keybinding data loaded |
-| `tests/test_utils.cpp` | 35 | `Trim` (12 cases), `Split` (7 cases), `TryParse<int/float/double>` (10 cases), `ToString` (5 cases) |
-
-#### How to Run Tests
-
-**Quick run (after a fresh clone):**
-
-```powershell
-# 1. Configure
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-
-# 2. Build only the test binary (fast — skips the full editor)
-cmake --build build --target igi_tests --config Debug
-
-# 3. Run all 158 tests with failure details
-cd build
-ctest --output-on-failure -C Debug
-```
-
-**Run the binary directly for verbose output:**
-
-```powershell
-.\bin\Debug\igi_tests.exe
-```
-
-**Filter to a specific suite:**
-
-```powershell
-# Run only the lexer tests
-.\bin\Debug\igi_tests.exe --gtest_filter="QscLexerTest.*"
-
-# Run only the parser tests
-.\bin\Debug\igi_tests.exe --gtest_filter="QscParserTest.*"
-
-# Run only the QVM round-trip tests
-.\bin\Debug\igi_tests.exe --gtest_filter="QvmRoundTripTest.*"
-```
-
-**Expected output on a clean pass:**
-
-```
-[==========] Running 158 tests from 5 test suites.
-[  PASSED  ] 158 tests.
-```
-
-> **Note:** The test binary must be run from the repository root (not from inside `build/`) so that relative paths to `tests/fixtures/` resolve correctly. `ctest` handles this automatically via `WORKING_DIRECTORY`.
+* **Only Buildings with Terrain** (Bitmask: `17` = `1` Terrain + `16` Buildings)
+  ```powershell
+  .\igi1ed.exe -level 1 -draw_parts 17 -stick_to_ground
+  ```
+* **Only Objects/Props with Terrain** (Bitmask: `33` = `1` Terrain + `32` Objects/Props)
+  ```powershell
+  .\igi1ed.exe -level 1 -draw_parts 33 -stick_to_ground
+  ```
+* **Only AI Units with Terrain** (Bitmask: `65` = `1` Terrain + `64` AI)
+  ```powershell
+  .\igi1ed.exe -level 1 -draw_parts 65 -stick_to_ground
+  ```
+  *(Note: AI models are stored as non-building objects (props) inside the engine. To visually render the 3D meshes of the AI units, combine with props to get `-draw_parts 97` which is `1` + `32` + `64`)*
 
 ---
 
-## 🔄 How It Works
+## 🕹️ CLI & GUI Command-Line Options
 
-### Editor Flow
+The **IGI Editor** can be run as both a fully featured interactive 3D graphical suite and a high-performance, headless command-line asset tool:
 
-* Editor first copies terrain files from QEditor folder to the executable directory
-* Then it finds the latest objects file (QSC or QVM) by checking timestamps across multiple locations (editor, QEditor, IGI game)
-* If QVM is newest, it decompiles it to QSC; if QSC is newest, it copies and compiles to QVM to keep everything in sync
-* Editor loads the QSC file and parses level data including object positions, rotations, and model references
-* Then it loads the terrain heightmap, textures, and lightmaps for rendering and editing
-* Next, it loads all 3D models (buildings and props in native MEF format) and positions them according to QSC data
-* Objects are automatically snapped to the terrain surface to ensure correct placement
-* Camera is positioned at the level start coordinates and editor is ready for editing
-* When you save changes, the editor writes to objects.qsc, compiles it to objects.qvm, and copies it to the IGI game path
+*   **GUI Editor Mode**: Launch the graphical user interface to edit level data. Supports options like `-level <num>` (1-14), custom dimensions (`-w`, `-h`), ground snapping (`-stick_to_ground`), and selective rendering bitmasks (`-draw_parts`).
+*   **Headless CLI Mode**: Perform high-speed operations directly from your terminal. Parsers are provided for 3D meshes (`--mef`), script compiles (`--qsc`), reverse engineering bytecode (`--qvm`), extracting resource libraries (`--res`), textures (`--mtp`, `--tex`), navigation systems (`--graph`), terrain geometries (`--terrain`), database archives (`--dat`), and automated level integrations (`--verify-level`).
+
+For a comprehensive list of all CLI commands, export options, selective rendering bitmask combinations, keyboard hotkeys, and hands-on examples, please check our detailed guide:
+👉 **[CLI & GUI Reference Guide](docs/CLI.md)**
+
+And for detailed information about file formats of IGI game 👉 **[IGI File Formats](docs/file-formats.md)**
 
 ---
 
@@ -293,6 +199,91 @@ Select an object in **Edit Mode (F4)** and use **LMB Drag** + Modifiers:
 
 ---
 
+## 🧪 Unit Testing & Level Verification
+
+We use **GoogleTest** (gtest) for a comprehensive test suite covering the core parsers and utilities. Tests run automatically as part of the build with `ctest`.
+
+### Current Test Status
+
+| Module / Test Suite | Status | Passing Tests | Coverage |
+| --- | :---: | :---: | --- |
+| **QSC Lexer** (`QscLexerTest`) | ✅ | 52/52 | All token types, keywords, comments, operators, escape sequences, qualified identifiers, error recovery |
+| **QSC Parser** (`QscParserTest`) | ✅ | 37/37 | All AST node types, operator precedence, control flow, error cases, counter tracking |
+| **QVM Round-Trip** (`QvmRoundTripTest`) | ✅ | 20/20 | Compile→write→parse→decompile cycle, identifier/string pools, structural re-parse |
+| **Configuration** (`ConfigTest`) | ✅ | 10/10 | Defaults, field ranges, singleton behaviour, keybinding load |
+| **String Utilities** (`UtilsTest`) | ✅ | 35/35 | `Trim`, `Split`, `TryParse<T>`, `ToString<T>` with edge cases |
+| **Overall** | ✅ | **158/158 (100%)** | |
+
+### Running the Tests
+To build and execute all tests:
+```powershell
+# Build only the test binary (fast — skips the full editor)
+cmake --build build --target igi_tests --config Debug
+
+# Run all 158 tests
+.\bin\Debug\igi_tests.exe
+```
+
+### Level verification integration test
+To verify loaded level layout objects (buildings, AI placement, prop positions) against database:
+```powershell
+python tests/test_igi1ed_levels.py --level 1 --timeout 15
+```
+
+---
+
+## 🛠️ Future Roadmap
+
+With the successful release of **Version 2.0.0**, core features like the **Native MEF Parser**, **Asset Extractor**, **QVM Toolchain**, **Task Tree Editor**, **Train & Spline Engine**, **Click-to-Select Map View**, and **Headless CLI** have been fully realized. Future milestones include:
+- **Native Game Convertor tool**: A native game converter tool called `gconv1` matching `gconv.exe` from the IGI 2 Editor to convert all IGI 1 files.
+- **Upgraded compatibility**: A better upgraded version to support the Neo Remastered mod.
+- **Visual 3D Graph Editor (Coming Soon)**: A full-featured Visual 3D Graph Editor displaying interactive nodes and visuals to seamlessly construct game logic, path routes, and area connections.
+- **Weapon & Item Configurator**: Rich telemetry overlays and visual UI for modifying active gun parameters, ammunition slots, and dropping custom inventory directly onto the battlefield.
+- **Full 14 Levels campaign run**: Complete, verified playthroughs of all custom compiled maps to guarantee total end-to-end stability.
+
+---
+
+## 🏆 Credits and Contributors
+
+Credits and contributions of the people in this project:
+
+- **[Artiom](https://github.com/NEWME0)** 👑 - **Game file formats** (*models, textures, animations*) and his **game conversion tools**. (**Huge Help!** )
+- **[GM123](https://www.youtube.com/@gm1233)** 👑 - **Game Models & Animations** (*MEF / IFF formats*) and **development tools**. (**Huge Help!**)
+- **[Neo](https://next.nexusmods.com/profile/xaeroneo?gameId=5664)** 👑 - **Guiding & testing** this project to match the *IGI 2 Editor style*. (**Huge Help!**)
+- **[Ferit](https://www.youtube.com/channel/UCpn_gZMkFVBUAe9SJK9hYQA)** 🌟 - **Game MEF/TEX file formats** and *IGI 2 style file formats* understanding.
+- **[Dark](https://www.youtube.com/@CRONOQUILLOFFICIAL)** 🌟 - **Early prototype building**, *testing tools*, and **editor features**.
+- **[Dimon](https://vk.com/dimonkrevedko)** 🌟 - **Graphs & Nodes** and his early [igi1-editor](https://vk.com/wall-275359_6439) *prototype project used for inspiration*.
+- **[Yoejin](https://vk.com/id436486682)** 🌟 - **MTP & Models** *structure and information*.
+- **[ORWA](https://www.youtube.com/@totalwartimelapses6359)** 🌟 - **Graphs Area and Nodes** *information and testing*.
+
+
+### **Historical Note on Early Prototype:**
+> There was an early prototype in year *2020* as a level editor for Project IGI created by **Dimon** which served as an initial inspiration for this project. Although it featured impressive 3D scene loading, it was never released to the public. The developer later became busier with life and work commitments, eventually abandoning the project and choosing not to publish it. You can view the original teaser post [here on VK](https://vk.com/wall-275359_6439).
+> 
+> ![Dimon's Prototype Editor](assets/screenshots/igi1-editor-prototype.png)
+
+### Acknowledgments
+Special thanks to the original authors and researchers:
+- [hjcminus](https://github.com/hjcminus) - 3D Terrain Editor Project, which this project is based on.
+- [mrmaller1905](https://github.com/mrmaller1905) - For Requesting this feature.
+
+---
+
+## 📋 [Changelogs](CHANGELOGS.md)
+
+See the [CHANGELOGS.md](CHANGELOGS.md) for version history and detailed change logs.
+
+---
+
+## Folder Structure
+
+### Local Repository Folders
+- **`shaders/`**: Core OpenGL GLSL shader source files
+- **`bin/`**: Pre-compiled binaries and required dynamic libraries (DLLs)
+- **`assets/`**: Editor assets (icons, screenshots in `assets/screenshots/`)
+
+---
+
 ## 📞 Connect with us
 
 If you encounter any issues or have suggestions, feel free to reach out:
@@ -301,25 +292,3 @@ If you encounter any issues or have suggestions, feel free to reach out:
 - **📧 Email**: [igiproz.hm@gmail.com](mailto:igiproz.hm@gmail.com)
 - **🌟 GitHub**: Follow the project on [Jones-HM GitHub](https://github.com/Jones-HM/).
 - **📺 YouTube**: Subscribe to [IGI Research Devs](https://www.youtube.com/@igi-research-devs) for guides and walkthroughs.
-
----
-
-## 🏆 Credits and Contributors
-
-If you want to use this data, respect fellow researchers and give proper credits to people. (давать людям должные кредиты)
-
-- **[Yoejin Light](https://vk.com/id436486682)** 🌟 - _MTP, Models structure_ and information.
-- **[Dimon Krevedko](https://vk.com/dimonkrevedko)** 🌟 - **Graphs and Nodes** structure and information.
-- **[Artiom Rotari](https://github.com/NEWME0)** 🌟 - _DConv Tools for Decompiler_ and **Scripts** (For Native Game file formats QVM/MEF/TEX and more).
-- **[ORWA S](https://www.youtube.com/@totalwartimelapses6359)** 🌟 - **Graphs Area and Nodes** compilation of information, and beta testing this out.
-- **[GM123](https://www.youtube.com/@gm1233)** 🌟 - **Detailed Models Information** & Detailed documentation on 3D Models and Tools.
-- **[Dark](https://www.youtube.com/@CRONOQUILLOFFICIAL)** 🌟 - **Contributed on Various Projects and files (Resources, QVM, QSC etc) and UI/UX Designs**.
-- **[Ferit Coder](https://www.youtube.com/channel/UCpn_gZMkFVBUAe9SJK9hYQA)** 🌟 - **Helped with IGI 2 ToolKit Maps/Models conversion to IGI 1**.
-- **[Neo](https://next.nexusmods.com/profile/xaeroneo?gameId=5664)** 🌟 - **Helped with all 3D Models/Textures of all Objects/AI without that would not have been possible to create this.** Beta testing and helped to improve this project more in IGI 2 ed style.
-
----
-
-### Acknowledgments
-Special thanks to the original authors and researchers:
-- [hjcminus](https://github.com/hjcminus) - 3D Terrain Editor Project, which this project is based on.
-- [mrmaller1905](https://github.com/mrmaller1905) - For Requesting this feature.
