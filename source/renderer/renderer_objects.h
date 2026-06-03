@@ -20,10 +20,13 @@ struct AttachInfo {
 struct AttaPickEntry {
     int          parentObjIndex = -1;
     std::string  modelId;
+    std::string  immediateParentModelId; // MEF file that directly contains this ATTA record
     glm::vec3    worldPos = glm::vec3(0.0f);
     glm::mat3    worldRot = glm::mat3(1.0f);
     float        scale = 1.0f;
     glm::vec3    localPos = glm::vec3(0.0f);
+    int          recordIndex = -1;
+    glm::mat4    parentWorldMat = glm::mat4(1.0f);
 };
 
 class Renderer_Objects {
@@ -42,8 +45,12 @@ public:
     // moved away — otherwise the original ATTA reappears (looks like a clone/ghost
     // and z-fights). Cleared on level load.
     void SuppressAtta(const std::string& key) { suppressed_atta_keys_.insert(key); }
-    void ClearSuppressedAttas() { suppressed_atta_keys_.clear(); }
+    void ClearSuppressedAttas() { suppressed_atta_keys_.clear(); promoted_atta_records_.clear(); }
+    void MarkAttaPromotedByRecord(const std::string& parentModelId, int recordIndex) {
+        promoted_atta_records_.insert(parentModelId + ":" + std::to_string(recordIndex));
+    }
     bool SuppressAttachmentInMef(const std::string& parentModelId, const std::string& attModelId, const glm::vec3& localPos);
+    bool UpdateAttaLocalPosInMef(const std::string& parentModelId, bool isBuilding, int recordIndex, const glm::vec3& newLocalPos);
     // Stable key "model@roundedWorldPos" used to match an ATTA against an EditRigidObj.
     static std::string AttaOccupancyKey(const std::string& modelId, const glm::vec3& worldPos);
     Renderer_Objects();
@@ -92,6 +99,7 @@ private:
     // Persistent keys of ATTAs promoted this session (by their ORIGINAL position),
     // so they stay hidden even after the promoted object is moved.
     std::unordered_set<std::string> suppressed_atta_keys_;
+    std::set<std::string>           promoted_atta_records_; // "parentModelId:recordIndex"
     int texture_map_level_ = -1;
     GLuint shader_program_;
     GLint  loc_glass_min_ = -1;  // u_glassMin location (glass sheen floor), set in Draw

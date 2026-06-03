@@ -323,6 +323,12 @@ public:
 	bool SuppressAttachmentInMef(const std::string& parentModelId, const std::string& attModelId, const glm::vec3& localPos) {
 		return objects_.SuppressAttachmentInMef(parentModelId, attModelId, localPos);
 	}
+	bool UpdateAttaLocalPosInMef(const std::string& parentModelId, bool isBuilding, int recordIndex, const glm::vec3& newLocalPos) {
+		return objects_.UpdateAttaLocalPosInMef(parentModelId, isBuilding, recordIndex, newLocalPos);
+	}
+	void MarkAttaPromotedByRecord(const std::string& parentModelId, int recordIndex) {
+		objects_.MarkAttaPromotedByRecord(parentModelId, recordIndex);
+	}
 	static std::string AttaOccupancyKey(const std::string& modelId, const glm::vec3& worldPos) {
 		return Renderer_Objects::AttaOccupancyKey(modelId, worldPos);
 	}

@@ -702,7 +702,7 @@ void LevelObjects::SaveToQSC(const std::string& qscPath) {
     bool first = true;
     for (int i = 0; i < (int)objects_.size(); ++i) {
         const auto& obj = objects_[i];
-        if (obj.parentIndex != -1 || obj.deleted) continue;
+        if (obj.parentIndex != -1 || obj.deleted || obj.isAttaProxy) continue;
 
         std::string serialized = SerializeObjectRecursive(objects_, i);
         if (serialized.empty()) {

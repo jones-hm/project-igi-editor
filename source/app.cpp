@@ -728,9 +728,20 @@ static bool containsIgnoreCase(const std::string& str, const std::string& substr
 
 
 
+void App::FlushAttaProxiesToMef() {
+	for (auto& obj : level_.GetLevelObjects().GetObjects()) {
+		if (!obj.isAttaProxy || !obj.modified) continue;
+		glm::vec4 lp = obj.attaInvParentMat * glm::vec4(glm::vec3(obj.pos), 1.0f);
+		renderer_.UpdateAttaLocalPosInMef(obj.attaParentModelId, obj.attaIsBuilding,
+		                                  obj.attaRecordIndex, glm::vec3(lp));
+		obj.modified = false;
+	}
+}
+
 void App::SaveCurrentLevel() {
 	try {
 		Logger::Get().Log(LogLevel::INFO, "[App] SaveCurrentLevel() called");
+		FlushAttaProxiesToMef();
 		level_.SaveChanges();
 		Logger::Get().Log(LogLevel::INFO, "[App] Calling SaveAndCompile()");
 		SaveAndCompile();
@@ -3931,73 +3942,41 @@ void App::PromoteAttaToObject(int entry) {
 	auto& objects = level_.GetLevelObjects().GetObjects();
 	PushUndoState();
 
-	// Extract Euler angles in the editor's render order R = Rz(rz)*Rx(rx)*Ry(ry)
-	// from the captured world rotation matrix (glm column-major: m[col][row]).
-	const glm::mat3& m = e.worldRot;
-	float sx = std::max(-1.0f, std::min(1.0f, m[1][2]));
-	float rx = std::asin(sx);
-	float cx = std::cos(rx);
-	float ry, rz;
-	if (std::fabs(cx) > 1e-4f) {
-		ry = std::atan2(-m[0][2], m[2][2]);
-		rz = std::atan2(-m[1][0], m[1][1]);
-	} else { // gimbal lock
-		ry = 0.0f;
-		rz = std::atan2(m[0][1], m[0][0]);
-	}
-
-	std::string origKey = Renderer::AttaOccupancyKey(e.modelId, e.worldPos);
-
+	// Create a lightweight proxy LevelObject so the existing gizmo/movement system
+	// can move the ATTA. The proxy is NOT serialized to QSC. When the user saves or
+	// launches the game, FlushAttaProxiesToMef() converts the proxy's world position
+	// back to local coordinates and patches the bytes directly in the MEF binary.
+	// No renaming, no QSC tasks, no game-engine warnings.
 	LevelObject obj;
-	obj.qscFuncName  = "Task_New";
-	obj.type         = "EditRigidObj";
-	obj.name         = "ATTA:" + origKey;
-	obj.taskId       = "-1";
-	obj.modelId      = e.modelId;
-	obj.modelIdArgIdx = 9;
-	obj.pos          = glm::dvec3(e.worldPos);
-	obj.rot          = glm::vec3(rx, ry, rz);
-	obj.scale        = (e.scale > 0.f) ? e.scale : 1.0f;
-	obj.isBuilding   = false;
-	obj.deleted      = false;
-	obj.modified     = true;
-	// EditRigidObj arg layout: id, type, note, posX/Y/Z, oriX/Y/Z, model,
-	// dirlight RGB (1,1,1), dirlight ambient RGB (0,0,0).
-	obj.argTokens = {
-		"-1", "\"EditRigidObj\"", "\"" + obj.name + "\"",
-		"0", "0", "0",        // pos  (filled by UpdateCoordinatesInLine)
-		"0", "0", "0",        // ori  (filled by UpdateCoordinatesInLine)
-		"\"" + e.modelId + "\"",
-		"1", "1", "1", "0", "0", "0"
-	};
-
-	int parentIdx = e.parentObjIndex;
-	if (parentIdx >= 0 && parentIdx < (int)objects.size())
-		obj.parentIndex = parentIdx;
+	obj.type        = "EditRigidObj";
+	obj.name        = "ATTA_PROXY:" + e.immediateParentModelId + ":" + std::to_string(e.recordIndex);
+	obj.taskId      = "-1";
+	obj.modelId     = e.modelId;
+	obj.pos         = glm::dvec3(e.worldPos);
+	obj.rot         = glm::vec3(0.0f);
+	obj.scale       = (e.scale > 0.f) ? e.scale : 1.0f;
+	obj.isBuilding  = false;
+	obj.deleted     = false;
+	obj.modified    = false;
+	obj.isAttaProxy         = true;
+	obj.attaRecordIndex     = e.recordIndex;
+	obj.attaParentModelId   = e.immediateParentModelId;
+	obj.attaIsBuilding      = false;
+	obj.attaInvParentMat    = glm::inverse(e.parentWorldMat);
 
 	int newIdx = (int)objects.size();
 	objects.push_back(obj);
-	if (parentIdx >= 0 && parentIdx < (int)objects.size()) {
-		objects[parentIdx].childrenIndices.push_back(newIdx);
-		objects[parentIdx].modified = true;
-		objects[parentIdx].qscLine.clear(); // force subtree re-serialization on save
 
-		std::string parentModelId = objects[parentIdx].modelId;
-		renderer_.SuppressAttachmentInMef(parentModelId, e.modelId, e.localPos);
-	}
-	level_.GetLevelObjects().UpdateCoordinatesInLine(objects[newIdx]);
-
-	// Permanently hide the ORIGINAL ATTA (by its starting position) so it doesn't
-	// reappear as a ghost/clone once this promoted object is moved away.
-	renderer_.SuppressAtta(origKey);
+	// Suppress this ATTA record from being re-offered for picking.
+	renderer_.MarkAttaPromotedByRecord(e.immediateParentModelId, e.recordIndex);
 
 	selected_object_index_ = newIdx;
 	marker_manip_.start_pos_ = objects[newIdx].pos;
 	marker_manip_.start_rot_ = objects[newIdx].rot;
-	status_message_ = "Promoted attachment '" + e.modelId + "' to editable object";
+	status_message_ = "Editing ATTA '" + e.modelId + "' — move then Save to apply to .res";
 	Logger::Get().Log(LogLevel::INFO,
-		"[App] Promoted ATTA '" + e.modelId + "' -> EditRigidObj idx=" + std::to_string(newIdx) +
-		" parent=" + std::to_string(parentIdx));
+		"[App] ATTA '" + e.modelId + "' selected for direct MEF edit"
+		" (record " + std::to_string(e.recordIndex) + " in " + e.immediateParentModelId + ".mef)");
 }
 
 void App::LoadQSCForLevel(int level_no) {

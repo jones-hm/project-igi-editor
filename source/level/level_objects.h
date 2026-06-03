@@ -32,6 +32,14 @@ struct LevelObject {
     bool has_original_name = false; // To distinguish between empty name and new object
     double snap_z_offset = 0.0;  // Z offset added by SnapObjectsToTerrain, subtracted when saving to QSC
 
+    // ATTA proxy: set when this object represents a directly-edited ATTA record.
+    // Not serialized to QSC — position changes are written to the MEF binary.
+    bool isAttaProxy = false;
+    int attaRecordIndex = -1;
+    std::string attaParentModelId;
+    bool attaIsBuilding = false;
+    glm::mat4 attaInvParentMat = glm::mat4(1.0f);
+
     int parentIndex = -1; // Index in LevelObjects::objects_
     std::vector<int> childrenIndices;
 

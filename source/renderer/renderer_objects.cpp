@@ -174,6 +174,10 @@ void Renderer_Objects::EnsureWindowModelIdsLoaded() {
         pos = idEnd + 1;
     }
 
+    // These glass-room shells in level 12 must render opaque (solid walls, not see-through).
+    window_model_ids_.erase("463_03_1");
+    window_model_ids_.erase("463_04_1");
+
     Logger::Get().Log(LogLevel::INFO,
         "[Renderer_Objects] Loaded " + std::to_string(window_model_ids_.size()) +
         " window/glass model IDs from IGIModels.json");
@@ -865,12 +869,15 @@ static bool DisableAttaInMefBytes(std::vector<uint8_t>& mef, const std::string& 
                     std::abs(px - localPos.x) < 1.0f &&
                     std::abs(py - localPos.y) < 1.0f &&
                     std::abs(pz - localPos.z) < 1.0f) {
-                    std::memset(mef.data() + base, 0, 16);   // name = ""
-                    float fx = 0.f, fy = 0.f, fz = -1.0e9f;
-                    std::memcpy(mef.data() + base + 16, &fx, 4);
-                    std::memcpy(mef.data() + base + 20, &fy, 4);
-                    std::memcpy(mef.data() + base + 24, &fz, 4);
+                    // Rename to a non-existent model ID so the game's resource
+                    // loader silently skips it (can't find the mesh, no render).
+                    // Must start with a digit — names starting with '_' or a letter
+                    // are treated as "magic object types" and show a warning dialog.
+                    // An empty name crashes IGI's loader entirely.
+                    static const char kNullName[16] = "999_99_9\0\0\0\0\0\0\0";
+                    std::memcpy(mef.data() + base, kNullName, 16);
                     modified = true;
+                    break; // suppress only the first matching record per ATTA chunk
                 }
             }
         }
@@ -935,6 +942,87 @@ bool Renderer_Objects::SuppressAttachmentInMef(const std::string& parentModelId,
     return true;
 }
 
+bool Renderer_Objects::UpdateAttaLocalPosInMef(
+    const std::string& parentModelId, bool isBuilding,
+    int recordIndex, const glm::vec3& newLocalPos)
+{
+    // 1. Update in-memory attachment cache so the editor renders at the new position.
+    const std::string prefix = isBuilding ? "building:" : "object:";
+    const std::string attKey = std::to_string(current_level_) + ":" + prefix + parentModelId;
+    auto cit = attachment_cache_.find(attKey);
+    if (cit != attachment_cache_.end() && recordIndex < (int)cit->second.size()) {
+        cit->second[recordIndex].px = newLocalPos.x;
+        cit->second[recordIndex].py = newLocalPos.y;
+        cit->second[recordIndex].pz = newLocalPos.z;
+    }
+
+    // 2. Patch px/py/pz bytes in the MEF entry inside the level .res.
+    const std::string gameRes = Utils::GetIGIRootPath() +
+        "\\missions\\location0\\level" + std::to_string(current_level_) +
+        "\\models\\level" + std::to_string(current_level_) + ".res";
+    if (!std::filesystem::exists(gameRes)) {
+        Logger::Get().Log(LogLevel::WARNING, "[Renderer] UpdateAttaLocalPosInMef: res not found: " + gameRes);
+        return false;
+    }
+    RESFile res = RES_Parse(gameRes);
+    if (!res.valid) return false;
+
+    auto endsWithCI = [](const std::string& s, const std::string& suf) {
+        if (suf.size() > s.size()) return false;
+        for (size_t i = 0; i < suf.size(); ++i)
+            if (std::tolower((unsigned char)s[s.size()-suf.size()+i]) !=
+                std::tolower((unsigned char)suf[i])) return false;
+        return true;
+    };
+
+    bool patched = false;
+    for (auto& e : res.entries) {
+        if (!endsWithCI(e.name, parentModelId + ".mef")) continue;
+        size_t off = 20; // skip ILFF(16) + IRES(4)
+        while (off + 16 <= e.data.size()) {
+            char fc[5] = {0}; std::memcpy(fc, e.data.data() + off, 4);
+            uint32_t size = 0, skip = 0;
+            std::memcpy(&size, e.data.data() + off + 4, 4);
+            std::memcpy(&skip, e.data.data() + off + 12, 4);
+            if (std::strcmp(fc, "ATTA") == 0) {
+                size_t base = off + 16 + (size_t)recordIndex * 68;
+                if (base + 68 <= e.data.size()) {
+                    std::memcpy(e.data.data() + base + 16, &newLocalPos.x, 4);
+                    std::memcpy(e.data.data() + base + 20, &newLocalPos.y, 4);
+                    std::memcpy(e.data.data() + base + 24, &newLocalPos.z, 4);
+                    patched = true;
+                }
+                break;
+            }
+            if (skip == 0) break;
+            off += skip;
+        }
+        if (patched) break;
+    }
+    if (!patched) {
+        Logger::Get().Log(LogLevel::WARNING, "[Renderer] UpdateAttaLocalPosInMef: record " +
+            std::to_string(recordIndex) + " not found in " + parentModelId + ".mef");
+        return false;
+    }
+
+    try {
+        std::string bak = gameRes + ".orig";
+        if (!std::filesystem::exists(bak))
+            std::filesystem::copy_file(gameRes, bak, std::filesystem::copy_options::overwrite_existing);
+    } catch (...) {}
+
+    std::string err;
+    if (!RES_WriteEntries(res.entries, gameRes, err)) {
+        Logger::Get().Log(LogLevel::ERR, "[Renderer] UpdateAttaLocalPosInMef: repack failed: " + err);
+        return false;
+    }
+    Logger::Get().Log(LogLevel::INFO, "[Renderer] UpdateAttaLocalPosInMef: patched record " +
+        std::to_string(recordIndex) + " in " + parentModelId + ".mef -> local(" +
+        std::to_string(newLocalPos.x) + "," + std::to_string(newLocalPos.y) + "," +
+        std::to_string(newLocalPos.z) + ")");
+    return true;
+}
+
 void Renderer_Objects::DrawAttachmentsForPicking(
     const std::string& parentModelId, bool isBuilding,
     const glm::mat4& parentWorldMat, float parentScale,
@@ -946,7 +1034,9 @@ void Renderer_Objects::DrawAttachmentsForPicking(
     auto ait = attachment_cache_.find(attKey);
     if (ait == attachment_cache_.end()) return;
 
-    for (const auto& att : ait->second) {
+    const auto& atts = ait->second;
+    for (size_t ri = 0; ri < atts.size(); ++ri) {
+        const auto& att = atts[ri];
         // Find the attachment mesh (same cache lookup as DrawAttachmentsRecursive)
         std::string subKey = std::to_string(current_level_) + ":" + prefix + att.modelId;
         auto sit = mesh_cache_.find(subKey);
@@ -976,19 +1066,23 @@ void Renderer_Objects::DrawAttachmentsForPicking(
         std::string childKey = parentModelId + ">" + att.modelId;
         bool recurse = drawn.insert(childKey).second;
 
-        // Skip ATTAs already promoted to / duplicated by a real EditRigidObj task.
-        bool occupied = IsAttaPromoted(att.modelId, worldPos);
+        // Skip ATTAs already promoted (by world-pos key or by direct record index).
+        bool occupied = IsAttaPromoted(att.modelId, worldPos) ||
+            promoted_atta_records_.count(parentModelId + ":" + std::to_string(ri)) > 0;
 
         if (subMesh.vertexCount > 0 && !occupied) {
             // Record this ATTA as a uniquely-pickable, promotable entry.
             int entry = (int)atta_pick_entries_.size();
             AttaPickEntry e;
-            e.parentObjIndex = parentObjIndex;
-            e.modelId        = att.modelId;
-            e.worldPos       = worldPos;
-            e.worldRot       = glm::mat3(childWorldMat); // pure rotation (no scale in childWorldMat)
-            e.scale          = parentScale;
-            e.localPos       = glm::vec3(att.px, att.py, att.pz);
+            e.parentObjIndex         = parentObjIndex;
+            e.modelId                = att.modelId;
+            e.immediateParentModelId = parentModelId;
+            e.worldPos               = worldPos;
+            e.worldRot               = glm::mat3(childWorldMat);
+            e.scale                  = parentScale;
+            e.localPos               = glm::vec3(att.px, att.py, att.pz);
+            e.recordIndex            = (int)ri;
+            e.parentWorldMat         = parentWorldMat;
             atta_pick_entries_.push_back(e);
 
             glm::mat4 leafModel = glm::scale(childWorldMat, glm::vec3(40.96f * parentScale));
@@ -1379,9 +1473,19 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         // with depth-writes disabled. Opaque sub-meshes of the same model still
         // render in the opaque pass — mixed models (guard tower, fence posts) draw
         // in BOTH passes, skipping the wrong-pass sub-meshes each time.
+        // Tree billboard meshes (900/902/905 series) use alpha-test discard, not
+        // alpha-blend. Force them to the opaque pass so the shader's discard line
+        // fires (u_alpha=1.0 ≥ 0.9) and transparent areas vanish instead of showing
+        // as semi-transparent gray rectangles.
+        const bool isTreeModel = (obj.modelId == "900_01_1" ||
+                                  obj.modelId == "902_01_1" ||
+                                  obj.modelId == "905_01_1");
+
         bool hasArgbSubMeshes = false;
-        for (const auto& sub : mesh.subMeshes) {
-            if (sub.alphaMode == 2) { hasArgbSubMeshes = true; break; }
+        if (!isTreeModel) {
+            for (const auto& sub : mesh.subMeshes) {
+                if (sub.alphaMode == 2) { hasArgbSubMeshes = true; break; }
+            }
         }
         if (current_level_ == 12 && !isWindowModel) {
             hasArgbSubMeshes = false;
@@ -1439,6 +1543,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     if (current_level_ == 12 && !isWindowModel) {
                         isBlendSub = false;
                     }
+                    if (isTreeModel) isBlendSub = false;
 
                     if (isBlendSub) {
                         glEnable(GL_BLEND);
@@ -1809,9 +1914,14 @@ void Renderer_Objects::DrawAttachmentsRecursive(
         //                → draw in BOTH passes (opaque pass discards α<0.5 pixels,
         //                  transparent pass blends the rest)
         const bool attIsWindow = window_model_ids_.count(att.modelId) > 0;
+        const bool attIsTree = (att.modelId == "900_01_1" ||
+                                att.modelId == "902_01_1" ||
+                                att.modelId == "905_01_1");
         bool attHasAlpha = false;
-        for (const auto& s : subMesh.subMeshes) {
-            if (s.alphaMode == 2) { attHasAlpha = true; break; }
+        if (!attIsTree) {
+            for (const auto& s : subMesh.subMeshes) {
+                if (s.alphaMode == 2) { attHasAlpha = true; break; }
+            }
         }
         if (current_level_ == 12 && !attIsWindow) {
             attHasAlpha = false;
@@ -1856,6 +1966,7 @@ void Renderer_Objects::DrawAttachmentsRecursive(
                 if (current_level_ == 12 && !attIsWindow) {
                     subNeedsBlend = false;
                 }
+                if (attIsTree) subNeedsBlend = false;
                 if (isTransparentPass && !attIsWindow && !subNeedsBlend) continue;
 
                 if (subNeedsBlend) {

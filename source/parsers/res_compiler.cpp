@@ -159,10 +159,11 @@ bool RES_Compile(const std::string& scriptPath, std::string& error) {
             os.write(pad, namePadding);
         }
 
-        // Chunk BODY
+        // Chunk BODY — last entry must have skip=0 (end-of-archive sentinel).
         uint32_t bodySize = dataSize;
         uint32_t bodyPadding = (4 - (bodySize % 4)) % 4;
-        uint32_t bodySkip = 16 + bodySize + bodyPadding;
+        bool isLastRes = (&res == &resources.back());
+        uint32_t bodySkip = isLastRes ? 0 : (16 + bodySize + bodyPadding);
 
         WriteFourCC(os, FOURCC_BODY);
         WriteU32LE(os, bodySize);
@@ -212,13 +213,30 @@ bool RES_WriteEntries(const std::vector<RESEntry>& entries, const std::string& o
         if (padding) { char pad[3] = {0}; os.write(pad, padding); }
     };
 
-    for (const auto& e : entries) {
+    for (size_t ei = 0; ei < entries.size(); ++ei) {
+        const auto& e = entries[ei];
+        bool isLast = (ei == entries.size() - 1);
+
         // NAME chunk: null-terminated name.
         std::vector<uint8_t> nameBytes(e.name.begin(), e.name.end());
         nameBytes.push_back(0);
         writeChunk(FOURCC_NAME, nameBytes.data(), (uint32_t)nameBytes.size());
-        // BODY chunk: raw resource bytes.
-        writeChunk(FOURCC_BODY, e.data.data(), (uint32_t)e.data.size());
+
+        // BODY chunk. The LAST BODY must have skip=0 — the game parser uses
+        // this as the end-of-archive sentinel. All earlier BODY chunks carry
+        // the normal skip so the parser advances to the next NAME chunk.
+        if (isLast) {
+            uint32_t bodySize = (uint32_t)e.data.size();
+            uint32_t padding = (4 - (bodySize % 4)) % 4;
+            WriteFourCC(os, FOURCC_BODY);
+            WriteU32LE(os, bodySize);
+            WriteU32LE(os, 4);   // align
+            WriteU32LE(os, 0);   // skip=0 → end of archive
+            if (bodySize) os.write(reinterpret_cast<const char*>(e.data.data()), bodySize);
+            if (padding) { char pad[3] = {0}; os.write(pad, padding); }
+        } else {
+            writeChunk(FOURCC_BODY, e.data.data(), (uint32_t)e.data.size());
+        }
     }
 
     uint32_t finalSize = static_cast<uint32_t>(os.tellp());

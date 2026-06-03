@@ -34,6 +34,7 @@ public:
 	void					LoadLevel(int level_no);
 	void					SetGameLevel(int level_no);
 	void					SaveCurrentLevel();
+	void					FlushAttaProxiesToMef();
 	void					LaunchGame();
 	void					ExportTextureMap();
 	int						GetCurLevelNo() const;
