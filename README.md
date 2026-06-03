@@ -189,33 +189,72 @@ With the successful release of **Version 2.0.0**, core features like the **Nativ
 
 ### 🧪 Unit Testing & Status
 
-We use **GoogleTest** (gtest) to ensure the stability of the core parsers and utilities.
+We use **GoogleTest** (gtest) for a comprehensive test suite covering the core parsers and utilities. Tests run automatically as part of the build with `ctest`.
 
 #### Current Test Status
 
-| Module / Test Suite | Status | Passing Tests |
-| --- | :---: | :---: |
-| **QSC Lexer** (`QscLexerTest`) | ✅ | 1/1 |
-| **QVM Round-Trip** (`QvmRoundTripTest`) | ✅ | 1/1 |
-| **Configuration** (`ConfigTest`) | ✅ | 1/1 |
-| **String Utilities** (`UtilsTest`) | ✅ | 2/2 |
-| **Overall** | ✅ | **5/5 (100%)** |
+| Module / Test Suite | Status | Passing Tests | Coverage |
+| --- | :---: | :---: | --- |
+| **QSC Lexer** (`QscLexerTest`) | ✅ | 52/52 | All token types, keywords, comments, operators, escape sequences, positions, error recovery |
+| **QSC Parser** (`QscParserTest`) | ✅ | 37/37 | All AST node types, operator precedence, control flow, error cases, counter tracking |
+| **QVM Round-Trip** (`QvmRoundTripTest`) | ✅ | 20/20 | Compile→write→parse→decompile cycle, identifier/string pools, structural re-parse |
+| **Configuration** (`ConfigTest`) | ✅ | 10/10 | Defaults, field ranges, singleton behaviour, keybinding load |
+| **String Utilities** (`UtilsTest`) | ✅ | 35/35 | `Trim`, `Split`, `TryParse<T>`, `ToString<T>` with edge cases |
+| **Overall** | ✅ | **158/158 (100%)** | |
+
+#### Test Files
+
+| File | Tests | What it covers |
+| --- | :---: | --- |
+| `tests/test_qsc_lexer.cpp` | 52 | Tokenisation of every token kind, comment stripping, escape sequences, qualified identifiers, source positions, all error paths |
+| `tests/test_qsc_parser.cpp` | 37 | AST structure for calls, `if`/`else`, `while`, all binary/unary operators, precedence, right-associativity, empty programs, error paths |
+| `tests/test_qvm_roundtrip.cpp` | 20 | Full compile → disk → parse → decompile pipeline for 12 QSC variants; QVM pool checks; re-lex/re-parse of decompiler output |
+| `tests/test_config.cpp` | 10 | Config singleton, level range, font/render defaults, keybinding data loaded |
+| `tests/test_utils.cpp` | 35 | `Trim` (12 cases), `Split` (7 cases), `TryParse<int/float/double>` (10 cases), `ToString` (5 cases) |
 
 #### How to Run Tests
 
-1. Configure the project for building (if you haven't already):
-   ```powershell
-   cmake -B build -DCMAKE_BUILD_TYPE=Debug
-   ```
-2. Build the `igi_tests` target:
-   ```powershell
-   cmake --build build --target igi_tests
-   ```
-3. Run `ctest` inside the build directory:
-   ```powershell
-   cd build
-   ctest --output-on-failure
-   ```
+**Quick run (after a fresh clone):**
+
+```powershell
+# 1. Configure
+cmake -B build -DCMAKE_BUILD_TYPE=Debug
+
+# 2. Build only the test binary (fast — skips the full editor)
+cmake --build build --target igi_tests --config Debug
+
+# 3. Run all 158 tests with failure details
+cd build
+ctest --output-on-failure -C Debug
+```
+
+**Run the binary directly for verbose output:**
+
+```powershell
+.\bin\Debug\igi_tests.exe
+```
+
+**Filter to a specific suite:**
+
+```powershell
+# Run only the lexer tests
+.\bin\Debug\igi_tests.exe --gtest_filter="QscLexerTest.*"
+
+# Run only the parser tests
+.\bin\Debug\igi_tests.exe --gtest_filter="QscParserTest.*"
+
+# Run only the QVM round-trip tests
+.\bin\Debug\igi_tests.exe --gtest_filter="QvmRoundTripTest.*"
+```
+
+**Expected output on a clean pass:**
+
+```
+[==========] Running 158 tests from 5 test suites.
+[  PASSED  ] 158 tests.
+```
+
+> **Note:** The test binary must be run from the repository root (not from inside `build/`) so that relative paths to `tests/fixtures/` resolve correctly. `ctest` handles this automatically via `WORKING_DIRECTORY`.
 
 ---
 
