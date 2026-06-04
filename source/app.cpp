@@ -2850,6 +2850,25 @@ void App::DispatchEventBindings() {
 						}
 					}
 					selected_object_index_ = idx;
+					// Scroll the tree to make the found item visible
+					{
+						auto visibleList = GetVisibleTreeNodes();
+						int current_row = -1;
+						for (int i = 0; i < (int)visibleList.size(); ++i) {
+							if (visibleList[i] == idx) { current_row = i; break; }
+						}
+						if (current_row >= 0) {
+							int row_h = 16;
+							int start_y = 30;
+							int max_rows = (window_state_.viewport_height_ - 50 - start_y) / row_h;
+							if (max_rows > 0) {
+								if (current_row < tree_scroll_offset_)
+									tree_scroll_offset_ = current_row;
+								else if (current_row >= tree_scroll_offset_ + max_rows)
+									tree_scroll_offset_ = current_row - max_rows + 1;
+							}
+						}
+					}
 					break;
 				}
 			}
