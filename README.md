@@ -2,7 +2,7 @@
 
 **IGI Editor** is a professional 3D world and object manipulation toolkit for Project IGI. Inspired by the official [IGI 2 Editor](https://www.nexusmods.com/igi2covertstrike/mods/1) created by the original IGI Developers, it provides a modern interface for level research, object placement, and terrain modification.
 
-**Current Status: Version 2.7.0 (3D Model Viewer & Autocomplete Task)** - Professional 3D modding suite featuring click-to-select map selection, train and spline tools, a streamlined workspace menu, automated asset extraction, flawless native MEF model loading (including complex buildings and bone structures), integrated QVM decompilation, and a full headless CLI toolchain. It includes an **IGI 2 Style position and orientation properties editor, sliders, pushbuttons, etc.** The editor features fully integrated, **native support for game file formats (SPR, TEX, MEF, DAT, MTP) with absolutely no external tools required—which is huge**! Supports editing and compiling for all 14 original game levels with native asset parity.
+Professional 3D **modding** suite featuring click-to-select map selection, train and spline tools, a streamlined workspace menu, automated asset extraction, flawless native MEF model loading (including complex buildings and bone structures), integrated QVM decompilation, and a full headless CLI toolchain. It includes an **IGI 2 Style position and orientation properties editor, sliders, pushbuttons, etc.** The editor features fully integrated, **native support for game file formats (SPR, TEX, MEF, DAT, MTP) with absolutely no external tools required**! Supports editing and compiling for all 14 original game levels with native asset parity.
 
 This project is built upon the foundational work of the [Project-IGI-Terrain](https://github.com/hjcminus/Project-IGI-Terrain) repository. Special thanks to [hjcminus](https://github.com/hjcminus) for their research and for bringing this codebase to light. It is built using C++17 and OpenGL, and it is cross-platform, but it is mainly tested on Windows.
 
@@ -217,13 +217,24 @@ With the successful release of **Version 2.0.0**, core features like the **Nativ
 Credits and contributions of the people in this project:
 
 - **[Artiom](https://github.com/NEWME0)** 👑 - **Game file formats** (*models, textures, animations*) and his **game conversion tools**. (**Huge Help!** )
+
 - **[GM123](https://www.youtube.com/@gm1233)** 👑 - **Game Models & Animations** (*MEF / IFF formats*) and **development tools**. (**Huge Help!**)
+
 - **[Neo](https://next.nexusmods.com/profile/xaeroneo?gameId=5664)** 👑 - **Guiding & testing** this project to match the *IGI 2 Editor style*. (**Huge Help!**)
+
+- [hjcminus](https://github.com/hjcminus) - **Terrain Editor** Project, which this project is based on.
+
 - **[Ferit](https://www.youtube.com/channel/UCpn_gZMkFVBUAe9SJK9hYQA)** 🌟 - **Game MEF/TEX file formats** and *IGI 2 style file formats* understanding.
+
 - **[Dark](https://www.youtube.com/@CRONOQUILLOFFICIAL)** 🌟 - **Early prototype building**, *testing tools*, and **editor features**.
+
 - **[Dimon](https://vk.com/dimonkrevedko)** 🌟 - **Graphs & Nodes** and his early [igi1-editor](https://vk.com/wall-275359_6439) *prototype project used for inspiration*.
+
 - **[Yoejin](https://vk.com/id436486682)** 🌟 - **MTP & Models** *structure and information*.
+
 - **[ORWA](https://www.youtube.com/@totalwartimelapses6359)** 🌟 - **Graphs Area and Nodes** *information and testing*.
+
+  
 
 
 ### **Historical Note on Early Prototype:**
@@ -231,11 +242,7 @@ Credits and contributions of the people in this project:
 > 
 > ![Dimon's Prototype Editor](assets/screenshots/igi1-editor-prototype.png)
 
-### Acknowledgments
-Special thanks to the original authors and researchers:
-- [hjcminus](https://github.com/hjcminus) - 3D Terrain Editor Project, which this project is based on.
-- [mrmaller1905](https://github.com/mrmaller1905) - For Requesting this feature.
-
+### 
 ---
 
 ## 📋 [Changelogs](CHANGELOGS.md)
