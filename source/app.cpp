@@ -1881,8 +1881,10 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	// reported for Ctrl+Space (key 0/space), which silently dropped inline autocomplete.
 	bool ctrlDown = (glutGetModifiers() & GLUT_ACTIVE_CTRL) != 0 ||
 	                (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+	bool shiftDown = (glutGetModifiers() & GLUT_ACTIVE_SHIFT) != 0 ||
+	                 (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 	if (ctrlDown) {
-		if (key == 14) { // Ctrl+N → AutoComplete keyword picker (AutoCompleteKeywords.txt)
+		if (key == 14 && !shiftDown) { // Ctrl+N only (not Ctrl+Shift+N — that's TaskFindByTaskNote)
 			// Only open when a property text box is focused, so Enter knows which
 			// field to insert the chosen item into.
 			if (prop_text_edit_field_ < 0) {
