@@ -1879,8 +1879,12 @@ static constexpr movement_key_s MOVEMENT_KEYS[] = {
 void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	auto& config = Config::Get();
 
-	// Autocomplete Ctrl combos — intercept before prop text editor so they work while editing
-	if (glutGetModifiers() & GLUT_ACTIVE_CTRL) {
+	// Autocomplete Ctrl combos — intercept before prop text editor so they work while editing.
+	// Detect Ctrl via GLUT *and* GetAsyncKeyState: GLUT modifiers are occasionally not
+	// reported for Ctrl+Space (key 0/space), which silently dropped inline autocomplete.
+	bool ctrlDown = (glutGetModifiers() & GLUT_ACTIVE_CTRL) != 0 ||
+	                (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+	if (ctrlDown) {
 		if (key == 14) { // Ctrl+N → AutoComplete keyword picker (AutoCompleteKeywords.txt)
 			// Only open when a property text box is focused, so Enter knows which
 			// field to insert the chosen item into.
@@ -2085,6 +2089,28 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			return;
 		}
 		if (key == 13) { // Enter — confirm
+			if (find_mode_ == FindMode::SetId) {
+				// Empty query → automatic unique ID; otherwise set the typed ID.
+				std::string q = find_query_;
+				while (!q.empty() && (q.front() == ' ' || q.front() == '\t')) q.erase(q.begin());
+				while (!q.empty() && (q.back()  == ' ' || q.back()  == '\t')) q.pop_back();
+				if (selected_object_index_ >= 0) {
+					if (q.empty()) {
+						AssignTaskID();
+					} else {
+						auto& objects = level_.GetLevelObjects().GetObjects();
+						objects[selected_object_index_].taskId = q;
+						objects[selected_object_index_].modified = true;
+						level_.GetLevelObjects().UpdateCoordinatesInLine(objects[selected_object_index_]);
+						SaveAndReloadObjects();
+						auto& reloaded = level_.GetLevelObjects().GetObjects();
+						if (!reloaded.empty()) selected_object_index_ = std::min(selected_object_index_, (int)reloaded.size() - 1);
+						status_message_ = "Set Task ID: " + q;
+					}
+				}
+				find_open_ = false; find_query_.clear(); find_result_idx_ = -1;
+				return;
+			}
 			if (find_result_idx_ >= 0) {
 				selected_object_index_ = find_result_idx_;
 				// Expand all ancestor containers so the found item is visible in tree
@@ -2131,8 +2157,8 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		} else if (key >= 32 && key <= 126) {
 			find_query_ += (char)key;
 		}
-		// Search (respects find_mode_)
-		if (!find_query_.empty()) {
+		// Search (respects find_mode_). SetId is input-only — no live search.
+		if (!find_query_.empty() && find_mode_ != FindMode::SetId) {
 			std::string q_lower = find_query_;
 			std::transform(q_lower.begin(), q_lower.end(), q_lower.begin(), [](unsigned char c){ return std::tolower(c); });
 			const auto& objects = level_.GetLevelObjects().GetObjects();
@@ -2314,7 +2340,8 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	}
 
 	// C3: Ctrl+F — toggle find bar (key 6 = Ctrl+F, hardcoded for convenience)
-	if (key == 6) {
+	// Don't intercept Ctrl+Shift+F — that goes to TaskFindAgain via event bindings.
+	if (key == 6 && !(glutGetModifiers() & GLUT_ACTIVE_SHIFT)) {
 		find_open_       = !find_open_;
 		find_mode_       = FindMode::TaskNameTypeId;
 		find_query_.clear();
@@ -2381,17 +2408,6 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		return;
 	}
 
-	// H or CTRL+H — toggle keybinding help panel (Ctrl+H arrives as ASCII 8).
-	// Only when not typing in a text field / picker / find bar.
-	if (prop_text_edit_field_ == -1 && !find_open_ && !task_picker_open_ && !pause_mode_) {
-		bool ctrl = !!(glutGetModifiers() & GLUT_ACTIVE_CTRL);
-		if (key == 'h' || key == 'H' || (key == 8 && ctrl)) {
-			show_help_ = !show_help_;
-			help_scroll_offset_ = 0;
-			if (show_help_) LoadHelpEntries(); // (re)read qedkeybindings.qsc so it's never empty
-			return;
-		}
-	}
 
 	// DEL key: delete selected task (hardcoded for standard keyboard ergonomics)
 	if (key == 127) { DeleteSelectedTask(); return; }
@@ -2486,7 +2502,8 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	}
 
 
-	if (key == '\t') {
+	// Plain Tab cycles selection; Ctrl+I and Ctrl+Shift+I must reach DispatchEventBindings.
+	if (key == '\t' && !(glutGetModifiers() & (GLUT_ACTIVE_CTRL | GLUT_ACTIVE_SHIFT | GLUT_ACTIVE_ALT))) {
 		LevelObjects& lo = level_.GetLevelObjects();
 		if (!lo.GetObjects().empty()) {
 			selected_object_index_ = (selected_object_index_ + 1) % (int)lo.GetObjects().size();
@@ -2515,6 +2532,14 @@ void App::DispatchEventBindings() {
 		// Ctrl+Shift+C (TaskCopyRecursive) is pressed, F2 during Shift+F2, etc.
 		return Utils::IsKeyBindingPressedExact(it->second);
 	};
+
+	// ---- Help ----
+	if (Check("ToggleHelp")) {
+		show_help_ = !show_help_;
+		help_scroll_offset_ = 0;
+		if (show_help_) LoadHelpEntries();
+		return;
+	}
 
 	// ---- Camera ----
 	if (Check("CameraEnable")) { /* handled by existing named binding */ }
@@ -2723,7 +2748,15 @@ void App::DispatchEventBindings() {
 		}
 		return;
 	}
-	if (Check("TaskSetID")) { AssignTaskID(); }
+	if (Check("TaskSetID")) {
+		// Ctrl+I → input box for a Task ID. Empty + Enter = automatic unique assignment.
+		if (selected_object_index_ < 0) { status_message_ = "Set Task ID: select a task first"; return; }
+		find_mode_  = FindMode::SetId;
+		find_open_  = true;
+		find_query_.clear();
+		find_result_idx_ = -1;
+		return;
+	}
 	if (Check("TaskRebuildTree")) {
 		SaveAndReloadObjects();
 		status_message_ = "Tree rebuilt";
@@ -2834,14 +2867,13 @@ void App::DispatchEventBindings() {
 		                  "/level" + std::to_string(lvl) + "/objects.qsc";
 		return;
 	}
-	if (Check("SaveTaskObject")) {
-		// Ctrl+S → save ONLY the selected task (and its sub-tasks) to a user path via a
-		// textbox. Whole-level/objects-file saving lives in the pause menu, so Ctrl+S is
-		// task-scoped here.
-		if (selected_object_index_ < 0) { status_message_ = "Save task: select a task first"; return; }
-		file_dialog_mode_  = FileDialogMode::SaveSubTask;
-		file_dialog_path_  = Config::Get().taskFileName.empty() ?
-		    "content\\qed\\temp\\task.qsc" : Config::Get().taskFileName;
+	if (Check("SaveObjectFile")) {
+		// Ctrl+S → open a path textbox and write the live objects QSC to that path.
+		// (Whole-level save/compile lives in the pause menu.)
+		int lvl = level_.GetLevelNo();
+		file_dialog_mode_  = FileDialogMode::SaveObjectFile;
+		file_dialog_path_  = "missions/location" + std::to_string(lvl) +
+		                     "/level" + std::to_string(lvl) + "/objects.qsc";
 		file_dialog_caret_ = (int)file_dialog_path_.size();
 		return;
 	}
@@ -2849,7 +2881,7 @@ void App::DispatchEventBindings() {
 		if (selected_object_index_ >= 0) {
 			file_dialog_mode_ = FileDialogMode::SaveSubTask;
 			file_dialog_path_ = Config::Get().taskFileName.empty() ?
-			    "content\\qed\\temp\\subtask.qsc" : Config::Get().taskFileName;
+			    "content\\qed\\temp\\task.qsc" : Config::Get().taskFileName;
 			file_dialog_caret_ = (int)file_dialog_path_.size();
 		} else {
 			status_message_ = "SaveSubTask: no task selected";
@@ -2863,7 +2895,7 @@ void App::DispatchEventBindings() {
 			if (par >= 0) {
 				file_dialog_mode_ = FileDialogMode::SaveSubTaskParent;
 				file_dialog_path_ = Config::Get().taskFileName.empty() ?
-				    "content\\qed\\temp\\subtask.qsc" : Config::Get().taskFileName;
+				    "content\\qed\\temp\\task.qsc" : Config::Get().taskFileName;
 				file_dialog_caret_ = (int)file_dialog_path_.size();
 			} else {
 				status_message_ = "SaveSubTaskParent: selected task has no parent";
@@ -2876,7 +2908,7 @@ void App::DispatchEventBindings() {
 	if (Check("LoadSubTaskObjectFile")) {
 		file_dialog_mode_ = FileDialogMode::LoadSubTask;
 		file_dialog_path_ = Config::Get().taskFileName.empty() ?
-		    "content\\qed\\temp\\subtask.qsc" : Config::Get().taskFileName;
+		    "content\\qed\\temp\\task.qsc" : Config::Get().taskFileName;
 		file_dialog_caret_ = (int)file_dialog_path_.size();
 		return;
 	}

@@ -1375,72 +1375,28 @@ void Renderer::Draw(const draw_params_s &params,
 
     if (task_tree_view.show_debug_) {
       const auto &entries = Logger::Get().GetEntries();
-      int debug_w = 600;
-      int debug_h = 280;
-      int debug_x = 10;
-      int viewport_h = params.view_define_->viewport_height_;
-      // glVertex uses bottom-left origin, so Y=10 = near bottom of screen
-      int debug_y_gl = 10;
-      // draw_text uses top-left origin (flips internally), convert:
-      // draw_text_y = viewport_h - (gl_y + box_h)
-      int debug_y_text = viewport_h - (debug_y_gl + debug_h);
+      // Top-left, fully transparent (no panel, no border). Text uses the editor's
+      // yellow/white theme: white for info, yellow for warnings, red for errors.
+      const int debug_x = 10;
+      const int startY  = 10;     // draw_text_sys uses top-left origin
+      const int line_height = 14;
+      const int max_lines = 30;
+      const int max_chars = 110;
 
-      // Dark panel + golden border to match the model/autocomplete picker theme.
-      glEnable(GL_BLEND);
-      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      glColor4f(0.05f, 0.05f, 0.1f, 0.9f);
-      glBegin(GL_QUADS);
-      glVertex2i(debug_x, debug_y_gl);
-      glVertex2i(debug_x + debug_w, debug_y_gl);
-      glVertex2i(debug_x + debug_w, debug_y_gl + debug_h);
-      glVertex2i(debug_x, debug_y_gl + debug_h);
-      glEnd();
-      glColor4f(1.0f, 0.85f, 0.0f, 0.7f);
-      glBegin(GL_LINE_LOOP);
-      glVertex2i(debug_x, debug_y_gl);
-      glVertex2i(debug_x + debug_w, debug_y_gl);
-      glVertex2i(debug_x + debug_w, debug_y_gl + debug_h);
-      glVertex2i(debug_x, debug_y_gl + debug_h);
-      glEnd();
-      glDisable(GL_BLEND);
-
-      // Title at top of box (draw_text uses top-left origin)
-      draw_text_sys(debug_x + 10, debug_y_text + 10, "DEBUG CONSOLE", 1.0f, 0.9f, 0.1f);
-
-      int startY = debug_y_text + 30; // Just below title, inside the frame
-      int line_height = 12;
-      int count = 0;
-      int max_lines = (debug_h - 50) / line_height;
-      int max_chars = (debug_w - 20) / 7;
-
-      for (auto it = entries.rbegin();
-           it != entries.rend() && count < max_lines; ++it, ++count) {
-        float r = 1.0f, g = 1.0f, b = 1.0f;
-        if (it->level == LogLevel::ERR) {
-          r = 1.0f;
-          g = 0.2f;
-          b = 0.2f;
-        } else if (it->level == LogLevel::FATAL) {
-          r = 1.0f;
-          g = 0.0f;
-          b = 0.0f;
-        } else if (it->level == LogLevel::WARNING) {
-          r = 1.0f;
-          g = 1.0f;
-          b = 0.0f;
-        } else if (it->level == LogLevel::DEBUG) {
-          r = 0.5f;
-          g = 0.7f;
-          b = 1.0f;
-        }
-
-        // Text truncation based on box width
-        std::string msg = it->message;
-        if (msg.length() > max_chars) {
-          msg = msg.substr(0, max_chars - 3) + "...";
-        }
-        draw_text_sys(debug_x + 10, startY + count * line_height, msg.c_str(), r, g,
-                  b);
+      // Show the last max_lines entries oldest→newest (newest at the bottom).
+      int total = (int)entries.size();
+      int first = std::max(0, total - max_lines);
+      int row = 0;
+      for (int i = first; i < total; ++i, ++row) {
+        const auto &e = entries[i];
+        float r = 1.0f, g = 1.0f, b = 1.0f;   // INFO / default: white
+        if (e.level == LogLevel::ERR)          { r = 1.0f; g = 0.3f; b = 0.3f; }
+        else if (e.level == LogLevel::FATAL)   { r = 1.0f; g = 0.0f; b = 0.0f; }
+        else if (e.level == LogLevel::WARNING) { r = 1.0f; g = 0.85f; b = 0.1f; } // yellow
+        else if (e.level == LogLevel::DEBUG)   { r = 0.6f; g = 0.8f; b = 1.0f; }
+        std::string msg = e.message;
+        if ((int)msg.length() > max_chars) msg = msg.substr(0, max_chars - 3) + "...";
+        draw_text_sys(debug_x, startY + row * line_height, msg.c_str(), r, g, b);
       }
     }
 
@@ -2018,10 +1974,11 @@ void Renderer::Draw(const draw_params_s &params,
             "Find task by type / name / ID:",
             "Find text in task parameters:",
             "Find task by ID:",
-            "Find task by note / name:"
+            "Find task by note / name:",
+            "Set Task ID (empty = auto-assign):"
         };
         int mi = task_tree_view.find_mode_;
-        if (mi < 0 || mi > 3) mi = 0;
+        if (mi < 0 || mi > 4) mi = 0;
         const char* title = kTitles[mi];
         int tw = glutBitmapLength(GLUT_BITMAP_HELVETICA_12, (const unsigned char*)title);
         draw_text(bar_x + (bar_w - tw) / 2, bar_screen_top + 14, title, 1.0f, 1.0f, 1.0f);
@@ -2055,8 +2012,11 @@ void Renderer::Draw(const draw_params_s &params,
       int input_text_y = bar_screen_top + bar_h - 10 - (bar_h - 36) - 10;
       draw_text(bar_x + 12, input_text_y, find_label, 1.0f, 1.0f, 1.0f);
 
-      // Match / no-match feedback below the input box
-      if (task_tree_view.find_result_idx_ >= 0 && task_tree_view.level_objects_) {
+      // Match / no-match feedback below the input box.
+      if (task_tree_view.find_mode_ == 4) {
+        // SetId: input-only, no search — show a hint instead of match feedback.
+        draw_text(bar_x + 12, bar_screen_top + 68, "[Enter] apply  (empty = auto-assign)", 0.7f, 0.7f, 0.7f);
+      } else if (task_tree_view.find_result_idx_ >= 0 && task_tree_view.level_objects_) {
         const auto& objects = task_tree_view.level_objects_->GetObjects();
         int ri = task_tree_view.find_result_idx_;
         if (ri < (int)objects.size()) {

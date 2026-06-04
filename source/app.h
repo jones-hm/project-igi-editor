@@ -222,7 +222,7 @@ private:
 	bool					find_open_        = false;
 	std::string				find_query_;
 	int						find_result_idx_  = -1;
-	enum class FindMode { TaskNameTypeId, TextInTask, ById, ByNote };
+	enum class FindMode { TaskNameTypeId, TextInTask, ById, ByNote, SetId };
 	FindMode				find_mode_        = FindMode::TaskNameTypeId;
 
 	// Task type view toggle
