@@ -1100,19 +1100,17 @@ void Renderer::Draw(const draw_params_s &params,
                      search_lower.begin(),
                      [](unsigned char c) { return std::tolower(c); });
 
+      std::set<std::string> seen_types;
       for (int i = 0; i < (int)objects.size(); ++i) {
         if (!objects[i].deleted) {
           const auto &obj = objects[i];
           if (obj.type == "Task_DeclareParameters") continue; // picker excludes declare params
-          std::string label = obj.type;
-          if (!obj.taskId.empty() && obj.taskId != "-1") {
-            label += " (" + obj.taskId;
-            if (!obj.name.empty())
-              label += ", \"" + obj.name + "\"";
-            label += ")";
-          } else if (!obj.name.empty()) {
-            label += " (\"" + obj.name + "\")";
-          }
+          std::string type_lower = obj.type;
+          std::transform(type_lower.begin(), type_lower.end(), type_lower.begin(),
+                         [](unsigned char c) { return std::tolower(c); });
+          if (seen_types.count(type_lower) > 0) continue;
+          seen_types.insert(type_lower);
+          std::string label = obj.type + "()";
 
           std::string label_lower = label;
           std::transform(label_lower.begin(), label_lower.end(),
@@ -1158,16 +1156,8 @@ void Renderer::Draw(const draw_params_s &params,
             draw_text(picker_x + 8, item_y + 11, ">", 1.0f, 0.9f, 0.0f);
           }
 
-          // Format label standard to HUD: Type (ID, "Name")
-          std::string label = obj.type;
-          if (!obj.taskId.empty() && obj.taskId != "-1") {
-            label += " (" + obj.taskId;
-            if (!obj.name.empty())
-              label += ", \"" + obj.name + "\"";
-            label += ")";
-          } else if (!obj.name.empty()) {
-            label += " (\"" + obj.name + "\")";
-          }
+          // Format label standard to HUD: Type()
+          std::string label = obj.type + "()";
 
           // Truncate to prevent text overflow
           if (label.size() > 43) {

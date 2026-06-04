@@ -1214,18 +1214,17 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					std::string search_lower = task_picker_search_;
 					std::transform(search_lower.begin(), search_lower.end(), search_lower.begin(),
 					               [](unsigned char c) { return std::tolower(c); });
+					std::set<std::string> seen_types;
 					for (int i = 0; i < (int)objects.size(); ++i) {
 						if (!objects[i].deleted) {
 							const auto& obj = objects[i];
 							if (obj.type == "Task_DeclareParameters") continue; // picker excludes declare params
-							std::string label = obj.type;
-							if (!obj.taskId.empty() && obj.taskId != "-1") {
-								label += " (" + obj.taskId;
-								if (!obj.name.empty()) label += ", \"" + obj.name + "\"";
-								label += ")";
-							} else if (!obj.name.empty()) {
-								label += " (\"" + obj.name + "\")";
-							}
+							std::string type_lower = obj.type;
+							std::transform(type_lower.begin(), type_lower.end(), type_lower.begin(),
+							               [](unsigned char c) { return std::tolower(c); });
+							if (seen_types.count(type_lower) > 0) continue;
+							seen_types.insert(type_lower);
+							std::string label = obj.type + "()";
 							std::string label_lower = label;
 							std::transform(label_lower.begin(), label_lower.end(), label_lower.begin(),
 							               [](unsigned char c) { return std::tolower(c); });
@@ -1576,19 +1575,17 @@ void App::Input_OnSpecial(int key, int x, int y) {
 		std::string search_lower = task_picker_search_;
 		std::transform(search_lower.begin(), search_lower.end(), search_lower.begin(), [](unsigned char c) { return std::tolower(c); });
 		
+		std::set<std::string> seen_types;
 		for (int i = 0; i < (int)objects.size(); ++i) {
 			if (!objects[i].deleted) {
 				const auto& obj = objects[i];
 				if (obj.type == "Task_DeclareParameters") continue; // picker excludes declare params
-				std::string label = obj.type;
-				if (!obj.taskId.empty() && obj.taskId != "-1") {
-					label += " (" + obj.taskId;
-					if (!obj.name.empty())
-						label += ", \"" + obj.name + "\"";
-					label += ")";
-				} else if (!obj.name.empty()) {
-					label += " (\"" + obj.name + "\")";
-				}
+				std::string type_lower = obj.type;
+				std::transform(type_lower.begin(), type_lower.end(), type_lower.begin(),
+				               [](unsigned char c) { return std::tolower(c); });
+				if (seen_types.count(type_lower) > 0) continue;
+				seen_types.insert(type_lower);
+				std::string label = obj.type + "()";
 
 				std::string label_lower = label;
 				std::transform(label_lower.begin(), label_lower.end(), label_lower.begin(), [](unsigned char c) { return std::tolower(c); });
@@ -2200,19 +2197,17 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			std::string search_lower = task_picker_search_;
 			std::transform(search_lower.begin(), search_lower.end(), search_lower.begin(), [](unsigned char c) { return std::tolower(c); });
 			
+			std::set<std::string> seen_types;
 			for (int i = 0; i < (int)objects.size(); ++i) {
 				if (!objects[i].deleted) {
 					const auto& obj = objects[i];
 					if (obj.type == "Task_DeclareParameters") continue; // picker excludes declare params
-					std::string label = obj.type;
-					if (!obj.taskId.empty() && obj.taskId != "-1") {
-						label += " (" + obj.taskId;
-						if (!obj.name.empty())
-							label += ", \"" + obj.name + "\"";
-						label += ")";
-					} else if (!obj.name.empty()) {
-						label += " (\"" + obj.name + "\")";
-					}
+					std::string type_lower = obj.type;
+					std::transform(type_lower.begin(), type_lower.end(), type_lower.begin(),
+					               [](unsigned char c) { return std::tolower(c); });
+					if (seen_types.count(type_lower) > 0) continue;
+					seen_types.insert(type_lower);
+					std::string label = obj.type + "()";
 
 					std::string label_lower = label;
 					std::transform(label_lower.begin(), label_lower.end(), label_lower.begin(), [](unsigned char c) { return std::tolower(c); });
@@ -2242,6 +2237,30 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 					copy.parentIndex = newParentInTemp;
 					copy.modified = true;
 					copy.qscLine.clear();
+
+					// Clear IDs, model names, and notes (keeping position/rotation as default)
+					copy.taskId = "-1";
+					copy.name = "";
+					copy.original_name = "";
+					copy.has_original_name = false;
+					copy.modelId = "";
+					copy.aiId = "";
+					copy.graphId = "";
+					copy.graphName = "";
+					copy.primaryWeapon = "";
+					copy.primaryAmmo = "";
+					copy.secondaryWeapon = "";
+					copy.secondaryAmmo = "";
+					copy.segmentModelId = "";
+					copy.secondaryModelId = "";
+					copy.lensModelId = "";
+					copy.splineTaskId = "";
+					copy.isAttaProxy = false;
+					copy.attaRecordIndex = -1;
+					copy.attaParentModelId = "";
+
+					// Synchronize cleared fields into the argTokens
+					level_.GetLevelObjects().UpdateCoordinatesInLine(copy);
 					
 					int tempIdx = (int)temp_clipboard.size();
 					temp_clipboard.push_back(copy);
@@ -2250,9 +2269,12 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 						temp_clipboard[newParentInTemp].childrenIndices.push_back(tempIdx);
 					}
 					
+					// Do not recursively copy children for new tasks inserted from the picker
+					/*
 					for (int childIdx : objects[idx].childrenIndices) {
 						copy_recurse(childIdx, tempIdx);
 					}
+					*/
 				};
 				
 				copy_recurse(sourceIdx, -1);
@@ -2266,6 +2288,17 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 				
 				int targetParent = selected_object_index_;
 				int startIdxInObjects = (int)objects.size();
+
+				// Collect all in-use task IDs for unique ID generation
+				std::set<int> usedIds;
+				for (const auto& obj : objects) {
+					if (obj.deleted) continue;
+					if (obj.taskId.empty() || obj.taskId == "-1") continue;
+					try { usedIds.insert(std::stoi(obj.taskId)); } catch (...) {}
+				}
+
+				int levelNo = level_.GetLevelNo();
+				std::string aiDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" + std::to_string(levelNo) + "\\ai";
 
 				for (size_t i = 0; i < temp_clipboard.size(); ++i) {
 					LevelObject pasted = temp_clipboard[i];
@@ -2289,9 +2322,83 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 					}
 					
 					if (pasted.qscFuncName == "Task_New") {
-						pasted.taskId = "-1";
-						if (!pasted.argTokens.empty()) {
-							pasted.argTokens[0] = "-1";
+						if (pasted.type == "HumanSoldier" || pasted.type == "HumanSoldierFemale" || pasted.type == "HumanAI") {
+							std::string oldId = pasted.taskId;
+
+							// Find next available unique ID (ensuring no file conflict in AI directory)
+							int newId = 1;
+							while (true) {
+								if (usedIds.count(newId) == 0) {
+									std::string idStr = std::to_string(newId);
+									std::string qvmPath = aiDir + "\\" + idStr + ".qvm";
+									std::string qscPath = aiDir + "\\" + idStr + ".qsc";
+									if (!std::filesystem::exists(qvmPath) && !std::filesystem::exists(qscPath)) {
+										break;
+									}
+								}
+								newId++;
+							}
+							usedIds.insert(newId);
+
+							std::string newIdStr = std::to_string(newId);
+							pasted.taskId = newIdStr;
+							if (!pasted.argTokens.empty()) {
+								pasted.argTokens[0] = newIdStr;
+							}
+							pasted.qscLine.clear(); // Force regeneration from argTokens on save
+							pasted.modified = true;
+
+							// For HumanAI: create and compile a new AI script (.qsc -> .qvm)
+							if (pasted.type == "HumanAI") {
+								std::filesystem::create_directories(aiDir);
+								std::string qscPath = aiDir + "\\" + newIdStr + ".qsc";
+								std::string qvmPath = aiDir + "\\" + newIdStr + ".qvm";
+								std::string qscContent = 
+									"if (AIFunction_GetCurrentEventType() == AIEVENT_CREATE)\n"
+									"{\n"
+									"  AIFunction_DefaultHandler();\n"
+									"}\n"
+									"else\n"
+									"{\n"
+									"  AIFunction_DefaultHandler();\n"
+									"}";
+
+								std::ofstream qscFile(qscPath);
+								if (qscFile) {
+									qscFile << qscContent;
+									qscFile.close();
+
+									// Compile QSC to QVM
+									auto lexResult  = qsc::Lex(qscContent);
+									auto parseResult = lexResult.ok ? qsc::Parse(lexResult.tokens) : qsc::ParseResult{};
+									std::string compileErr;
+									bool success = lexResult.ok && parseResult.ok &&
+									               qvm::CompileToFile(*parseResult.program, qvmPath, &compileErr);
+									if (success) {
+										Logger::Get().Log(LogLevel::INFO, "[App] Successfully compiled new AI script: " + qvmPath);
+									} else {
+										std::string detail = compileErr.empty() ? "(no detail)" : compileErr;
+										Logger::Get().Log(LogLevel::ERR, "[App] Failed to compile new AI script: " + detail);
+										status_message_ = "Warning: Failed to compile new AI script for Task " + newIdStr + ".";
+									}
+
+									// Remove temporary qsc file
+									std::error_code ec;
+									std::filesystem::remove(qscPath, ec);
+									if (ec) {
+										Logger::Get().Log(LogLevel::WARNING, "[App] Failed to remove temp QSC: " + qscPath + " (" + ec.message() + ")");
+									}
+								} else {
+									Logger::Get().Log(LogLevel::ERR, "[App] Failed to create temp QSC file: " + qscPath);
+									status_message_ = "Warning: Failed to create temp QSC file for Task " + newIdStr + ".";
+								}
+							}
+							Logger::Get().Log(LogLevel::INFO, "[App] Assigned unique Task ID " + newIdStr + " to newly inserted " + pasted.type);
+						} else {
+							pasted.taskId = "-1";
+							if (!pasted.argTokens.empty()) {
+								pasted.argTokens[0] = "-1";
+							}
 						}
 					}
 					
@@ -5083,6 +5190,18 @@ void App::PasteTask() {
     int targetParent = selected_object_index_;
 
     int startIdxInObjects = (int)objects.size();
+
+    // Collect all in-use task IDs for unique ID generation (same method as AssignTaskID)
+    std::set<int> usedIds;
+    for (const auto& obj : objects) {
+        if (obj.deleted) continue;
+        if (obj.taskId.empty() || obj.taskId == "-1") continue;
+        try { usedIds.insert(std::stoi(obj.taskId)); } catch (...) {}
+    }
+
+    // AI folder path for QVM file copying
+    int levelNo = level_.GetLevelNo();
+    std::string aiDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" + std::to_string(levelNo) + "\\ai";
     
     // Copy all from clipboard to objects
     for (size_t i = 0; i < clipboard_.size(); ++i) {
@@ -5103,6 +5222,45 @@ void App::PasteTask() {
         }
 
         pasted.modified = true;
+
+        // Generate unique task IDs for AI NPC child tasks
+        if (pasted.qscFuncName == "Task_New" &&
+            (pasted.type == "HumanSoldier" || pasted.type == "HumanSoldierFemale" || pasted.type == "HumanAI")) {
+
+            std::string oldId = pasted.taskId;
+
+            // Find next available unique ID
+            int newId = 1;
+            while (usedIds.count(newId)) newId++;
+            usedIds.insert(newId);
+
+            std::string newIdStr = std::to_string(newId);
+            pasted.taskId = newIdStr;
+            if (!pasted.argTokens.empty()) {
+                pasted.argTokens[0] = newIdStr;
+            }
+            pasted.qscLine.clear(); // Force regeneration from argTokens on save
+
+            // For HumanAI: copy the QVM file with the new ID
+            if (pasted.type == "HumanAI" && !oldId.empty() && oldId != "-1") {
+                std::string srcQvm = aiDir + "\\" + oldId + ".qvm";
+                std::string dstQvm = aiDir + "\\" + newIdStr + ".qvm";
+                try {
+                    if (std::filesystem::exists(srcQvm)) {
+                        std::filesystem::create_directories(aiDir);
+                        std::filesystem::copy_file(srcQvm, dstQvm, std::filesystem::copy_options::overwrite_existing);
+                        Logger::Get().Log(LogLevel::INFO, "[App] Copied AI QVM: " + srcQvm + " -> " + dstQvm);
+                    } else {
+                        Logger::Get().Log(LogLevel::WARNING, "[App] AI QVM not found for copy: " + srcQvm);
+                    }
+                } catch (const std::exception& e) {
+                    Logger::Get().Log(LogLevel::ERR, "[App] Failed to copy AI QVM: " + std::string(e.what()));
+                }
+            }
+
+            Logger::Get().Log(LogLevel::INFO, "[App] Assigned unique Task ID " + newIdStr + " to pasted " + pasted.type + " (was " + oldId + ")");
+        }
+
         objects.push_back(pasted);
     }
 
