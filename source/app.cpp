@@ -1134,6 +1134,16 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 									int off = fieldArg(w.fieldIndex, 0);
 									prop_drag_start_val_  = tTok(off + 0);
 									prop_drag_start_val2_ = tTok(off + 1);
+								} else if (w.kind == K::AIScriptPath) {
+									prop_edit_obj_index_ = -1;
+									prop_text_edit_field_ = PropPanel::kAIScriptPathField;
+									prop_text_buf_ = ai_script_path_;
+									prop_text_caret_ = (int)prop_text_buf_.size();
+								} else if (w.kind == K::AIScriptText) {
+									prop_edit_obj_index_ = -1;
+									prop_text_edit_field_ = PropPanel::kAIScriptTextField;
+									prop_text_buf_ = ai_script_text_;
+									prop_text_caret_ = (int)prop_text_buf_.size();
 								} else {
 									// PosZSlider / OriSlider / RgbSlider / NumSlider — single-value drag
 									prop_drag_obj_index_ = tIdx;
@@ -1282,6 +1292,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 		if (target >= 0) {
 			selected_object_index_ = target;
 			prop_editor_open_ = true; prop_panel_scroll_ = 0; prop_text_edit_field_ = -1; prop_edit_obj_index_ = -1;
+			LoadAIScriptForSelected();
 		} else {
 			prop_editor_open_ = false;
 		}
@@ -2466,6 +2477,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			if (selected_object_index_ < (int)objects.size()) {
 				auto& obj = objects[selected_object_index_];
 				prop_editor_open_ = true; prop_panel_scroll_ = 0; prop_text_edit_field_ = -1; prop_edit_obj_index_ = -1;
+				LoadAIScriptForSelected();
 				if (obj.isContainer) {
 					obj.expanded = !obj.expanded;
 					Logger::Get().Log(LogLevel::INFO, "[App] Enter opened props + toggled expand for " + obj.type);
@@ -4437,6 +4449,7 @@ std::string App::StripQuotes(const std::string& s) {
 
 // True if the field currently being text-edited is a multi-line box.
 bool App::IsPropFieldMultiline(int field) const {
+	if (field == PropPanel::kAIScriptTextField) return true;
 	if (field < 0) return false; // note box (-2) is single-line
 	int oi = (prop_edit_obj_index_ >= 0) ? prop_edit_obj_index_ : selected_object_index_;
 	if (oi < 0) return false;
@@ -4485,6 +4498,30 @@ void App::LoadAIScriptForSelected() {
 // objects.qsc, then clear edit focus. Handles the note (-2) and any field box.
 void App::CommitPropTextEdit() {
 	if (prop_text_edit_field_ == -1) return;
+
+	// AI Script Path field: update path, reload and decompile the new .qvm.
+	if (prop_text_edit_field_ == PropPanel::kAIScriptPathField) {
+		prop_text_edit_field_ = -1;
+		ai_script_path_ = prop_text_buf_;
+		if (!ai_script_path_.empty() && std::filesystem::exists(ai_script_path_)) {
+			QVMFile qvm = QVM_Parse(ai_script_path_);
+			ai_script_text_ = qvm.valid ? QVM_DecompileToString(qvm)
+			                            : "// decompile failed: " + ai_script_path_;
+		} else {
+			ai_script_text_ = "// file not found: " + ai_script_path_;
+		}
+		ai_script_dirty_ = false;
+		return;
+	}
+
+	// AI Script Text field: store edited text and mark dirty.
+	if (prop_text_edit_field_ == PropPanel::kAIScriptTextField) {
+		prop_text_edit_field_ = -1;
+		ai_script_text_ = prop_text_buf_;
+		ai_script_dirty_ = true;
+		return;
+	}
+
 	int field = prop_text_edit_field_;
 	prop_text_edit_field_ = -1;
 	// Edits may target the selected object OR one of its child tasks (weapon/ammo).
@@ -5021,6 +5058,7 @@ void App::ProcessTreeViewClick(int mx, int my) {
 
                         if (isDoubleClick) {
                             prop_editor_open_ = true; prop_panel_scroll_ = 0; prop_text_edit_field_ = -1; prop_edit_obj_index_ = -1;
+                            LoadAIScriptForSelected();
                             Logger::Get().Log(LogLevel::INFO, "[App] Double clicked object from tree and opened property panel.");
                         } else {
                             Logger::Get().Log(LogLevel::INFO, "[App] Selected object from tree: " + obj.type);
