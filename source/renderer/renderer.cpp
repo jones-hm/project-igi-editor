@@ -1385,11 +1385,18 @@ void Renderer::Draw(const draw_params_s &params,
       // draw_text_y = viewport_h - (gl_y + box_h)
       int debug_y_text = viewport_h - (debug_y_gl + debug_h);
 
-      // Draw semi-transparent background
+      // Dark panel + golden border to match the model/autocomplete picker theme.
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      glColor4f(0.0f, 0.0f, 0.0f, 0.7f);
+      glColor4f(0.05f, 0.05f, 0.1f, 0.9f);
       glBegin(GL_QUADS);
+      glVertex2i(debug_x, debug_y_gl);
+      glVertex2i(debug_x + debug_w, debug_y_gl);
+      glVertex2i(debug_x + debug_w, debug_y_gl + debug_h);
+      glVertex2i(debug_x, debug_y_gl + debug_h);
+      glEnd();
+      glColor4f(1.0f, 0.85f, 0.0f, 0.7f);
+      glBegin(GL_LINE_LOOP);
       glVertex2i(debug_x, debug_y_gl);
       glVertex2i(debug_x + debug_w, debug_y_gl);
       glVertex2i(debug_x + debug_w, debug_y_gl + debug_h);
@@ -1397,20 +1404,8 @@ void Renderer::Draw(const draw_params_s &params,
       glEnd();
       glDisable(GL_BLEND);
 
-      // Draw border
-      glLineWidth(2.0f);
-      glColor3f(0.5f, 0.5f, 0.5f);
-      glBegin(GL_LINE_LOOP);
-      glVertex2i(debug_x, debug_y_gl);
-      glVertex2i(debug_x + debug_w, debug_y_gl);
-      glVertex2i(debug_x + debug_w, debug_y_gl + debug_h);
-      glVertex2i(debug_x, debug_y_gl + debug_h);
-      glEnd();
-      glLineWidth(1.0f);
-
       // Title at top of box (draw_text uses top-left origin)
-      draw_text_sys(debug_x + 10, debug_y_text + 10, "DEBUG CONSOLE", font_r,
-                font_g, font_b);
+      draw_text_sys(debug_x + 10, debug_y_text + 10, "DEBUG CONSOLE", 1.0f, 0.9f, 0.1f);
 
       int startY = debug_y_text + 30; // Just below title, inside the frame
       int line_height = 12;
@@ -2219,12 +2214,23 @@ void Renderer::Draw(const draw_params_s &params,
                           std::chrono::steady_clock::now() - t0).count();
             objects_.DrawModelPreview(filtered[sel0], ubo_mats_, vpX, vpY, s, s,
                                       t * 0.40f, t * 0.65f); // slow dual-axis spin
-            // Restore 2D HUD state for the immediate-mode panel below.
+            // Restore the EXACT 2D HUD baseline (see the state set before the overlay
+            // block). Critically, GL_TEXTURE_2D must be DISABLED with no texture bound,
+            // otherwise the panel's colored quads sample the model texture and the whole
+            // picker flickers black/golden as the selection changes.
             glViewport(0, 0, vw, vh);
             glUseProgram(0);
             glBindVertexArray(0);
+            glBindBufferBase(GL_UNIFORM_BUFFER, 0, 0);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glDisable(GL_TEXTURE_2D);
             glDisable(GL_DEPTH_TEST);
-            glEnable(GL_TEXTURE_2D);
+            glDisable(GL_CULL_FACE);
+            glDisable(GL_LIGHTING);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
           }
         }
       }

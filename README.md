@@ -117,10 +117,10 @@ A comprehensive list of all known rendering, game, and engine issues can be foun
    ```powershell
    # Clean previous build if necessary
    if (Test-Path build) { Remove-Item build -Recurse -Force }
-
+   
    # Configure for 32-bit (Win32) using a specific Visual Studio instance
    cmake -B build -G "Visual Studio 17 2022" -A Win32 -DCMAKE_GENERATOR_INSTANCE="C:/Program Files/Microsoft Visual Studio/2022/Community"
-
+   
    # Build in Release mode
    cmake --build build --config Release
    ```
@@ -166,7 +166,7 @@ And for detailed information about file formats of IGI game 👉 **[IGI File For
 
 ### Object Manipulation (IGI 2 Style)
 
-Select an object in **Edit Mode (F4)** and use **LMB Drag** + Modifiers:
+Select an object and use **LMB Drag** + Modifiers:
 
 | Modifier / Key | Action |
 | :--- | :--- |

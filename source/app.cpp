@@ -428,16 +428,11 @@ void App::LoadAutoCompleteKeywords() {
 
 void App::SaveTaskSubtreeToFile(int idx, const std::string& path) {
 	auto& objects = level_.GetLevelObjects().GetObjects();
-	if (idx < 0 || idx >= (int)objects.size()) return;
-	std::ofstream f(path);
-	if (!f.is_open()) { status_message_ = "Error: cannot write to " + path; return; }
-	std::function<void(int)> write = [&](int i) {
-		if (i < 0 || i >= (int)objects.size() || objects[i].deleted) return;
-		const auto& obj = objects[i];
-		if (!obj.qscLine.empty()) f << obj.qscLine << "\n";
-		for (int ci : obj.childrenIndices) write(ci);
-	};
-	write(idx);
+	if (idx < 0 || idx >= (int)objects.size()) { status_message_ = "Save task: no task selected"; return; }
+	// Serialize ONLY the selected task + its descendants as a proper nested QSC block.
+	// (Previously this wrote each object's raw qscLine, but a parent's qscLine holds the
+	//  whole original nested block, so it exported the entire object.)
+	level_.GetLevelObjects().SaveSubtreeToQSC(idx, path);
 	status_message_ = "Saved task to: " + path;
 	Config::Get().taskFileName = path;
 }
@@ -462,18 +457,35 @@ void App::ConfirmFileDialog() {
 			if (par >= 0) SaveTaskSubtreeToFile(par, path);
 		}
 	} else if (mode == FileDialogMode::LoadSubTask) {
-		// Load QSC lines from file and insert under selected as new children
-		if (selected_object_index_ < 0) { status_message_ = "LoadSubTask: no parent selected"; return; }
 		std::ifstream f(path);
 		if (!f.is_open()) { status_message_ = "Error: cannot read " + path; return; }
-		// Re-parse via the existing level QSC mechanism: append lines to temp file then reload
-		std::string tempPath = Utils::GetExeDirectory() + "\\content\\qed\\temp\\subtask_load.qsc";
-		std::ofstream tmp(tempPath);
-		tmp << f.rdbuf();
-		tmp.close();
-		// Simple approach: just show status — full QSC parsing is complex; stub for now
-		status_message_ = "LoadSubTask: loaded from " + path + " (manual reload required)";
-		Logger::Get().Log(LogLevel::INFO, "[App] LoadSubTask: read file " + path);
+		std::string block((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+		f.close();
+		block = Utils::Trim(block);
+		if (block.empty()) { status_message_ = "LoadSubTask: file is empty"; return; }
+
+		PushUndoState();
+		// Flush current live objects to the temp QSC, append the loaded task block as a
+		// new top-level task, then reparse the whole level from the merged QSC. Using the
+		// real parser keeps nested subtrees intact.
+		std::string tempQsc = Utils::GetExeDirectory() + "\\content\\qed\\temp\\objects.qsc";
+		level_.GetLevelObjects().SaveToQSC(tempQsc);
+		{
+			std::ofstream out(tempQsc, std::ios::app);
+			if (!out.is_open()) { status_message_ = "LoadSubTask: cannot write temp QSC"; return; }
+			out << "\n" << block;
+			if (block.back() != ';') out << ";";
+			out << "\n";
+		}
+		level_.ReloadObjectsFromFile(tempQsc);
+		EvaluateTrainTrackPositions();
+		SnapObjectsToTerrain();
+		RebuildLevelModelIds();
+		// Object list changed — keep selection valid.
+		if (selected_object_index_ >= (int)level_.GetLevelObjects().GetObjects().size())
+			selected_object_index_ = -1;
+		status_message_ = "Loaded task from: " + path + " (added as top-level task)";
+		Logger::Get().Log(LogLevel::INFO, "[App] LoadSubTask: loaded " + path);
 	}
 }
 
@@ -1876,6 +1888,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 				status_message_ = "Click a text box first, then Ctrl+N to pick a task type";
 				return;
 			}
+			picker_target_field_ = prop_text_edit_field_; picker_target_obj_ = prop_edit_obj_index_;
 			ac_task_items_ = autocomplete_keywords_; // show all keywords from file
 			ac_task_picker_open_ = true; ac_task_selected_idx_ = 0; ac_task_scroll_offset_ = 0; ac_task_filter_.clear();
 			return;
@@ -1892,33 +1905,49 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			if (!looksLikeModelId && !prop_text_buf_.empty()) {
 				return; // Only open from model ID text boxes
 			}
+			picker_target_field_ = prop_text_edit_field_; picker_target_obj_ = prop_edit_obj_index_;
 			model_picker_open_ = true; model_picker_selected_ = 0; model_picker_scroll_ = 0;
-			model_picker_filter_ = prop_text_buf_; // seed filter with current text
+			model_picker_filter_.clear(); // show ALL model IDs; user types to filter
 			return;
 		}
 		if (key == 0 || key == ' ') { // Ctrl+Space → AutoComplete inline
-			if (prop_text_edit_field_ >= 0 && !autocomplete_keywords_.empty()) {
+			if (prop_text_edit_field_ < 0) {
+				status_message_ = "Autocomplete: click a text box first";
+			} else if (autocomplete_keywords_.empty()) {
+				status_message_ = "Autocomplete: no keywords loaded (content/tools/AutoCompleteKeywords.txt)";
+			} else {
 				int ws = prop_text_caret_;
 				while (ws > 0 && (isalnum((unsigned char)prop_text_buf_[ws-1]) || prop_text_buf_[ws-1] == '_')) ws--;
 				std::string prefix = prop_text_buf_.substr(ws, prop_text_caret_ - ws);
 				std::string pl = prefix;
 				std::transform(pl.begin(), pl.end(), pl.begin(), [](unsigned char c){ return std::tolower(c); });
-				for (auto& kw : autocomplete_keywords_) {
-					std::string kwl = kw;
-					std::transform(kwl.begin(), kwl.end(), kwl.begin(), [](unsigned char c){ return std::tolower(c); });
-					if (!pl.empty() && kwl.substr(0, pl.size()) == pl) {
-						prop_text_buf_.replace(ws, prefix.size(), kw);
-						prop_text_caret_ = ws + (int)kw.size();
-						break;
+				bool done = false;
+				if (!pl.empty()) {
+					for (auto& kw : autocomplete_keywords_) {
+						std::string kwl = kw;
+						std::transform(kwl.begin(), kwl.end(), kwl.begin(), [](unsigned char c){ return std::tolower(c); });
+						if (kwl.size() >= pl.size() && kwl.compare(0, pl.size(), pl) == 0) {
+							prop_text_buf_.replace(ws, prefix.size(), kw);
+							prop_text_caret_ = ws + (int)kw.size();
+							status_message_ = "Autocompleted: " + kw;
+							done = true;
+							break;
+						}
 					}
 				}
+				if (!done) status_message_ = prefix.empty() ? "Autocomplete: type a prefix first"
+				                                             : ("No keyword starts with '" + prefix + "'");
 			}
 			return;
 		}
 	}
 
-	// C2: Property text editor input (caret-based)
-	if (prop_text_edit_field_ != -1) {
+	// C2: Property text editor input (caret-based).
+	// Skip while a picker or file dialog is open so their keystrokes (filter typing,
+	// Enter to insert/confirm) reach their own handlers below instead of being eaten
+	// here — otherwise typing edits the box and Enter commits+closes the field.
+	if (prop_text_edit_field_ != -1 && !ac_task_picker_open_ && !model_picker_open_ &&
+	    file_dialog_mode_ == FileDialogMode::None) {
 		int& caret = prop_text_caret_;
 		if (caret < 0) caret = 0;
 		if (caret > (int)prop_text_buf_.size()) caret = (int)prop_text_buf_.size();
@@ -1987,12 +2016,16 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 					if (il.find(fl) != std::string::npos) filtered.push_back(item);
 				}
 			}
-			if (prop_text_edit_field_ >= 0 && ac_task_selected_idx_ < (int)filtered.size()) {
-				std::string chosen = filtered[ac_task_selected_idx_];
-				prop_text_buf_ = chosen;           // CLEAR text box and insert selected
-				prop_text_caret_ = (int)chosen.size();
-			}
 			ac_task_picker_open_ = false;
+			// Restore the field captured when the picker opened, so the choice lands in
+			// the exact text box the cursor was in (even if focus changed meanwhile).
+			if (picker_target_field_ >= 0) { prop_text_edit_field_ = picker_target_field_; prop_edit_obj_index_ = picker_target_obj_; }
+			if (prop_text_edit_field_ >= 0 && ac_task_selected_idx_ < (int)filtered.size()) {
+				prop_text_buf_ = filtered[ac_task_selected_idx_]; // CLEAR text box and insert selected
+				prop_text_caret_ = (int)prop_text_buf_.size();
+				CommitPropTextEdit();              // apply the chosen value to the field
+			}
+			picker_target_field_ = -1; picker_target_obj_ = -1;
 			return;
 		}
 		if (key == 8) {
@@ -2021,11 +2054,16 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 					if (idl.find(fl) != std::string::npos) filtered.push_back(id);
 				}
 			}
+			model_picker_open_ = false;
+			// Restore the field captured when the picker opened, so the choice lands in
+			// the exact text box the cursor was in (even if focus changed meanwhile).
+			if (picker_target_field_ >= 0) { prop_text_edit_field_ = picker_target_field_; prop_edit_obj_index_ = picker_target_obj_; }
 			if (prop_text_edit_field_ >= 0 && model_picker_selected_ < (int)filtered.size()) {
 				prop_text_buf_ = filtered[model_picker_selected_]; // CLEAR and insert
 				prop_text_caret_ = (int)prop_text_buf_.size();
+				CommitPropTextEdit();              // apply the chosen model to the field
 			}
-			model_picker_open_ = false;
+			picker_target_field_ = -1; picker_target_obj_ = -1;
 			return;
 		}
 		if (key == 8) {
@@ -2796,14 +2834,14 @@ void App::DispatchEventBindings() {
 		                  "/level" + std::to_string(lvl) + "/objects.qsc";
 		return;
 	}
-	if (Check("SaveObjectFile")) {
-		// Ctrl+S → open a path textbox and write the live objects QSC to that path.
-		// Saving the playable level lives in the pause menu, so Ctrl+S no longer
-		// auto-saves/compiles the level here.
-		int lvl = level_.GetLevelNo();
-		file_dialog_mode_  = FileDialogMode::SaveObjectFile;
-		file_dialog_path_  = "missions/location" + std::to_string(lvl) +
-		                     "/level" + std::to_string(lvl) + "/objects.qsc";
+	if (Check("SaveTaskObject")) {
+		// Ctrl+S → save ONLY the selected task (and its sub-tasks) to a user path via a
+		// textbox. Whole-level/objects-file saving lives in the pause menu, so Ctrl+S is
+		// task-scoped here.
+		if (selected_object_index_ < 0) { status_message_ = "Save task: select a task first"; return; }
+		file_dialog_mode_  = FileDialogMode::SaveSubTask;
+		file_dialog_path_  = Config::Get().taskFileName.empty() ?
+		    "content\\qed\\temp\\task.qsc" : Config::Get().taskFileName;
 		file_dialog_caret_ = (int)file_dialog_path_.size();
 		return;
 	}
@@ -2905,6 +2943,7 @@ void App::DispatchEventBindings() {
 			status_message_ = "Click a text box first, then Ctrl+N to pick a task type";
 			return;
 		}
+		picker_target_field_ = prop_text_edit_field_; picker_target_obj_ = prop_edit_obj_index_;
 		ac_task_items_ = autocomplete_keywords_; // show keywords from AutoCompleteKeywords.txt
 		ac_task_picker_open_   = true;
 		ac_task_selected_idx_  = 0;
@@ -2917,10 +2956,11 @@ void App::DispatchEventBindings() {
 			status_message_ = "Click a text box first, then Ctrl+O to pick a model";
 			return;
 		}
+		picker_target_field_ = prop_text_edit_field_; picker_target_obj_ = prop_edit_obj_index_;
 		model_picker_open_    = true;
 		model_picker_selected_ = 0;
 		model_picker_scroll_   = 0;
-		model_picker_filter_   = prop_text_buf_; // seed filter with current text
+		model_picker_filter_.clear(); // show ALL model IDs; user types to filter
 		return;
 	}
 	if (Check("Undo")) { Undo(); }

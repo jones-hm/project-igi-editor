@@ -209,6 +209,10 @@ private:
 	int						prop_drag_obj_index_   = -1;    // LevelObject targeted by the active slider/pad drag (-1 = selected/parent)
 	std::string				prop_text_buf_;
 	int						prop_text_caret_       = 0;     // caret index within prop_text_buf_
+	// Text field captured when a model/autocomplete picker opens, so the chosen item
+	// is inserted into the exact field the cursor was in — even if focus changed.
+	int						picker_target_field_   = -1;
+	int						picker_target_obj_     = -1;
 	int						prop_last_drag_dx_     = 0;     // last non-zero X delta (for edge-stuck continuity)
 	int						prop_last_drag_dy_     = 0;     // last non-zero Y delta (for edge-stuck continuity)
 	float					prop_drag_speed_       = 0.f;   // ramping position-drag speed (units/frame) while held in a direction

@@ -1068,6 +1068,34 @@ std::string LevelObjects::GenerateTaskLine(const LevelObject& obj) {
     return ss.str();
 }
 
+void LevelObjects::SaveSubtreeToQSC(int idx, const std::string& qscPath) {
+    if (idx < 0 || idx >= (int)objects_.size()) return;
+    std::string lowerPath = qscPath;
+    std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
+    if (lowerPath.find("qfiles") != std::string::npos) {
+        Logger::Get().Log(LogLevel::ERR, "[LevelObjects::SaveSubtreeToQSC] Refusing to write READ-ONLY QFiles path: " + qscPath);
+        return;
+    }
+    // Refresh modified lines in the subtree so the serialization reflects edits.
+    std::function<void(int)> refresh = [&](int i) {
+        if (i < 0 || i >= (int)objects_.size() || objects_[i].deleted) return;
+        if (objects_[i].modified) { objects_[i].qscLine.clear(); UpdateCoordinatesInLine(objects_[i]); }
+        for (int c : objects_[i].childrenIndices) refresh(c);
+    };
+    refresh(idx);
+
+    std::string serialized = SerializeObjectRecursive(objects_, idx);
+    std::ofstream out(qscPath);
+    if (!out.is_open()) {
+        Logger::Get().Log(LogLevel::ERR, "[LevelObjects::SaveSubtreeToQSC] Failed to open for writing: " + qscPath);
+        return;
+    }
+    out << Utils::Trim(serialized) << ";\n";
+    out.close();
+    Logger::Get().Log(LogLevel::INFO, "[LevelObjects::SaveSubtreeToQSC] Saved subtree idx=" + std::to_string(idx) +
+                      " type='" + objects_[idx].type + "' to: " + qscPath);
+}
+
 std::string LevelObjects::SerializeObjectRecursive(const std::vector<LevelObject>& objects, int idx) {
     if (idx < 0 || idx >= (int)objects.size()) return "";
 

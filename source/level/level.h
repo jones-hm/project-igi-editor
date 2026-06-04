@@ -34,6 +34,9 @@ public:
 	void					SaveObjectsLocalOnly();
 	void					SaveChanges();
 	void					SaveAndReloadObjects();
+	// Reparse the live objects from a QSC file (used by Load Sub-Task after merging
+	// a saved task block into the temp objects QSC).
+	void					ReloadObjectsFromFile(const std::string& qscPath);
 
 	bool					GetTerrainZ(double x, double y, float & z, bool ignore_discard = false);
 	void					EditorRaycastAndModify(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type);

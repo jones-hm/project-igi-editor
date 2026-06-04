@@ -377,6 +377,16 @@ void Level::SaveAndReloadObjects() {
 	}
 }
 
+void Level::ReloadObjectsFromFile(const std::string& qscPath) {
+	QSC* qsc = new QSC();
+	if (qsc) {
+		qsc->Load(qscPath.c_str());
+		level_objects_.Load(this, qsc);
+		delete qsc;
+		Logger::Get().Log(LogLevel::INFO, "[Level] ReloadObjectsFromFile: " + qscPath);
+	}
+}
+
 bool Level::GetTerrainZ(double x, double y, float& z, bool ignore_discard) {
 	if (root_dyn_cube_) {
 		return terrain_.GetZ(root_dyn_cube_, x, y, z, ignore_discard);

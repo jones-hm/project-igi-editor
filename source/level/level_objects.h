@@ -85,6 +85,10 @@ public:
     std::string GetModelName(const std::string& modelId) const;
     std::string GetModelId(const std::string& modelName) const;
     void SaveToQSC(const std::string& qscPath);
+    // Write ONLY the subtree rooted at idx (the task + its descendants) as a proper
+    // nested QSC block. Used for "save sub-task" / templates so it never dumps the
+    // whole object set.
+    void SaveSubtreeToQSC(int idx, const std::string& qscPath);
 
 
     const std::vector<LevelObject>& GetObjects() const { return objects_; }
