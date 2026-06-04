@@ -1890,6 +1890,28 @@ void Renderer::Draw(const draw_params_s &params,
               y += 4;
           }
 
+          // AI script widgets (appended after child fields for AI task types)
+          while (wi < (int)L.widgets.size()) {
+              using K = PropPanel::WidgetKind;
+              const auto& w = L.widgets[wi++];
+              if (w.kind == K::AIScriptPath) {
+                  draw_text(w.x1, w.y1 - PropPanel::kRowH + 12, "AI Script Path:", 0.8f, 0.8f, 1.0f);
+                  draw_edit_box(w, PropPanel::kAIScriptPathField,
+                                task_tree_view.ai_script_path_, false);
+              } else if (w.kind == K::AIScriptText) {
+                  const char* label = task_tree_view.ai_script_dirty_
+                                          ? "AI Script (modified -- save to compile):"
+                                          : "AI Script:";
+                  draw_text(w.x1, w.y1 - PropPanel::kRowH + 12, label,
+                            task_tree_view.ai_script_dirty_ ? 1.0f : 0.8f,
+                            task_tree_view.ai_script_dirty_ ? 0.6f : 0.8f,
+                            task_tree_view.ai_script_dirty_ ? 0.2f : 1.0f);
+                  draw_edit_box(w, PropPanel::kAIScriptTextField,
+                                task_tree_view.ai_script_text_, true);
+              }
+              y = w.y2 + 6;
+          }
+
           // ── Scrollbar ────────────────────────────────────────────────────────────
           {
               const int total_h = L.panel_h;   // full unshifted content height

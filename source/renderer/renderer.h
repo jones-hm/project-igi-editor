@@ -317,6 +317,11 @@ public:
 		int  model_picker_scroll_   = 0;
 		std::string model_picker_filter_;
 		const std::set<std::string>* model_ids_ = nullptr;  // all XXX_XX_X model IDs from level objects
+
+		// AI Script editor state
+		std::string ai_script_path_;
+		std::string ai_script_text_;
+		bool        ai_script_dirty_ = false;
 	};
 
 
