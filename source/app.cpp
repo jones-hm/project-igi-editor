@@ -4496,6 +4496,8 @@ bool App::IsPropFieldMultiline(int field) const {
 }
 
 void App::LoadAIScriptForSelected() {
+	if (ai_script_dirty_)
+		status_message_ = "Warning: unsaved AI script edits discarded (save level first)";
 	ai_script_path_.clear();
 	ai_script_text_.clear();
 	ai_script_dirty_ = false;

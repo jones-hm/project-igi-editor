@@ -43,7 +43,7 @@
 - Old: `SetEventBinding("TaskFindTextInTask", "<Ctrl><H>");`
 - New: `SetEventBinding("TaskFindTextInTask", "<Ctrl><Shift><X>");`
 
-**Success criterion:** Ctrl+Shift+T opens the find bar in "Find text in task parameters" mode.
+**Success criterion:** Ctrl+Shift+X opens the find bar in "Find text in task parameters" mode.
 
 ---
 
