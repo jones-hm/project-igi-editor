@@ -29,6 +29,7 @@ struct LevelObject {
     bool expanded = false;    // For TreeView HUD state
     bool modified = false;
     bool deleted = false;
+    bool modelMissingInRes = false; // model not packed in level .res → invisible in-game (issue 2)
     bool has_original_name = false; // To distinguish between empty name and new object
     double snap_z_offset = 0.0;  // Z offset added by SnapObjectsToTerrain, subtracted when saving to QSC
 

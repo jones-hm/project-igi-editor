@@ -10,6 +10,7 @@
 #include "igi_bridge.h"
 #include "renderer/model.h"
 #include "config.h"
+#include "level/res_model_set.h"
 
 
 /*
@@ -127,6 +128,7 @@ private:
 
 	Renderer				renderer_;
 	Level					level_;
+	ResModelSet				level_res_models_; // models packed in the current level's .res
 	IGIBridge				bridge_;
 	Renderer::draw_params_s	draw_params_;
 	int						terrain_mod_options_;

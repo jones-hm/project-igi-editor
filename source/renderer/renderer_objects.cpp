@@ -515,6 +515,7 @@ uniform sampler2D u_texture;
 uniform int u_useTexture;
 uniform float u_alpha;     // material alpha (1.0 = opaque, <1.0 = transparent)
 uniform vec4 u_baseColor;  // Base color when no texture
+uniform vec3 u_tint; // per-object multiplicative tint (default white); magenta = missing-in-res warning
 uniform float u_glassMin;  // glass sheen floor: clean (low-alpha) glass renders at
                            // least this opaque so the pane is visible. 0 = not glass.
 
@@ -543,7 +544,7 @@ void main() {
         light += vec3(spec * 1.5);
     }
 
-    fragColor = vec4(light * texColor.rgb, finalAlpha);
+    fragColor = vec4(light * texColor.rgb * u_tint, finalAlpha);
 
     // Alpha-test cutout for foliage / fences / grilles only (alpha >= 0.9). Glass
     // (lower alpha or u_glassMin set) is NEVER cut out — it blends so you can see
@@ -1346,10 +1347,12 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     GLint loc_tex      = glGetUniformLocation(shader_program_, "u_texture");
     GLint loc_alpha    = glGetUniformLocation(shader_program_, "u_alpha");
     GLint loc_baseColor = glGetUniformLocation(shader_program_, "u_baseColor");
+    GLint loc_tint     = glGetUniformLocation(shader_program_, "u_tint");
     loc_glass_min_ = glGetUniformLocation(shader_program_, "u_glassMin");
     glUniform1f(loc_alpha, 1.0f); // default: fully opaque
     glUniform1f(loc_glass_min_, 0.0f); // default: not glass
     glUniform4f(loc_baseColor, 1.0f, 1.0f, 1.0f, 1.0f); // default: white
+    glUniform3f(loc_tint, 1.0f, 1.0f, 1.0f); // default: no tint
 
     EnsurePortalDistancesLoaded();
 
@@ -1363,7 +1366,12 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
         for (const auto& obj : objects) {
             if (obj.deleted) continue;
-            
+
+            // Reset tint to white at the start of EVERY iteration so a magenta tint
+            // set for a previous object can never leak into this one, regardless of
+            // which early-continue path this object takes (issue 2).
+            glUniform3f(loc_tint, 1.0f, 1.0f, 1.0f);
+
             // Selective rendering logic
         bool shouldDraw = false;
         if (draw_parts & DRAW_OBJECTS) {
@@ -1390,6 +1398,11 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
         Mesh mesh = GetOrLoadMesh(obj.modelId, obj.isBuilding);
         if (mesh.vertexCount == 0) continue;
 
+        // Flag objects whose model is absent from the level .res: tint magenta so the
+        // user sees it will be invisible in-game (issue 2). Reset to white at the top
+        // of the next iteration guarantees this never leaks to other objects.
+        if (obj.modelMissingInRes)
+            glUniform3f(loc_tint, 1.0f, 0.2f, 1.0f); // magenta: missing in level .res
 
         // ── Build model matrix ────────────────────────────────────────────────
         // We now place it exactly at its world position (obj.pos) and apply its own rotation (obj.rot).

@@ -17,6 +17,7 @@
 #include "cli/asset_extractor.h"
 #include "parsers/dat_parser.h"
 #include "parsers/tex_parser.h"
+#include "parsers/res_parser.h"
 #include "renderer/gl_helper.h"
 #include "level/task_schema.h"
 using namespace TaskSchemaNS;
@@ -773,6 +774,18 @@ void App::LoadLevel(int level_no) {
 				", Tex=" + mId + ", Model=" + mId);		}
 		
 		RebuildLevelModelIds();
+
+		// Build the set of models actually packed in this level's .res so we can warn
+		// when an object references a model the game archive lacks (issue 2).
+		{
+			std::string gameRes = Utils::GetIGIRootPath() +
+				"\\missions\\location0\\level" + std::to_string(level_no) +
+				"\\models\\level" + std::to_string(level_no) + ".res";
+			RESFile res = RES_Parse(gameRes);
+			level_res_models_ = res.valid ? ResModelSet(res) : ResModelSet();
+			Logger::Get().Log(LogLevel::INFO, std::string("[App] Level .res model set: ") +
+				(res.valid ? std::to_string(res.entries.size()) + " entries" : "UNAVAILABLE (" + gameRes + ")"));
+		}
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 		Logger::Get().Log(LogLevel::INFO, "[App] LoadLevel() COMPLETE for level " + std::to_string(level_no));
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
@@ -4790,6 +4803,15 @@ void App::CommitPropTextEdit() {
 	                                 fd.name.find("Model") != std::string::npos);
 	if (is_model_field) {
 		obj.modelId = StripQuotes(prop_text_buf_);
+		if (!level_res_models_.Empty() && !obj.modelId.empty() &&
+		    !level_res_models_.Contains(obj.modelId)) {
+			obj.modelMissingInRes = true;
+			status_message_ = "Model '" + obj.modelId +
+				"' is not in this level's .res — it will be invisible in-game. "
+				"Press Ctrl+Shift+A to add it.";
+		} else {
+			obj.modelMissingInRes = false;
+		}
 	}
 	// GunPickup/AmmoPickup: the edited field is the weapon/ammo enum string, but
 	// obj.modelId must hold the RESOLVED render model. Re-resolve so the viewport
