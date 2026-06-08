@@ -268,6 +268,12 @@ private:
 
 	// AutoComplete inline keywords (Ctrl+Space)
 	std::vector<std::string> autocomplete_keywords_;
+	// Inline-autocomplete cycling state (Ctrl+Space / Tab): lets repeated presses step
+	// through every keyword that shares the originally-typed prefix.
+	std::string				ac_inline_prefix_;       // original prefix being cycled
+	std::string				ac_inline_last_kw_;      // keyword inserted by the last completion
+	int						ac_inline_start_ = -1;   // token start position of the last completion
+	int						ac_inline_idx_   = -1;   // index into the current match set
 
 	// All modelIds from current level objects in XXX_XX_X format (for model picker)
 	std::set<std::string> level_model_ids_;
@@ -381,6 +387,7 @@ private:
 	void					SaveTaskSubtreeToFile(int idx, const std::string& path);
 	void					ConfirmFileDialog();
 	void					LoadAutoCompleteKeywords();
+	bool					InlineAutocomplete();         // complete/cycle the token left of the caret
 	void					RebuildLevelModelIds();
 
 public:

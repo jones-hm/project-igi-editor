@@ -2014,6 +2014,79 @@ static constexpr movement_key_s MOVEMENT_KEYS[] = {
 
 // Manip keys are now handled directly in Input_OnKeyboard using config values
 
+// Inline autocomplete: complete the word left of the caret from autocomplete_keywords_.
+// Repeated calls on the just-completed token cycle through ALL matches, so every keyword
+// sharing a prefix is reachable. Triggered by Ctrl+Space AND Tab (Tab is reliably delivered
+// by GLUT; Ctrl+Space is sometimes dropped). Returns true if it completed a token.
+bool App::InlineAutocomplete() {
+	if (prop_text_edit_field_ == -1) {
+		status_message_ = "Autocomplete: click a text box first";
+		return false;
+	}
+	if (autocomplete_keywords_.empty()) {
+		status_message_ = "Autocomplete: no keywords loaded (content/tools/AutoCompleteKeywords.txt)";
+		return false;
+	}
+	if (prop_text_caret_ < 0) prop_text_caret_ = 0;
+	if (prop_text_caret_ > (int)prop_text_buf_.size()) prop_text_caret_ = (int)prop_text_buf_.size();
+
+	// Token immediately left of the caret (alphanumerics + underscore).
+	int ws = prop_text_caret_;
+	while (ws > 0 && (isalnum((unsigned char)prop_text_buf_[ws-1]) || prop_text_buf_[ws-1] == '_')) ws--;
+	std::string word = prop_text_buf_.substr(ws, prop_text_caret_ - ws);
+	if (word.empty()) {
+		status_message_ = "Autocomplete: type a prefix first";
+		return false;
+	}
+
+	auto lower = [](std::string s) {
+		std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::tolower(c); });
+		return s;
+	};
+
+	// Continuation = same token position and the token equals the keyword we just inserted;
+	// then we cycle within the ORIGINAL prefix's match set instead of restarting from it.
+	bool cycling = (ws == ac_inline_start_ && !ac_inline_last_kw_.empty() &&
+	                !ac_inline_prefix_.empty() && lower(word) == lower(ac_inline_last_kw_));
+	std::string activePrefix = cycling ? ac_inline_prefix_ : word;
+	std::string ap = lower(activePrefix);
+
+	std::vector<const std::string*> matches;
+	for (const auto& kw : autocomplete_keywords_) {
+		std::string kwl = lower(kw);
+		if (kwl.size() >= ap.size() && kwl.compare(0, ap.size(), ap) == 0)
+			matches.push_back(&kw);
+	}
+	if (matches.empty()) {
+		status_message_ = "No keyword starts with '" + activePrefix + "'";
+		ac_inline_start_ = -1; ac_inline_idx_ = -1; ac_inline_last_kw_.clear();
+		return false;
+	}
+
+	int idx = cycling ? ((ac_inline_idx_ + 1) % (int)matches.size()) : 0;
+	const std::string& chosen = *matches[idx];
+	prop_text_buf_.replace(ws, word.size(), chosen);
+	prop_text_caret_ = ws + (int)chosen.size();
+
+	ac_inline_prefix_  = activePrefix;
+	ac_inline_start_   = ws;
+	ac_inline_idx_     = idx;
+	ac_inline_last_kw_ = chosen;
+
+	if (matches.size() > 1)
+		status_message_ = "Autocompleted (" + std::to_string(idx + 1) + "/" +
+		                  std::to_string(matches.size()) + "): " + chosen + "  [Tab/Ctrl+Space to cycle]";
+	else
+		status_message_ = "Autocompleted: " + chosen;
+
+	if (prop_text_edit_field_ == PropPanel::kAIScriptTextField) {
+		ai_script_text_  = prop_text_buf_;
+		ai_script_dirty_ = true;
+		UpdateAIScriptScroll();
+	}
+	return true;
+}
+
 void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	auto& config = Config::Get();
 
@@ -2057,39 +2130,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			return;
 		}
 		if (key == 0 || key == ' ') { // Ctrl+Space → AutoComplete inline
-			if (prop_text_edit_field_ == -1) {
-				status_message_ = "Autocomplete: click a text box first";
-			} else if (autocomplete_keywords_.empty()) {
-				status_message_ = "Autocomplete: no keywords loaded (content/tools/AutoCompleteKeywords.txt)";
-			} else {
-				int ws = prop_text_caret_;
-				while (ws > 0 && (isalnum((unsigned char)prop_text_buf_[ws-1]) || prop_text_buf_[ws-1] == '_')) ws--;
-				std::string prefix = prop_text_buf_.substr(ws, prop_text_caret_ - ws);
-				std::string pl = prefix;
-				std::transform(pl.begin(), pl.end(), pl.begin(), [](unsigned char c){ return std::tolower(c); });
-				bool done = false;
-				if (!pl.empty()) {
-					for (auto& kw : autocomplete_keywords_) {
-						std::string kwl = kw;
-						std::transform(kwl.begin(), kwl.end(), kwl.begin(), [](unsigned char c){ return std::tolower(c); });
-						if (kwl.size() >= pl.size() && kwl.compare(0, pl.size(), pl) == 0) {
-							prop_text_buf_.replace(ws, prefix.size(), kw);
-							prop_text_caret_ = ws + (int)kw.size();
-							status_message_ = "Autocompleted: " + kw;
-							done = true;
-							// Sync AI script state immediately (inline autocomplete keeps editing)
-							if (prop_text_edit_field_ == PropPanel::kAIScriptTextField) {
-								ai_script_text_  = prop_text_buf_;
-								ai_script_dirty_ = true;
-								UpdateAIScriptScroll();
-							}
-							break;
-						}
-					}
-				}
-				if (!done) status_message_ = prefix.empty() ? "Autocomplete: type a prefix first"
-				                                             : ("No keyword starts with '" + prefix + "'");
-			}
+			InlineAutocomplete();
 			return;
 		}
 	}
@@ -2131,6 +2172,10 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			if (caret < (int)prop_text_buf_.size())
 				prop_text_buf_.erase(prop_text_buf_.begin() + caret);
 			UpdateAIScriptScroll();
+			return;
+		}
+		if (key == '\t') { // Tab → inline autocomplete (reliable trigger; GLUT may eat Ctrl+Space)
+			InlineAutocomplete();
 			return;
 		}
 		if (key >= 32 && key <= 126) { // printable: insert at caret
