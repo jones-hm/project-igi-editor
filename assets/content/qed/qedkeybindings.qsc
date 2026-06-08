@@ -114,3 +114,6 @@ SetEventBinding("ToggleObjects",                            "<Ctrl><Shift><Z>");
 // Add a missing model's loose .mef into the level .res (issue 2)
 SetEventBinding("AddModelToRes",                            "<Ctrl><Shift><A>");
 
+// Toggle magic-object spheres overlay
+SetEventBinding("TaskMagicObjToggle",                       "<Shift><M>");
+

@@ -1032,10 +1032,6 @@ void Renderer::Draw(const draw_params_s &params,
       if (terrainId >= 0) {
         snprintf(tbuf, sizeof(tbuf), "Terrain ID: %d", terrainId);
         draw_text_sm(tooltip_x, tooltip_y, tbuf, 1.0f, 1.0f, 1.0f);
-        // Hint line: surfaces the id in the "Add Terrain: <id>" form the user references
-        // when adding/referencing this terrain cell (issue 3).
-        snprintf(tbuf, sizeof(tbuf), "Add Terrain: %d", terrainId);
-        draw_text_sm(tooltip_x, tooltip_y + 15, tbuf, 0.7f, 1.0f, 0.7f);
       } else {
         draw_text_sm(tooltip_x, tooltip_y, "Terrain ID: -1", 1.0f, 1.0f, 1.0f);
       }

@@ -3301,7 +3301,10 @@ void App::DispatchEventBindings() {
 	if (Check("Redo")) { Redo(); }
 	if (Check("ReloadSettings")) { Config::Init(); LoadAutoCompleteKeywords(); Logger::Get().Log(LogLevel::INFO, "[App] Settings reloaded from QED config"); }
 	if (Check("ToggleObjects")) { Logger::Get().Log(LogLevel::INFO, "[Keybind] ToggleObjects not implemented"); }
-	if (Check("TaskMagicObjToggle")) { show_magic_obj_spheres_ = !show_magic_obj_spheres_; }
+	if (Check("TaskMagicObjToggle")) {
+		show_magic_obj_spheres_ = !show_magic_obj_spheres_;
+		status_message_ = show_magic_obj_spheres_ ? "Magic objects: ON" : "Magic objects: OFF";
+	}
 	if (Check("AddModelToRes")) {
 		int oi = selected_object_index_;
 		auto& objs = level_.GetLevelObjects().GetObjects();
