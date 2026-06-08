@@ -210,6 +210,7 @@ add_executable(igi_tests
     tests/test_tex_parser.cpp
     tests/test_mtp_parser.cpp
     tests/test_fnt_parser.cpp
+    tests/test_pickup_resolve.cpp
 )
 
 # Explicit runtime so igi_tests always matches igi-editor (/MDd Debug, /MD Release).
@@ -220,9 +221,12 @@ if (MSVC)
 endif()
 
 target_include_directories(igi_tests PRIVATE source)
+target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/parsers)
+target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
+target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/tinygltf)
 target_link_libraries(igi_tests PRIVATE gtest_main)
 target_sources(igi_tests PRIVATE
     source/parsers/qsc_lexer.cpp
@@ -235,6 +239,7 @@ target_sources(igi_tests PRIVATE
     source/common.cpp
     source/logger.cpp
     source/level/task_schema.cpp
+    source/level/level_objects.cpp
     source/cli/verify_level_core.cpp
     source/parsers/dat_parser.cpp
     source/parsers/graph_parser.cpp
@@ -243,6 +248,11 @@ target_sources(igi_tests PRIVATE
     source/parsers/mtp_parser.cpp
     source/parsers/fnt_parser.cpp
 )
+
+# level_objects.cpp (and its pch.h header graph: app.h, renderer, level.h) relies
+# on pch.h being force-included to establish the correct include order. Apply the
+# same precompiled header here so it compiles identically to the main target.
+target_precompile_headers(igi_tests PRIVATE source/pch.h)
 
 include(GoogleTest)
 gtest_discover_tests(igi_tests WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})

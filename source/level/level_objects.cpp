@@ -191,17 +191,13 @@ void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
     LoadModelNames();
     for (auto& obj : objects_) {
         if (obj.type == "GunPickup" || obj.type == "AmmoPickup") {
-            if (!obj.modelId.empty() &&
-                (obj.modelId.rfind("WEAPON_ID_", 0) == 0 || obj.modelId.rfind("AMMO_ID_", 0) == 0)) {
-                auto it = modelIds_.find(obj.modelId);
-                if (it != modelIds_.end() && !it->second.empty()) {
+            if (!obj.modelId.empty()) {
+                std::string resolved = ResolvePickupModelId(obj.modelId);
+                if (resolved != obj.modelId) {
                     Logger::Get().Log(LogLevel::INFO,
-                        "[LevelObjects] Resolved pickup enum: " + obj.modelId + " -> " + it->second +
-                        " (task " + obj.taskId + ")");
-                    obj.modelId = it->second;
-                } else {
-                    Logger::Get().Log(LogLevel::WARNING,
-                        "[LevelObjects] No model ID mapping found for pickup enum: " + obj.modelId);
+                        "[LevelObjects] Resolved pickup enum: " + obj.modelId +
+                        " -> " + resolved + " (task " + obj.taskId + ")");
+                    obj.modelId = resolved;
                 }
             }
         }
@@ -656,6 +652,16 @@ std::string LevelObjects::GetModelId(const std::string& modelName) const {
     return "";
 }
 
+std::string LevelObjects::ResolvePickupModelId(const std::string& enumId) {
+    if (enumId.rfind("WEAPON_ID_", 0) != 0 && enumId.rfind("AMMO_ID_", 0) != 0)
+        return enumId;
+    LoadModelNames();
+    auto it = modelIds_.find(enumId);
+    if (it != modelIds_.end() && !it->second.empty())
+        return it->second;
+    return enumId; // fallback: keep raw enum string
+}
+
 static bool IsSubtreeModified(const std::vector<LevelObject>& objects, int idx) {
     if (idx < 0 || idx >= (int)objects.size()) return false;
     const auto& node = objects[idx];
@@ -878,13 +884,7 @@ void LevelObjects::ParseTaskLine(const std::string& line, LevelObject& obj) {
             if (obj.argTokens.size() > 9) {
                 std::string enumId = unquote(obj.argTokens[9]);
                 // Resolve WEAPON_ID_* / AMMO_ID_* to a render model ID via IGIModels.json
-                LoadModelNames();
-                auto it = modelIds_.find(enumId);
-                if (it != modelIds_.end() && !it->second.empty()) {
-                    obj.modelId = it->second;
-                } else {
-                    obj.modelId = enumId; // fallback: keep raw enum string
-                }
+                obj.modelId = ResolvePickupModelId(enumId);
                 // Keep argTokens[9] unchanged so the QSC file preserves the original enum string
             }
         } else if (obj.type == "AIStationaryGunHolder" || obj.type == "AlarmLight" || obj.type == "Elevator" || obj.type == "Generator" || obj.type == "GenericPickup" || obj.type == "GenericTBA" || obj.type == "Plane" || obj.type == "Radio" || obj.type == "RotatingObject" || obj.type == "Siren" || obj.type == "StationaryGun") {

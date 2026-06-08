@@ -84,6 +84,10 @@ public:
     void LoadModelNames();
     std::string GetModelName(const std::string& modelId) const;
     std::string GetModelId(const std::string& modelName) const;
+    // Resolve a GunPickup/AmmoPickup WEAPON_ID_*/AMMO_ID_* enum string to a render
+    // model id via IGIModels.json. Returns the input unchanged if it is not a known
+    // enum (caller then renders/keeps the raw string).
+    std::string ResolvePickupModelId(const std::string& enumId);
     void SaveToQSC(const std::string& qscPath);
     // Write ONLY the subtree rooted at idx (the task + its descendants) as a proper
     // nested QSC block. Used for "save sub-task" / templates so it never dumps the
