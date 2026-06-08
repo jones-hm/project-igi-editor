@@ -45,6 +45,12 @@ public:
 	void					EditorRaycastAndModify(const dyn_cube_s* root_dyn_cube, const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type);
 	bool					GetFirstHMPCenter(glm::vec3& out_pos) const;
 
+	// Index (into ctr_) of the leaf CTR node found by the most recent GetZ() query,
+	// or -1 if none. Used to surface a "terrain id" for the hover tooltip (issue 3).
+	int						GetLastLeafNodeIndex() const {
+		return last_getz_leaf_node_ ? (int)(last_getz_leaf_node_ - ctr_) : -1;
+	}
+
 public:
 
 	static const uint8_t	CUBE_IDX_TABLE[];
@@ -227,7 +233,10 @@ private:
 
 	// octree nodes. NOTE: ctr_ + 1 is the root node
 	ctr_node_s*				ctr_;
-	
+
+	// leaf CTR node found by the most recent GetZ() query (issue 3), or nullptr
+	const ctr_node_s*		last_getz_leaf_node_ = nullptr;
+
 	// bit file contents
 	void*					bit_;
 	const uint8_t *			bitmap_items_[MAX_TEX_MOD];

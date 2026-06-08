@@ -396,6 +396,12 @@ bool Level::GetTerrainZ(double x, double y, float& z, bool ignore_discard) {
 	}
 }
 
+int Level::GetTerrainNodeId(double x, double y) {
+	float z = 0.0f;
+	if (!GetTerrainZ(x, y, z)) return -1;
+	return terrain_.GetLastLeafNodeIndex();
+}
+
 void Level::EditorRaycastAndModify(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type) {
 	if (root_dyn_cube_) {
 		terrain_.EditorRaycastAndModify(root_dyn_cube_, ray_origin, ray_dir, brush_type);

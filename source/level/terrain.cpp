@@ -1173,6 +1173,8 @@ bool Terrain::GetZ(const dyn_cube_s* root_dyn_cube, double x, double y, float & 
 		return false;
 	}
 	
+	last_getz_leaf_node_ = nullptr;
+
 	get_z_pos_.x = x;
 	get_z_pos_.y = y;
 	get_z_pos_.z = 0.0;
@@ -2766,6 +2768,7 @@ bool Terrain::RecursiveGetZ(const dyn_cube_s* dyn_cube, const ctr_node_s* cube_n
 				if ((int)v0.x == get_z_ix_ && (int)v0.y == get_z_iy_) {
 					ret_z = (float)v0.z;
 
+					last_getz_leaf_node_ = cube_node;
 					found = true;
 					goto DONE;
 				}
@@ -2822,6 +2825,7 @@ bool Terrain::RecursiveGetZ(const dyn_cube_s* dyn_cube, const ctr_node_s* cube_n
 
 				ret_z = (float)(-(n.x * get_z_pos_.x + n.y * get_z_pos_.y + d) / n.z);
 
+				last_getz_leaf_node_ = cube_node;
 				found = true;
 				goto DONE;
 			}

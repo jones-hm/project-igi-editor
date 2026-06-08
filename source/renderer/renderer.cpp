@@ -305,6 +305,29 @@ render_chunk_s *Renderer::GetTerrainRenderChunckBuffer() {
   return terrain_.GetRenderChunckBuffer();
 }
 
+// Reads the depth buffer at screen (mx, my_topdown) and unprojects to a world-space
+// point using the full world->clip matrix (proj*view*scale). Returns false if nothing
+// was drawn there (cursor over sky / cleared depth). (issue 3)
+static bool UnprojectCursorToWorld(int mx, int my_topdown, int vpW, int vpH,
+                                   const glm::mat4 &worldToClip,
+                                   glm::vec3 &outWorld) {
+  if (mx < 0 || my_topdown < 0 || mx >= vpW || my_topdown >= vpH)
+    return false;
+  int gly = vpH - 1 - my_topdown; // GL y is bottom-up
+  float depth = 1.0f;
+  glReadPixels(mx, gly, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &depth);
+  if (depth >= 1.0f)
+    return false; // nothing (cleared depth) -> sky
+  glm::vec4 ndc(2.0f * mx / vpW - 1.0f, 2.0f * gly / vpH - 1.0f,
+                2.0f * depth - 1.0f, 1.0f);
+  glm::mat4 invPV = glm::inverse(worldToClip);
+  glm::vec4 world = invPV * ndc;
+  if (world.w == 0.0f)
+    return false;
+  outWorld = glm::vec3(world) / world.w;
+  return true;
+}
+
 void Renderer::Draw(const draw_params_s &params,
                     const task_tree_view_params_s &task_tree_view) {
   static bool logged_params = false;
@@ -990,7 +1013,30 @@ void Renderer::Draw(const draw_params_s &params,
         }
       }
     } else if (!task_tree_view.pause_mode_ && (!task_tree_view.show_hud_ || task_tree_view.mouse_x_ >= 350)) {
-      draw_text_sm(tooltip_x, tooltip_y, "Terrain ID: -1", 1.0f, 1.0f, 1.0f);
+      int terrainId = -1;
+      if (params.terrain_id_at_world_xy_) {
+        // Same world->clip transform the 3D scene uses (proj * view * scale_down);
+        // its inverse maps the depth-buffer hit back to full IGI world coords.
+        glm::mat4 worldToClip =
+            mat_proj_ * mat_view_ *
+            glm::scale(glm::mat4(1.0f), glm::vec3(RENDERER_MODEL_SCALE_DOWN));
+        glm::vec3 worldPt;
+        if (UnprojectCursorToWorld(task_tree_view.mouse_x_, task_tree_view.mouse_y_,
+                                   params.view_define_->viewport_width_,
+                                   params.view_define_->viewport_height_,
+                                   worldToClip, worldPt)) {
+          terrainId = params.terrain_id_at_world_xy_((double)worldPt.x, (double)worldPt.y);
+        }
+      }
+      char tbuf[96];
+      if (terrainId >= 0) {
+        snprintf(tbuf, sizeof(tbuf), "Terrain ID: %d", terrainId);
+        draw_text_sm(tooltip_x, tooltip_y, tbuf, 1.0f, 1.0f, 1.0f);
+        snprintf(tbuf, sizeof(tbuf), "Add Terrain: %d", terrainId);
+        draw_text_sm(tooltip_x, tooltip_y + 15, tbuf, 0.7f, 1.0f, 0.7f);
+      } else {
+        draw_text_sm(tooltip_x, tooltip_y, "Terrain ID: -1", 1.0f, 1.0f, 1.0f);
+      }
     }
 
     // Watermark — centered, versioned

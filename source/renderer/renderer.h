@@ -249,6 +249,9 @@ public:
 		int					selected_object_index_;
 		bool				show_magic_obj_spheres_;
 
+		// Returns the terrain CTR node id at a world (x,y), or -1. Set by App so the
+		// renderer can show the terrain id under the cursor without depending on Level. (issue 3)
+		std::function<int(double,double)> terrain_id_at_world_xy_;
 	};
 
 	struct task_tree_view_params_s {

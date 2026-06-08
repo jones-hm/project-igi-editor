@@ -3631,6 +3631,8 @@ void App::Frame(float delta_seconds) {
 		draw_params_.level_objects_ = &level_.GetLevelObjects();
 		draw_params_.selected_object_index_ = selected_object_index_;
 		draw_params_.show_magic_obj_spheres_ = show_magic_obj_spheres_;
+		draw_params_.terrain_id_at_world_xy_ =
+			[this](double x, double y) { return level_.GetTerrainNodeId(x, y); };
 		renderer_.Draw(draw_params_, task_tree_view);
 
 		DrawCustomCursor();
@@ -3704,6 +3706,8 @@ void App::Frame(float delta_seconds) {
 	draw_params_.level_objects_ = &level_.GetLevelObjects();
 	draw_params_.selected_object_index_ = selected_object_index_;
 	draw_params_.show_magic_obj_spheres_ = show_magic_obj_spheres_;
+	draw_params_.terrain_id_at_world_xy_ =
+		[this](double x, double y) { return level_.GetTerrainNodeId(x, y); };
 
 
 	float ground_z = 0.0f;
