@@ -192,12 +192,17 @@ void LevelObjects::Load(ILevelDynCube* level_dyn_cube, const QSC* qsc_objects) {
     for (auto& obj : objects_) {
         if (obj.type == "GunPickup" || obj.type == "AmmoPickup") {
             if (!obj.modelId.empty()) {
+                bool isEnum = (obj.modelId.rfind("WEAPON_ID_", 0) == 0 ||
+                               obj.modelId.rfind("AMMO_ID_", 0) == 0);
                 std::string resolved = ResolvePickupModelId(obj.modelId);
                 if (resolved != obj.modelId) {
                     Logger::Get().Log(LogLevel::INFO,
                         "[LevelObjects] Resolved pickup enum: " + obj.modelId +
                         " -> " + resolved + " (task " + obj.taskId + ")");
                     obj.modelId = resolved;
+                } else if (isEnum) {
+                    Logger::Get().Log(LogLevel::WARNING,
+                        "[LevelObjects] No model ID mapping found for pickup enum: " + obj.modelId);
                 }
             }
         }
@@ -346,13 +351,7 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
                     // Resolve it to a model ID for rendering via IGIModels.json
                     if (cur_a->type_ == QSC::arg_s::type_t::STR) {
                         std::string enumId = Utils::Trim(cur_a->str_);
-                        LoadModelNames();
-                        auto it = modelIds_.find(enumId);
-                        if (it != modelIds_.end() && !it->second.empty()) {
-                            obj.modelId = it->second;
-                        } else {
-                            obj.modelId = enumId; // fallback: keep raw enum string
-                        }
+                        obj.modelId = ResolvePickupModelId(enumId);
                     }
                     break;
                 }
