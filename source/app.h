@@ -137,6 +137,8 @@ private:
 	bool					terrain_edit_enabled_;
 	bool					pause_mode_;
 	int						edit_brush_;
+	double					edit_brush_radius_ = 50000.0;
+	double					edit_brush_strength_ = 15.0;
 	int						selected_object_index_;
 	int						hover_object_index_;	// Object under mouse cursor
 	int						last_pick_x_ = -9999;

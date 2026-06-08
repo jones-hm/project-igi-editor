@@ -402,9 +402,9 @@ int Level::GetTerrainNodeId(double x, double y) {
 	return terrain_.GetLastLeafNodeIndex();
 }
 
-void Level::EditorRaycastAndModify(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type) {
+void Level::EditorRaycastAndModify(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type, double radius, double strength) {
 	if (root_dyn_cube_) {
-		terrain_.EditorRaycastAndModify(root_dyn_cube_, ray_origin, ray_dir, brush_type);
+		terrain_.EditorRaycastAndModify(root_dyn_cube_, ray_origin, ray_dir, brush_type, radius, strength);
 	}
 }
 

@@ -2923,7 +2923,7 @@ DONE:
 	return found;
 }
 
-void Terrain::EditorRaycastAndModify(const dyn_cube_s* root_dyn_cube, const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type) {
+void Terrain::EditorRaycastAndModify(const dyn_cube_s* root_dyn_cube, const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type, double radius, double strength) {
 	// Basic Raymarch
 	glm::vec3 current_pos = ray_origin;
 	float step_size = 500.0f; // 500 units per step
@@ -2952,10 +2952,37 @@ void Terrain::EditorRaycastAndModify(const dyn_cube_s* root_dyn_cube, const glm:
 	// Now we need to modify the height map at this location.
 	// Iterate over all active height maps to find which one covers this X/Y area.
 	
-	double radius = 50000.0; // Brush radius
-	double max_strength = 15.0; // Max height change per frame at center
-	
+	double max_strength = strength; // Max height change per frame at center (from caller)
+
 	int changed_count = 0;
+
+	// For the FLATTEN brush, capture the target height at the hit center (once per call).
+	// Use the first hmp whose bbox contains the hit point. If none, flatten becomes a no-op.
+	int target_val = -1; // -1 == not captured
+	if (brush_type == 3) {
+		for (int i = 0; i < num_height_map_; ++i) {
+			height_map_s* hmp = height_maps_ + qtask_height_maps_[i].idx_in_array_;
+			int hmp_dim = 1 << hmp->height_map_line_width_shift_;
+			double min_x = hmp->cube_min_x_;
+			double min_y = hmp->cube_min_y_;
+			double max_x = min_x + (hmp_dim / hmp->local_pos_to_hmp_pos_);
+			double max_y = min_y + (hmp_dim / hmp->local_pos_to_hmp_pos_);
+			if (current_pos.x < min_x || current_pos.x > max_x ||
+				current_pos.y < min_y || current_pos.y > max_y) {
+				continue;
+			}
+			int tx = (int)(((double)current_pos.x - min_x) * hmp->local_pos_to_hmp_pos_ + 0.5);
+			int ty = (int)(((double)current_pos.y - min_y) * hmp->local_pos_to_hmp_pos_ + 0.5);
+			if (tx < 0) tx = 0; if (tx > hmp_dim) tx = hmp_dim;
+			if (ty < 0) ty = 0; if (ty > hmp_dim) ty = hmp_dim;
+			target_val = (uint8_t)hmp->height_map_item_[ty * (hmp_dim + 1) + tx];
+			break;
+		}
+		if (target_val < 0) {
+			printf("Flatten: no hmp contains hit center, skipping stroke\n");
+			return;
+		}
+	}
 
 	for (int i = 0; i < num_height_map_; ++i) {
 		height_map_s* hmp = height_maps_ + qtask_height_maps_[i].idx_in_array_;
@@ -2992,15 +3019,33 @@ void Terrain::EditorRaycastAndModify(const dyn_cube_s* root_dyn_cube, const glm:
 					
 					// Smooth falloff based on distance
 					double falloff = 1.0 - (dist_sq / rad_sq);
-					int applied_strength = (int)(max_strength * falloff);
-					if (applied_strength < 1) applied_strength = 1;
 
-					if (brush_type == 0) { // BRUSH_RAISE
-						current_val += applied_strength;
-					} else {
-						current_val -= applied_strength;
+					if (brush_type == 0 || brush_type == 1) { // RAISE / LOWER
+						int applied_strength = (int)(max_strength * falloff);
+						if (applied_strength < 1) applied_strength = 1;
+						if (brush_type == 0) {
+							current_val += applied_strength;
+						} else {
+							current_val -= applied_strength;
+						}
+					} else if (brush_type == 2) { // SOFTEN: move toward neighbor average
+						// neighbor indices in the same array, clamped to [0, hmp_dim]
+						int xl = (x > 0) ? x - 1 : x;
+						int xr = (x < hmp_dim) ? x + 1 : x;
+						int yu = (y < hmp_dim) ? y + 1 : y;
+						int yd = (y > 0) ? y - 1 : y;
+						int n_left  = (uint8_t)hmp->height_map_item_[y  * (hmp_dim + 1) + xl];
+						int n_right = (uint8_t)hmp->height_map_item_[y  * (hmp_dim + 1) + xr];
+						int n_up    = (uint8_t)hmp->height_map_item_[yu * (hmp_dim + 1) + x];
+						int n_down  = (uint8_t)hmp->height_map_item_[yd * (hmp_dim + 1) + x];
+						int avg = (n_up + n_down + n_left + n_right) / 4;
+						double k = falloff * (max_strength / 15.0);
+						current_val += (int)((avg - current_val) * k);
+					} else { // FLATTEN: move toward captured target height
+						double k = falloff * (max_strength / 15.0);
+						current_val += (int)((target_val - current_val) * k);
 					}
-					
+
 					// Clamp to uint8 bounds (0 to 255)
 					if (current_val > 255) current_val = 255;
 					if (current_val < 0) current_val = 0;

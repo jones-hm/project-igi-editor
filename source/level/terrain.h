@@ -42,7 +42,7 @@ public:
 	void					Update(update_params_s& params, const dyn_cube_s* root_dyn_cube);
 
 	bool					GetZ(const dyn_cube_s* root_dyn_cube, double x, double y, float & ret_z, bool ignore_discard = false);
-	void					EditorRaycastAndModify(const dyn_cube_s* root_dyn_cube, const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type);
+	void					EditorRaycastAndModify(const dyn_cube_s* root_dyn_cube, const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type, double radius, double strength);
 	bool					GetFirstHMPCenter(glm::vec3& out_pos) const;
 
 	// Index (into ctr_) of the leaf CTR node found by the most recent GetZ() query,

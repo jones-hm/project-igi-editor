@@ -3324,6 +3324,31 @@ void App::DispatchEventBindings() {
 		camera_strafe_free_ = !camera_strafe_free_;
 		status_message_ = camera_strafe_free_ ? "Strafe lock: ON" : "Strafe lock: OFF";
 	}
+	if (Check("TerrainBrushCycle")) {
+		edit_brush_ = (edit_brush_ + 1) % 4;
+		static const char* kNames[] = {"Raise","Lower","Soften","Flatten"};
+		status_message_ = std::string("Terrain brush: ") + kNames[edit_brush_];
+	}
+	if (Check("TerrainBrushRadiusDec")) {
+		edit_brush_radius_ *= 0.75;
+		if (edit_brush_radius_ < 5000.0) edit_brush_radius_ = 5000.0;
+		status_message_ = "Brush radius: " + std::to_string((long)edit_brush_radius_);
+	}
+	if (Check("TerrainBrushRadiusInc")) {
+		edit_brush_radius_ *= 1.25;
+		if (edit_brush_radius_ > 250000.0) edit_brush_radius_ = 250000.0;
+		status_message_ = "Brush radius: " + std::to_string((long)edit_brush_radius_);
+	}
+	if (Check("TerrainBrushStrengthDec")) {
+		edit_brush_strength_ -= 1.0;
+		if (edit_brush_strength_ < 1.0) edit_brush_strength_ = 1.0;
+		status_message_ = "Brush strength: " + std::to_string((long)edit_brush_strength_);
+	}
+	if (Check("TerrainBrushStrengthInc")) {
+		edit_brush_strength_ += 1.0;
+		if (edit_brush_strength_ > 100.0) edit_brush_strength_ = 100.0;
+		status_message_ = "Brush strength: " + std::to_string((long)edit_brush_strength_);
+	}
 }
 
 
@@ -4098,6 +4123,13 @@ void App::SetEditMode(bool enabled) {
 
 void App::SetTerrainEditEnabled(bool enabled) {
 	terrain_edit_enabled_ = enabled;
+	if (enabled) {
+		static const char* kNames[] = {"Raise","Lower","Soften","Flatten"};
+		int b = (edit_brush_ >= 0 && edit_brush_ < 4) ? edit_brush_ : 0;
+		status_message_ = std::string("Terrain edit ON | Brush: ") + kNames[b] +
+			" | Radius: " + std::to_string((long)edit_brush_radius_) +
+			" | Strength: " + std::to_string((long)edit_brush_strength_);
+	}
 }
 
 bool App::GetTerrainEditEnabled() const {
@@ -4182,7 +4214,7 @@ void App::EditorProcessClick() {
 		glm::vec3 ray_dir = glm::normalize((glm::vec3)(end_pos - start_pos));
 
 		printf("EditorClick: Mouse(%.0f, %.0f), RayDir(%.2f, %.2f, %.2f)\n", winX, winY, ray_dir.x, ray_dir.y, ray_dir.z);
-		level_.EditorRaycastAndModify(ray_origin, ray_dir, edit_brush_);
+		level_.EditorRaycastAndModify(ray_origin, ray_dir, edit_brush_, edit_brush_radius_, edit_brush_strength_);
 		return;
 	}
 

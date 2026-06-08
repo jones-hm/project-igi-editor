@@ -117,3 +117,10 @@ SetEventBinding("AddModelToRes",                            "<Ctrl><Shift><A>");
 // Toggle magic-object spheres overlay
 SetEventBinding("TaskMagicObjToggle",                       "<Shift><M>");
 
+// Terrain sculpt brush controls (feature E)
+SetEventBinding("TerrainBrushCycle",                        "<B>");
+SetEventBinding("TerrainBrushRadiusDec",                    "<J>");
+SetEventBinding("TerrainBrushRadiusInc",                    "<K>");
+SetEventBinding("TerrainBrushStrengthDec",                  "<N>");
+SetEventBinding("TerrainBrushStrengthInc",                  "<U>");
+

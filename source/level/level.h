@@ -41,7 +41,7 @@ public:
 	bool					GetTerrainZ(double x, double y, float & z, bool ignore_discard = false);
 	// World (x,y) -> terrain CTR node index (the "terrain id"), or -1 if off-terrain.
 	int						GetTerrainNodeId(double x, double y);
-	void					EditorRaycastAndModify(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type);
+	void					EditorRaycastAndModify(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int brush_type, double radius, double strength);
 	void					TeleportToHMP(glm::vec3& pos) const;
 	void					CompileCurrentQSC(int level_no);
 
