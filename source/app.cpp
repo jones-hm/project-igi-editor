@@ -4791,6 +4791,15 @@ void App::CommitPropTextEdit() {
 	if (is_model_field) {
 		obj.modelId = StripQuotes(prop_text_buf_);
 	}
+	// GunPickup/AmmoPickup: the edited field is the weapon/ammo enum string, but
+	// obj.modelId must hold the RESOLVED render model. Re-resolve so the viewport
+	// mesh updates immediately instead of only after a reload (issue 1).
+	if (obj.type == "GunPickup" || obj.type == "AmmoPickup") {
+		std::string enumStr = StripQuotes(prop_text_buf_);
+		if (enumStr.rfind("WEAPON_ID_", 0) == 0 || enumStr.rfind("AMMO_ID_", 0) == 0) {
+			obj.modelId = level_.GetLevelObjects().ResolvePickupModelId(enumStr);
+		}
+	}
 	obj.modified = true;
 	level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
 }
