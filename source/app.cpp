@@ -563,6 +563,61 @@ void App::DrawCustomCursor() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+void App::DrawProgressOverlay(const char* title, int pct, const char* stage) {
+	pct = std::max(0, std::min(100, pct));
+	int vw = window_state_.viewport_width_;
+	int vh = window_state_.viewport_height_;
+	if (vw <= 0 || vh <= 0) return;
+	glViewport(0, 0, vw, vh);
+	glClearColor(0.02f, 0.06f, 0.02f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glDisable(GL_DEPTH_TEST);
+	glMatrixMode(GL_PROJECTION);
+	glPushMatrix(); glLoadIdentity();
+	glOrtho(0, vw, 0, vh, -1, 1);
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix(); glLoadIdentity();
+
+	int pw = 340, ph = 84;
+	int px = (vw - pw) / 2, py = (vh - ph) / 2;
+	glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glColor4f(0.0f, 0.15f, 0.0f, 0.9f);
+	glBegin(GL_QUADS);
+	glVertex2i(px, py); glVertex2i(px+pw, py);
+	glVertex2i(px+pw, py+ph); glVertex2i(px, py+ph);
+	glEnd();
+	glColor3f(0.0f, 0.8f, 0.0f);
+	glBegin(GL_LINE_LOOP);
+	glVertex2i(px, py); glVertex2i(px+pw, py);
+	glVertex2i(px+pw, py+ph); glVertex2i(px, py+ph);
+	glEnd();
+	int bx = px+20, by = py+18, bw = pw-40, bh = 12;
+	glColor3f(0.0f, 0.3f, 0.0f);
+	glBegin(GL_QUADS);
+	glVertex2i(bx, by); glVertex2i(bx+bw, by);
+	glVertex2i(bx+bw, by+bh); glVertex2i(bx, by+bh);
+	glEnd();
+	int fw = bw * pct / 100;
+	glColor3f(0.1f, 0.95f, 0.1f);
+	glBegin(GL_QUADS);
+	glVertex2i(bx, by); glVertex2i(bx+fw, by);
+	glVertex2i(bx+fw, by+bh); glVertex2i(bx, by+bh);
+	glEnd();
+	glDisable(GL_BLEND);
+
+	char msg[160];
+	snprintf(msg, sizeof(msg), "%s  -  %d%%  (%s)", title ? title : "", pct, stage ? stage : "");
+	glColor3f(0.0f, 0.9f, 0.0f);
+	glRasterPos2i(px + 20, py + ph - 18);
+	for (const char* c = msg; *c; ++c)
+		glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, *c);
+
+	glMatrixMode(GL_PROJECTION); glPopMatrix();
+	glMatrixMode(GL_MODELVIEW);  glPopMatrix();
+	glEnable(GL_DEPTH_TEST);
+	glutSwapBuffers();
+}
+
 void App::LoadLevel(int level_no) {
 	try {
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
@@ -635,59 +690,9 @@ void App::LoadLevel(int level_no) {
 		// Staged progress: the load is synchronous, so we redraw + swap the bar at
 		// each milestone (10% → 100%). Reusable lambda fills proportionally to pct.
 		auto drawLoadBar = [&](int pct, const char* stage) {
-			pct = std::max(0, std::min(100, pct));
-			int vw = window_state_.viewport_width_;
-			int vh = window_state_.viewport_height_;
-			glViewport(0, 0, vw, vh);
-			glClearColor(0.02f, 0.06f, 0.02f, 1.0f);
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-			glDisable(GL_DEPTH_TEST);
-			glMatrixMode(GL_PROJECTION);
-			glPushMatrix(); glLoadIdentity();
-			glOrtho(0, vw, 0, vh, -1, 1);
-			glMatrixMode(GL_MODELVIEW);
-			glPushMatrix(); glLoadIdentity();
-
-			int pw = 340, ph = 84;
-			int px = (vw - pw) / 2, py = (vh - ph) / 2;
-			glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-			glColor4f(0.0f, 0.15f, 0.0f, 0.9f);
-			glBegin(GL_QUADS);
-			glVertex2i(px, py); glVertex2i(px+pw, py);
-			glVertex2i(px+pw, py+ph); glVertex2i(px, py+ph);
-			glEnd();
-			glColor3f(0.0f, 0.8f, 0.0f);
-			glBegin(GL_LINE_LOOP);
-			glVertex2i(px, py); glVertex2i(px+pw, py);
-			glVertex2i(px+pw, py+ph); glVertex2i(px, py+ph);
-			glEnd();
-			// Progress bar track
-			int bx = px+20, by = py+18, bw = pw-40, bh = 12;
-			glColor3f(0.0f, 0.3f, 0.0f);
-			glBegin(GL_QUADS);
-			glVertex2i(bx, by); glVertex2i(bx+bw, by);
-			glVertex2i(bx+bw, by+bh); glVertex2i(bx, by+bh);
-			glEnd();
-			// Proportional fill
-			int fw = bw * pct / 100;
-			glColor3f(0.1f, 0.95f, 0.1f);
-			glBegin(GL_QUADS);
-			glVertex2i(bx, by); glVertex2i(bx+fw, by);
-			glVertex2i(bx+fw, by+bh); glVertex2i(bx, by+bh);
-			glEnd();
-			glDisable(GL_BLEND);
-
-			char load_msg[96];
-			snprintf(load_msg, sizeof(load_msg), "Loading Level %d  -  %d%%  (%s)", level_no, pct, stage ? stage : "");
-			glColor3f(0.0f, 0.9f, 0.0f);
-			glRasterPos2i(px + 20, py + ph - 18);
-			for (const char* c = load_msg; *c; ++c)
-				glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, *c);
-
-			glMatrixMode(GL_PROJECTION); glPopMatrix();
-			glMatrixMode(GL_MODELVIEW);  glPopMatrix();
-			glEnable(GL_DEPTH_TEST);
-			glutSwapBuffers();
+			char title[32];
+			snprintf(title, sizeof(title), "Loading Level %d", level_no);
+			DrawProgressOverlay(title, pct, stage);
 		};
 		drawLoadBar(10, "reading level");
 		// ─────────────────────────────────────────────────────────────────────
@@ -3357,7 +3362,13 @@ void App::DispatchEventBindings() {
 		int oi = selected_object_index_;
 		auto& objs = level_.GetLevelObjects().GetObjects();
 		if (oi >= 0 && oi < (int)objs.size() && objs[oi].modelMissingInRes) {
-			if (renderer_.AddModelToLevelRes(objs[oi].modelId)) {
+			std::string addId = objs[oi].modelId;
+			DrawProgressOverlay("Adding model to .res", 0, "starting");
+			auto progressCb = [this, addId](size_t done, size_t total) {
+				int pct = total ? (int)(done * 100 / total) : 0;
+				DrawProgressOverlay(("Adding '" + addId + "' to .res").c_str(), pct, "packing textures");
+			};
+			if (renderer_.AddModelToLevelRes(addId, progressCb)) {
 				level_res_models_.AddEntry("models\\" + objs[oi].modelId + ".mef");
 				objs[oi].modelMissingInRes = false;
 				status_message_ = "Added '" + objs[oi].modelId + "' + textures to .res and .mtp mapping (backups written).";

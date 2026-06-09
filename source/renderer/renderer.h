@@ -382,8 +382,9 @@ public:
 	bool SuppressAttachmentInMef(const std::string& parentModelId, const std::string& attModelId, const glm::vec3& localPos) {
 		return objects_.SuppressAttachmentInMef(parentModelId, attModelId, localPos);
 	}
-	bool AddModelToLevelRes(const std::string& modelId) {
-		return objects_.AddModelToLevelRes(modelId);
+	bool AddModelToLevelRes(const std::string& modelId,
+	                        const std::function<void(size_t,size_t)>& onProgress = nullptr) {
+		return objects_.AddModelToLevelRes(modelId, onProgress);
 	}
 	bool UpdateAttaLocalPosInMef(const std::string& parentModelId, bool isBuilding, int recordIndex, const glm::vec3& newLocalPos, const glm::mat3& newLocalRot) {
 		return objects_.UpdateAttaLocalPosInMef(parentModelId, isBuilding, recordIndex, newLocalPos, newLocalRot);

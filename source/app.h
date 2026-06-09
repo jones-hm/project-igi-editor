@@ -33,6 +33,7 @@ public:
 
 	// level_no: 1 ~ 13
 	void					LoadLevel(int level_no);
+	void					DrawProgressOverlay(const char* title, int pct, const char* stage); // reusable loading bar
 	void					SetGameLevel(int level_no);
 	void					SaveCurrentLevel();
 	void					FlushAttaProxiesToMef();
