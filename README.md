@@ -8,11 +8,8 @@ This project is built upon the foundational work of the [Project-IGI-Terrain](ht
 
 ---
 
-## 🎬 Demo Video
-
-Click the thumbnail below to watch the IGI Editor in action:
-
-[![IGI Editor Demo](https://img.youtube.com/vi/w4k5TRIy9eM/hqdefault.jpg)](https://www.youtube.com/watch?v=w4k5TRIy9eM)
+## 🎬 IGI Editor Video
+[![IGI Editor Video](https://img.youtube.com/vi/w4k5TRIy9eM/hqdefault.jpg)](https://www.youtube.com/watch?v=w4k5TRIy9eM)
 
 ---
 
