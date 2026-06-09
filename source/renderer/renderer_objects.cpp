@@ -944,27 +944,42 @@ bool Renderer_Objects::SuppressAttachmentInMef(const std::string& parentModelId,
     return true;
 }
 
-// Add a single resource (model or texture) to a .res archive, idempotently.
-// Returns true if the entry is present after the call (already there = no-op true).
-// Backs the archive up to <resPath>.orig once before the first modification, and
-// ABORTS (false) if that backup copy fails so the user's archive is never touched.
-static bool AddFileToRes(const std::string& resPath, const std::string& entryName,
-                         const std::vector<uint8_t>& bytes, std::string& err) {
-    RESFile res = RES_Parse(resPath);
-    if (!res.valid) {
-        err = "parse failed: " + resPath;
-        return false;
-    }
-
+// Batch-add resources (models or textures) to ONE .res archive, idempotently, WITHOUT
+// ever loading the whole archive into RAM. Streams the source once to discover which
+// requested names already exist (case-insensitive on the full entry name), then — if any
+// remain — streams it again appending only the missing entries into a .tmp and atomically
+// renames .tmp over the original. The original is backed up to <resPath>.orig once before
+// the first modification; if that backup fails we ABORT (archive untouched). On any
+// stream/IO/rename failure the .tmp is removed and the original is left intact.
+// This is the OOM-safe replacement for the old per-file RES_Parse → RES_WriteEntries path:
+// the 201MB textures archive is never held in memory (peak = one entry).
+static bool AddEntriesToRes(const std::string& resPath,
+                            const std::vector<RESEntry>& wanted,
+                            std::string& err,
+                            const std::function<void(size_t,size_t)>& onProgress = nullptr) {
     auto equalsCI = [](const std::string& a, const std::string& b) {
         if (a.size() != b.size()) return false;
         for (size_t i = 0; i < a.size(); ++i)
             if (std::tolower((unsigned char)a[i]) != std::tolower((unsigned char)b[i])) return false;
         return true;
     };
-    for (const auto& e : res.entries) {
-        if (equalsCI(e.name, entryName)) return true;  // already present -> no-op
+
+    // Pass 1: stream source to find which wanted names are already present.
+    std::vector<bool> present(wanted.size(), false);
+    std::string ferr;
+    if (!RES_ForEachEntry(resPath,
+            [&](const std::string& name, const uint8_t*, size_t) {
+                for (size_t i = 0; i < wanted.size(); ++i)
+                    if (!present[i] && equalsCI(name, wanted[i].name)) present[i] = true;
+            }, ferr)) {
+        err = "membership scan failed: " + ferr;
+        return false;
     }
+
+    std::vector<RESEntry> toAdd;
+    for (size_t i = 0; i < wanted.size(); ++i)
+        if (!present[i]) toAdd.push_back(wanted[i]);
+    if (toAdd.empty()) return true;  // everything already present -> no-op success
 
     const std::string bak = resPath + ".orig";
     if (!std::filesystem::exists(bak)) {
@@ -976,14 +991,26 @@ static bool AddFileToRes(const std::string& resPath, const std::string& entryNam
         }
     }
 
-    res.entries.push_back(RESEntry{ entryName, bytes });
-    if (!RES_WriteEntries(res.entries, resPath, err)) {
+    const std::string tmp = resPath + ".tmp";
+    if (!RES_StreamAppend(resPath, toAdd, tmp, err, onProgress)) {
+        std::error_code rmec;
+        std::filesystem::remove(tmp, rmec);
+        return false;
+    }
+
+    std::error_code rec;
+    std::filesystem::rename(tmp, resPath, rec);
+    if (rec) {
+        err = "atomic replace failed (original untouched): " + rec.message();
+        std::error_code rmec;
+        std::filesystem::remove(tmp, rmec);
         return false;
     }
     return true;
 }
 
-bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId) {
+bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
+                                          const std::function<void(size_t,size_t)>& onProgress) {
     const std::string levelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
         std::to_string(current_level_);
     const std::string modelsRes   = levelDir + "\\models\\level"   + std::to_string(current_level_) + ".res";
@@ -1008,20 +1035,22 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId) {
         return false;
     }
 
-    // 1. Pack the model into the models archive with the in-game entry name.
+    // 1. Pack the model into the models archive (single batched streaming append).
     const std::string modelEntry = "LOCAL:models/" + modelId + ".mef";
     std::string err;
-    if (!AddFileToRes(modelsRes, modelEntry, mefBytes, err)) {
+    if (!AddEntriesToRes(modelsRes, { RESEntry{ modelEntry, mefBytes } }, err)) {
         Logger::Get().Log(LogLevel::ERR, "[Renderer] AddModelToLevelRes: model add failed: " + err);
         return false;
     }
     Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: model " + modelId + " -> " + modelsRes);
 
-    // 2. Pack each of the model's textures into the textures archive.
+    // 2. Pack the model's textures into the textures archive in ONE batched streaming
+    //    append (the textures .res is 200MB+ — stream it once, never per-texture, and
+    //    never RES_Parse it into RAM).
     const bool haveTexRes = std::filesystem::exists(texturesRes);
-    bool warnedNoTexRes = false;
     int texAdded = 0;
     std::vector<std::pair<std::string, std::vector<uint8_t>>> looseTextures;  // for editor-content copy
+    std::vector<RESEntry> texEntries;
     for (const std::string& texId : GetTextureIdsForModel(modelId)) {
         std::string texPath = FindTextureFile(texId);
         if (texPath.empty()) {
@@ -1032,22 +1061,24 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId) {
         std::ifstream tf(texPath, std::ios::binary);
         std::vector<uint8_t> texBytes((std::istreambuf_iterator<char>(tf)), std::istreambuf_iterator<char>());
         if (texBytes.empty()) continue;
+        looseTextures.emplace_back(texId, texBytes);
+        texEntries.push_back(RESEntry{ "LOCAL:textures/" + texId + ".tex", std::move(texBytes) });
+    }
 
+    if (!texEntries.empty()) {
         if (!haveTexRes) {
-            if (!warnedNoTexRes) {
-                Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: textures archive missing, "
-                    "skipping texture packing: " + texturesRes);
-                warnedNoTexRes = true;
-            }
-            continue;
-        }
-        std::string terr;
-        if (AddFileToRes(texturesRes, "LOCAL:textures/" + texId + ".tex", texBytes, terr)) {
-            ++texAdded;
-            looseTextures.emplace_back(texId, std::move(texBytes));
+            Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: textures archive missing, "
+                "skipping texture packing: " + texturesRes);
+            looseTextures.clear();
         } else {
-            Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: texture add failed for " +
-                texId + ": " + terr);
+            std::string terr;
+            if (AddEntriesToRes(texturesRes, texEntries, terr, onProgress)) {
+                texAdded = (int)texEntries.size();
+            } else {
+                Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: texture pack failed for " +
+                    modelId + ": " + terr);
+                looseTextures.clear();
+            }
         }
     }
 

@@ -28,6 +28,22 @@ static void WriteFourCC(std::ostream& os, uint32_t val) {
     WriteU32LE(os, val);
 }
 
+// Shared ILFF chunk encoder used by RES_WriteEntries and RES_StreamAppend so the
+// two functions never drift on the on-disk chunk format. Writes:
+//   fourcc | uint32 dataSize | uint32 align(4) | uint32 skip | data | pad-to-4.
+// `lastBody` forces skip=0 (end-of-archive sentinel) for the very last BODY chunk.
+static void WriteResChunk(std::ostream& os, uint32_t fourcc,
+                          const uint8_t* data, uint32_t dataSize, bool lastBody) {
+    uint32_t padding = (4 - (dataSize % 4)) % 4;
+    uint32_t skip = lastBody ? 0 : (16 + dataSize + padding);
+    WriteFourCC(os, fourcc);
+    WriteU32LE(os, dataSize);
+    WriteU32LE(os, 4);     // align
+    WriteU32LE(os, skip);
+    if (dataSize) os.write(reinterpret_cast<const char*>(data), dataSize);
+    if (padding) { char pad[3] = {0}; os.write(pad, padding); }
+}
+
 bool RES_GenerateQSC(const std::string& inputDir, const std::string& outQscPath, const std::string& outResName, std::string& error) {
     std::ofstream out(outQscPath);
     if (!out) {
@@ -202,17 +218,6 @@ bool RES_WriteEntries(const std::vector<RESEntry>& entries, const std::string& o
     WriteU32LE(os, 0);   // skip
     WriteFourCC(os, FOURCC_IRES);
 
-    auto writeChunk = [&](uint32_t fourcc, const uint8_t* data, uint32_t dataSize) {
-        uint32_t padding = (4 - (dataSize % 4)) % 4;
-        uint32_t skip = 16 + dataSize + padding;
-        WriteFourCC(os, fourcc);
-        WriteU32LE(os, dataSize);
-        WriteU32LE(os, 4);     // align
-        WriteU32LE(os, skip);
-        if (dataSize) os.write(reinterpret_cast<const char*>(data), dataSize);
-        if (padding) { char pad[3] = {0}; os.write(pad, padding); }
-    };
-
     for (size_t ei = 0; ei < entries.size(); ++ei) {
         const auto& e = entries[ei];
         bool isLast = (ei == entries.size() - 1);
@@ -220,27 +225,97 @@ bool RES_WriteEntries(const std::vector<RESEntry>& entries, const std::string& o
         // NAME chunk: null-terminated name.
         std::vector<uint8_t> nameBytes(e.name.begin(), e.name.end());
         nameBytes.push_back(0);
-        writeChunk(FOURCC_NAME, nameBytes.data(), (uint32_t)nameBytes.size());
+        WriteResChunk(os, FOURCC_NAME, nameBytes.data(), (uint32_t)nameBytes.size(), false);
 
         // BODY chunk. The LAST BODY must have skip=0 — the game parser uses
         // this as the end-of-archive sentinel. All earlier BODY chunks carry
         // the normal skip so the parser advances to the next NAME chunk.
-        if (isLast) {
-            uint32_t bodySize = (uint32_t)e.data.size();
-            uint32_t padding = (4 - (bodySize % 4)) % 4;
-            WriteFourCC(os, FOURCC_BODY);
-            WriteU32LE(os, bodySize);
-            WriteU32LE(os, 4);   // align
-            WriteU32LE(os, 0);   // skip=0 → end of archive
-            if (bodySize) os.write(reinterpret_cast<const char*>(e.data.data()), bodySize);
-            if (padding) { char pad[3] = {0}; os.write(pad, padding); }
-        } else {
-            writeChunk(FOURCC_BODY, e.data.data(), (uint32_t)e.data.size());
-        }
+        WriteResChunk(os, FOURCC_BODY, e.data.data(), (uint32_t)e.data.size(), isLast);
     }
+
+    // Verify the stream survived all writes before patching the header.
+    if (!os.good()) { error = "write failed (stream error) for " + outPath; return false; }
 
     uint32_t finalSize = static_cast<uint32_t>(os.tellp());
     os.seekp(4, std::ios::beg);
     WriteU32LE(os, finalSize);
+    os.flush();
+    if (!os.good()) { error = "header patch/flush failed for " + outPath; return false; }
+    return true;
+}
+
+bool RES_StreamAppend(const std::string& srcResPath,
+                      const std::vector<RESEntry>& newEntries,
+                      const std::string& outPath,
+                      std::string& error,
+                      const std::function<void(size_t,size_t)>& onProgress) {
+    if (newEntries.empty()) {
+        error = "RES_StreamAppend requires at least one new entry";
+        return false;
+    }
+
+    // First pass: count source entries so onProgress totals are accurate. This only
+    // streams chunk headers' worth of work via RES_ForEachEntry (peak RAM = one entry).
+    size_t srcCount = 0;
+    std::string ferr;
+    if (!RES_ForEachEntry(srcResPath,
+            [&](const std::string&, const uint8_t*, size_t) { ++srcCount; }, ferr)) {
+        error = "could not read source archive: " + ferr;
+        return false;
+    }
+
+    std::ofstream os(outPath, std::ios::binary);
+    if (!os) { error = "Failed to create output file: " + outPath; return false; }
+
+    // ILFF header (size patched at end).
+    WriteFourCC(os, FOURCC_ILFF);
+    WriteU32LE(os, 0);   // size — patched below
+    WriteU32LE(os, 4);   // align
+    WriteU32LE(os, 0);   // skip
+    WriteFourCC(os, FOURCC_IRES);
+
+    const size_t total = srcCount + newEntries.size();
+    size_t done = 0;
+
+    // Second pass: stream every source entry through. None of these is the archive's
+    // final BODY (the appended newEntries follow), so all get a NORMAL skip.
+    bool streamFailed = false;
+    if (!RES_ForEachEntry(srcResPath,
+            [&](const std::string& name, const uint8_t* data, size_t size) {
+                if (streamFailed) return;
+                std::vector<uint8_t> nameBytes(name.begin(), name.end());
+                nameBytes.push_back(0);
+                WriteResChunk(os, FOURCC_NAME, nameBytes.data(), (uint32_t)nameBytes.size(), false);
+                WriteResChunk(os, FOURCC_BODY, data, (uint32_t)size, false);
+                if (!os.good()) { streamFailed = true; return; }
+                if (onProgress) onProgress(++done, total);
+            }, ferr)) {
+        error = "source stream failed: " + ferr;
+        return false;
+    }
+    if (streamFailed || !os.good()) {
+        error = "write failed while streaming source entries to " + outPath;
+        return false;
+    }
+
+    // Append the new entries; the very LAST BODY overall gets skip=0 (end sentinel).
+    for (size_t i = 0; i < newEntries.size(); ++i) {
+        const auto& e = newEntries[i];
+        bool isLast = (i == newEntries.size() - 1);
+        std::vector<uint8_t> nameBytes(e.name.begin(), e.name.end());
+        nameBytes.push_back(0);
+        WriteResChunk(os, FOURCC_NAME, nameBytes.data(), (uint32_t)nameBytes.size(), false);
+        WriteResChunk(os, FOURCC_BODY, e.data.data(), (uint32_t)e.data.size(), isLast);
+        if (!os.good()) { error = "write failed appending new entry to " + outPath; return false; }
+        if (onProgress) onProgress(++done, total);
+    }
+
+    if (!os.good()) { error = "write failed (stream error) for " + outPath; return false; }
+
+    uint32_t finalSize = static_cast<uint32_t>(os.tellp());
+    os.seekp(4, std::ios::beg);
+    WriteU32LE(os, finalSize);
+    os.flush();
+    if (!os.good()) { error = "header patch/flush failed for " + outPath; return false; }
     return true;
 }

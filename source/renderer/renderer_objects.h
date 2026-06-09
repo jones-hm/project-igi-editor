@@ -53,7 +53,8 @@ public:
     // Copy the loose <modelId>.mef into this level's .res archive (with .orig backup),
     // so a model that renders in-editor but is absent from the packed archive becomes
     // visible in-game. Returns true on success (or if already present). (issue 2)
-    bool AddModelToLevelRes(const std::string& modelId);
+    bool AddModelToLevelRes(const std::string& modelId,
+                            const std::function<void(size_t,size_t)>& onProgress = nullptr);
     bool UpdateAttaLocalPosInMef(const std::string& parentModelId, bool isBuilding, int recordIndex, const glm::vec3& newLocalPos, const glm::mat3& newLocalRot);
     // Stable key "model@roundedWorldPos" used to match an ATTA against an EditRigidObj.
     static std::string AttaOccupancyKey(const std::string& modelId, const glm::vec3& worldPos);
