@@ -56,6 +56,8 @@ public:
 	bool					GetPauseMode() const;
 	void					SetEditBrush(int brush);
 	int						GetEditBrush() const;
+	void					AdjustBrushRadius(double factor);   // multiply brush radius, clamp+status
+	void					AdjustBrushStrength(double delta);  // add to brush strength, clamp+status
 	void					ToggleShowHUD();
 	bool					GetShowHUD() const;
 	void					SetShowHUD(bool show);

@@ -2019,6 +2019,9 @@ static constexpr movement_key_s MOVEMENT_KEYS[] = {
 // sharing a prefix is reachable. Triggered by Ctrl+Space AND Tab (Tab is reliably delivered
 // by GLUT; Ctrl+Space is sometimes dropped). Returns true if it completed a token.
 bool App::InlineAutocomplete() {
+	Logger::Get().Log(LogLevel::INFO, "[Autocomplete] triggered: field=" +
+		std::to_string(prop_text_edit_field_) + " keywords=" + std::to_string(autocomplete_keywords_.size()) +
+		" buf='" + prop_text_buf_ + "' caret=" + std::to_string(prop_text_caret_));
 	if (prop_text_edit_field_ == -1) {
 		status_message_ = "Autocomplete: click a text box first";
 		return false;
@@ -3374,26 +3377,10 @@ void App::DispatchEventBindings() {
 		static const char* kNames[] = {"Raise","Lower","Soften","Flatten"};
 		status_message_ = std::string("Terrain brush: ") + kNames[edit_brush_];
 	}
-	if (Check("TerrainBrushRadiusDec")) {
-		edit_brush_radius_ *= 0.75;
-		if (edit_brush_radius_ < 5000.0) edit_brush_radius_ = 5000.0;
-		status_message_ = "Brush radius: " + std::to_string((long)edit_brush_radius_);
-	}
-	if (Check("TerrainBrushRadiusInc")) {
-		edit_brush_radius_ *= 1.25;
-		if (edit_brush_radius_ > 250000.0) edit_brush_radius_ = 250000.0;
-		status_message_ = "Brush radius: " + std::to_string((long)edit_brush_radius_);
-	}
-	if (Check("TerrainBrushStrengthDec")) {
-		edit_brush_strength_ -= 1.0;
-		if (edit_brush_strength_ < 1.0) edit_brush_strength_ = 1.0;
-		status_message_ = "Brush strength: " + std::to_string((long)edit_brush_strength_);
-	}
-	if (Check("TerrainBrushStrengthInc")) {
-		edit_brush_strength_ += 1.0;
-		if (edit_brush_strength_ > 100.0) edit_brush_strength_ = 100.0;
-		status_message_ = "Brush strength: " + std::to_string((long)edit_brush_strength_);
-	}
+	if (Check("TerrainBrushRadiusDec"))   AdjustBrushRadius(0.8);
+	if (Check("TerrainBrushRadiusInc"))   AdjustBrushRadius(1.25);
+	if (Check("TerrainBrushStrengthDec")) AdjustBrushStrength(-1.0);
+	if (Check("TerrainBrushStrengthInc")) AdjustBrushStrength(1.0);
 }
 
 
@@ -4204,11 +4191,31 @@ bool App::GetPauseMode() const {
 }
 
 void App::SetEditBrush(int brush) {
+	if (brush < 0) brush = 0;
+	if (brush > 3) brush = 3;
 	edit_brush_ = brush;
+	static const char* kNames[] = {"Raise", "Lower", "Soften", "Flatten"};
+	status_message_ = std::string("Terrain brush: ") + kNames[edit_brush_] +
+		"  (radius " + std::to_string((long)edit_brush_radius_) +
+		", strength " + std::to_string((long)edit_brush_strength_) + ")";
 }
 
 int App::GetEditBrush() const {
 	return edit_brush_;
+}
+
+void App::AdjustBrushRadius(double factor) {
+	edit_brush_radius_ *= factor;
+	if (edit_brush_radius_ < 5000.0)   edit_brush_radius_ = 5000.0;
+	if (edit_brush_radius_ > 250000.0) edit_brush_radius_ = 250000.0;
+	status_message_ = "Brush radius: " + std::to_string((long)edit_brush_radius_);
+}
+
+void App::AdjustBrushStrength(double delta) {
+	edit_brush_strength_ += delta;
+	if (edit_brush_strength_ < 1.0)   edit_brush_strength_ = 1.0;
+	if (edit_brush_strength_ > 100.0) edit_brush_strength_ = 100.0;
+	status_message_ = "Brush strength: " + std::to_string((long)edit_brush_strength_);
 }
 
 void App::SetSelectedObjectScale(float scale) {
