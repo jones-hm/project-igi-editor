@@ -334,10 +334,15 @@ public:
 		bool show_hud_;
 		std::string status_msg_;
 		bool pause_mode_;
+		int pause_active_input_ = -1;
+		std::string pause_level_input_;
+		std::string pause_search_input_;
+		bool pause_terrain_expanded_ = false;
 		bool show_debug_;
 		bool show_help_;
 		bool edit_mode_;
 		bool terrain_edit_enabled_;
+		int terrain_mod_options_ = 0;
 		int selected_object_index_;
 		int hover_object_index_;
 		int hover_tree_index_;

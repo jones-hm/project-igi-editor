@@ -1496,8 +1496,8 @@ void Renderer::Draw(const draw_params_s &params,
     // SPR sprite cursors are drawn by App::DrawCustomCursor() — no GLUT overlays here
 
     if (task_tree_view.pause_mode_) {
-      const int menu_w = 380;
-      const int menu_h = 280;
+      const int menu_w = 460;
+      const int menu_h = 480;
       const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
       const int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
       const int viewport_h = params.view_define_->viewport_height_;
@@ -1542,10 +1542,44 @@ void Renderer::Draw(const draw_params_s &params,
       char font_btn_label[32];
       snprintf(font_btn_label, sizeof(font_btn_label), "Font: %s",
                Config::Get().useEditorFont ? "Editor" : "System");
-      const char *btn_labels[] = {"Resume", font_btn_label,
-                                  "Reset Level", "Save Level", "Quit"};
-      const int NUM_BTNS = 5;
-      const int FONT_ROW = 1;
+      int mods = task_tree_view.terrain_mod_options_;
+      bool tex = (mods & TERRAIN_TEXTURE_MOD) != 0;
+      bool hgt = (mods & TERRAIN_HEIGHT_MOD) != 0;
+      bool dsc = (mods & TERRAIN_DISCARD_MOD) != 0;
+
+      char bufTex[32], bufHgt[32], bufDsc[32];
+      snprintf(bufTex, sizeof(bufTex), "  [%c] Texture", tex ? 'X' : ' ');
+      snprintf(bufHgt, sizeof(bufHgt), "  [%c] Height", hgt ? 'X' : ' ');
+      snprintf(bufDsc, sizeof(bufDsc), "  [%c] Discard", dsc ? 'X' : ' ');
+
+      std::vector<const char*> btn_labels;
+      btn_labels.push_back("Resume");
+      const int FONT_ROW = btn_labels.size();
+      btn_labels.push_back(font_btn_label);
+      const int LEVEL_ROW = btn_labels.size();
+      btn_labels.push_back("Select Level");
+      const int SEARCH_ROW = btn_labels.size();
+      btn_labels.push_back("Model Search");
+      const int TERRAIN_HEADER_ROW = btn_labels.size();
+      
+      bool exp = task_tree_view.pause_terrain_expanded_;
+      btn_labels.push_back(exp ? "Terrain Options: [-]" : "Terrain Options: [+]");
+      
+      int TERRAIN_TEX_ROW = -1, TERRAIN_HGT_ROW = -1, TERRAIN_DSC_ROW = -1;
+      if (exp) {
+        TERRAIN_TEX_ROW = btn_labels.size(); btn_labels.push_back(bufTex);
+        TERRAIN_HGT_ROW = btn_labels.size(); btn_labels.push_back(bufHgt);
+        TERRAIN_DSC_ROW = btn_labels.size(); btn_labels.push_back(bufDsc);
+      }
+      
+      const int RESET_ROW = btn_labels.size();
+      btn_labels.push_back("Reset Level");
+      const int SAVE_ROW = btn_labels.size();
+      btn_labels.push_back("Save Level");
+      const int QUIT_ROW = btn_labels.size();
+      btn_labels.push_back("Quit");
+
+      const int NUM_BTNS = btn_labels.size();
 
       for (int i = 0; i < NUM_BTNS; ++i) {
         int screen_btn_y = screen_menu_top + 85 + i * 35;
@@ -1590,6 +1624,49 @@ void Renderer::Draw(const draw_params_s &params,
           sbox(minus_x, btn_w, "-");
           sbox(box_x,   sz_box_w, szbuf);
           sbox(plus_x,  btn_w, "+");
+        } else if (i == LEVEL_ROW || i == SEARCH_ROW) {
+          // Input Box row
+          const int label_w = 110;
+          const int box_w = 200;
+          const int gap = 10;
+          int gx = menu_x + (menu_w - (label_w + gap + box_w)) / 2;
+          
+          draw_text_sys(gx, screen_btn_y, btn_labels[i],
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+                        
+          int box_x = gx + label_w + gap;
+          int row_top = gl_btn_y - 14, row_bot = gl_btn_y + 10;
+          
+          bool is_active = (task_tree_view.pause_active_input_ == (i == LEVEL_ROW ? 0 : 1));
+          
+          if (is_active) glColor3f(0.0f, 1.0f, 0.0f);
+          else glColor3f(0.0f, 0.5f, 0.0f);
+          
+          glBegin(GL_LINE_LOOP);
+          glVertex2i(box_x, row_bot); glVertex2i(box_x + box_w, row_bot);
+          glVertex2i(box_x + box_w, row_top); glVertex2i(box_x, row_top);
+          glEnd();
+          
+          std::string buf = (i == LEVEL_ROW) ? task_tree_view.pause_level_input_ : task_tree_view.pause_search_input_;
+          if (is_active && (clock() / 500) % 2 == 0) buf += "_"; // cursor blink
+          draw_text_sys(box_x + 5, screen_btn_y, buf.c_str(), 1.0f, 1.0f, 1.0f);
+
+        } else if (i == TERRAIN_HEADER_ROW) {
+          draw_text_sys(menu_x + menu_w / 2 - 50, screen_btn_y, btn_labels[i], 0.0f, 0.8f, 0.0f);
+        } else if (i == TERRAIN_TEX_ROW || i == TERRAIN_HGT_ROW || i == TERRAIN_DSC_ROW) {
+          if (hovered) {
+            glEnable(GL_BLEND);
+            glColor4f(0.0f, 0.8f, 0.0f, 0.35f);
+            glBegin(GL_QUADS);
+            glVertex2i(menu_x, gl_btn_y - 15);
+            glVertex2i(menu_x + menu_w, gl_btn_y - 15);
+            glVertex2i(menu_x + menu_w, gl_btn_y + 15);
+            glVertex2i(menu_x, gl_btn_y + 15);
+            glEnd();
+            glDisable(GL_BLEND);
+          }
+          draw_text_sys(menu_x + menu_w / 2 - 40, screen_btn_y, btn_labels[i],
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
         } else {
           if (hovered) {
             glEnable(GL_BLEND);

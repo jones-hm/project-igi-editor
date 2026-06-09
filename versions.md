@@ -1,6 +1,6 @@
 # Project IGI Editor - Version History
 
-## Current Version: 2.8.0
+## Current Version: 2.9.0
 
 ---
 
@@ -8,7 +8,8 @@
 
 | Version | Release Date | Status | Major Features |
 |---------|--------------|--------|-----------------|
-| **2.8.0** | 2026-06-04 | Latest | Inline AI Script Editor, mini-notepad with scrolling & arrow keys, autocomplete everywhere, find-shortcut fixes |
+| **2.9.0** | 2026-06-09 | Latest | New Terrain editor, support for foreign models from other levels, pause menu terrain expand/collapse fix, immediate 3D brush rings refresh |
+| **2.8.0** | 2026-06-04 | Stable | Inline AI Script Editor, mini-notepad with scrolling & arrow keys, autocomplete everywhere, find-shortcut fixes |
 | **2.7.0** | 2026-06-04 | Stable | 3D Model Viewer, Autocomplete Task, exact keybinding match & task tree fixes |
 | **2.6.0** | 2026-06-03 | Stable | Properties Editor UI, Attachments support, SplineObjs & Font/Sprite fixes |
 | **2.5.0** | 2026-06-02 | Stable | Property panel scrolling, child task fields display, vertical scroll with scrollbar |
@@ -28,6 +29,30 @@
 ---
 
 ## Release Notes by Version
+
+### 2.9.0 — New Terrain Editor & Foreign Models Support
+**Released:** June 9, 2026
+
+**Overview:** This release introduces a new Terrain editor, allows loading and adding foreign models from different levels, and fixes bugs including pause menu list expand/collapse and immediate 3D viewport rings refresh.
+
+**Key Improvements:**
+- 🗺️ **New Terrain Editor** — Enhanced level design capabilities with the new terrain editor interface and brush controls.
+- 📦 **Foreign Model Support** — Added the ability to import and add foreign models from different game levels directly into the current level.
+- 🔧 **Pause Menu & UI Bug Fixes** — Fixed the list in Terrain Options in the Pause menu to properly expand/collapse, and forced immediate viewport redisplay so the 3D brush rings show up instantly when selecting terrain via right-click.
+
+**Files Modified:**
+- `source/app.cpp` — Added pause menu click handlers, OnDisplay refresh trigger
+- `source/app.h` — Updated struct states
+- `source/renderer/renderer.cpp` — Updated rendering params
+- `source/renderer/renderer.h` — Expanded rendering structs
+- `version` — Bumped version string to 2.9.0
+- `versions.md` — Updated version documentation
+- `CHANGELOGS.md` — Added release notes
+- `README.md` — Added feature description
+
+**Compatibility:** Backward compatible.
+
+---
 
 ### 2.8.0 — Inline AI Script Editor & Autocomplete Overhaul
 **Released:** June 4, 2026

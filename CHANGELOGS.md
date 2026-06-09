@@ -1,5 +1,20 @@
 # Changelogs
 
+## 2.9.0 — New Terrain Editor, Foreign Models Support & UI Fixes
+This release introduces a new Terrain editor, support for loading and adding foreign models from other levels, and critical bug fixes to the pause menu layout and viewport interaction.
+
+### 🗺️ New Terrain Editor
+- **Interactive Terrain Tools** — Enhanced level design capabilities with the new terrain editor interface and brush controls.
+
+### 📦 Foreign Model Support
+- **Cross-Level Assets** — Added the ability to import and add foreign models from different game levels directly into the current level.
+
+### 🔧 Pause Menu & UI Bug Fixes
+- **Terrain Options Expand/Collapse** — Fixed the list in Terrain Options in the Pause menu to properly expand and collapse when clicked.
+- **Immediate 3D Rings Refresh** — When terrain is selected via right-click, the 3D brush rings now display immediately in the viewport without delay by forcing immediate frame redisplays.
+
+---
+
 ## 2.8.0 — Inline AI Script Editor, Mini-Notepad, Autocomplete Overhaul & Find Fixes
 This release delivers a full inline AI script editor embedded inside the property panel, a proper mini-notepad text editor with scrolling and arrow key navigation, a global autocomplete fix, and three keyboard shortcut corrections in the find system.
 

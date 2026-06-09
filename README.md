@@ -94,6 +94,7 @@ With the release of our premium modding features, we have expanded our workspace
 - **3D Object Placement & Manipulation**: Advanced 6-DOF controls for placing buildings, props, terminals, doors, cameras, and actors.
 - **IGI 2 Style Controls**: Seamless object translation and rotation using standard mouse-drag modifiers (Shift, Ctrl, A, B, G).
 - **Automated Path & Sync Pipeline**: Automatically handles compiler syncing, path mapping, and safe directory cleaning.
+- **Foreign Model Support**: Ability to load, import, and add foreign models from other levels directly into the active level workspace.
 
 ### Current Testing Status
 - **Building Editor**: Working - fully tested with Building objects.

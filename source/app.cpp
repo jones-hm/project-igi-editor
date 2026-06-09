@@ -1016,7 +1016,7 @@ void App::OnWindowResize(int width, int height) {
 }
 
 void App::OnDisplay() {
-	// ignore
+	Frame(0.0f);
 }
 
 // AI text editor helpers — must be defined before Input_OnMouse and Input_OnSpecial.
@@ -1253,24 +1253,40 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 
 			if (pause_mode_) {
 				// *** MUST match renderer.cpp pause menu constants exactly ***
-				const int menu_w = 380;
-				const int menu_h = 280;
+				const int menu_w = 460;
+				const int menu_h = 480;
 				const int menu_x = (window_state_.viewport_width_  - menu_w) / 2;
 				const int screen_menu_top = (window_state_.viewport_height_ - menu_h) / 2;
 
-				// Buttons start at screen_menu_top + 85, spaced 35px
-			// Visual quad spans btn_y-12 to btn_y+16 in screen coords; use ±18 for generous hit area
 				auto btn_hit = [&](int idx, int mouse_y) -> bool {
 					int btn_y = screen_menu_top + 85 + idx * 35;
-					return (mouse_y >= btn_y - 18 && mouse_y <= btn_y + 18);
+					return (mouse_y >= btn_y - 15 && mouse_y <= btn_y + 15);
 				};
 
 				if (x >= menu_x && x <= menu_x + menu_w &&
 				    y >= screen_menu_top && y <= screen_menu_top + menu_h) {
 					mouse_state_.left_button_down_ = false;
-					if      (btn_hit(0, y)) { TogglePauseMenu(); }                    // Resume
-					else if (btn_hit(1, y)) {                                         // Font row: toggle + [-] size [+]
-						// Sub-region X bounds MUST match renderer.cpp centered font row layout.
+					// Deselect text boxes by default if we click anywhere in menu
+					int clicked_input = -1;
+
+					int btn_idx = 0;
+					int RESUME_ROW = btn_idx++;
+					int FONT_ROW = btn_idx++;
+					int LEVEL_ROW = btn_idx++;
+					int SEARCH_ROW = btn_idx++;
+					int TERRAIN_HEADER_ROW = btn_idx++;
+					int TERRAIN_TEX_ROW = -1, TERRAIN_HGT_ROW = -1, TERRAIN_DSC_ROW = -1;
+					if (pause_terrain_expanded_) {
+						TERRAIN_TEX_ROW = btn_idx++;
+						TERRAIN_HGT_ROW = btn_idx++;
+						TERRAIN_DSC_ROW = btn_idx++;
+					}
+					int RESET_ROW = btn_idx++;
+					int SAVE_ROW = btn_idx++;
+					int QUIT_ROW = btn_idx++;
+
+					if      (btn_hit(RESUME_ROW, y)) { TogglePauseMenu(); }                    // Resume
+					else if (btn_hit(FONT_ROW, y)) {                                         // Font row: toggle + [-] size [+]
 						const int sz_box_w = 34, btn_w = 22, gap = 6, label_w = 96, label_gap = 16;
 						const int controls_w = btn_w + gap + sz_box_w + gap + btn_w;
 						const int group_w = label_w + label_gap + controls_w;
@@ -1279,20 +1295,27 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 						int box_x   = minus_x + btn_w + gap;
 						int plus_x  = box_x + sz_box_w + gap;
 						int& fs = Config::Get().systemFontSize;
-						if (x >= minus_x && x < minus_x + 22) {        // [-] decrease by 1
-							fs = std::max(8, fs - 1);
-							Config::Save();
-						} else if (x >= plus_x && x < plus_x + 22) {   // [+] increase by 1
-							fs = std::min(32, fs + 1);
-							Config::Save();
-						} else if (x < minus_x) {                      // left label: toggle font type
-							Config::Get().useEditorFont = !Config::Get().useEditorFont;
-							Config::Save();
+						if (x >= minus_x && x < minus_x + 22) {
+							fs = std::max(8, fs - 1); Config::Save();
+						} else if (x >= plus_x && x < plus_x + 22) {
+							fs = std::min(32, fs + 1); Config::Save();
+						} else if (x < minus_x) {
+							Config::Get().useEditorFont = !Config::Get().useEditorFont; Config::Save();
 						}
 					}
-					else if (btn_hit(2, y)) { ResetLevel(); TogglePauseMenu(); }      // Reset Level
-					else if (btn_hit(3, y)) { SaveCurrentLevel(); }                   // Save Level
-					else if (btn_hit(4, y)) { exit(0); }                              // Quit
+					else if (btn_hit(LEVEL_ROW, y)) { clicked_input = 0; }                    // Select Level Input
+					else if (btn_hit(SEARCH_ROW, y)) { clicked_input = 1; }                    // Model Search Input
+					else if (btn_hit(TERRAIN_HEADER_ROW, y)) { pause_terrain_expanded_ = !pause_terrain_expanded_; }
+					else if (pause_terrain_expanded_ && btn_hit(TERRAIN_TEX_ROW, y)) { ToggleTerrainModOption(1); }            // Texture
+					else if (pause_terrain_expanded_ && btn_hit(TERRAIN_HGT_ROW, y)) { ToggleTerrainModOption(2); }            // Height
+					else if (pause_terrain_expanded_ && btn_hit(TERRAIN_DSC_ROW, y)) { ToggleTerrainModOption(4); }            // Discard
+					else if (btn_hit(RESET_ROW, y)) { ResetLevel(); TogglePauseMenu(); }      // Reset Level
+					else if (btn_hit(SAVE_ROW, y)) { SaveCurrentLevel(); }                   // Save Level
+					else if (btn_hit(QUIT_ROW,y)) { exit(0); }                              // Quit
+
+					pause_active_input_ = clicked_input;
+				} else {
+					pause_active_input_ = -1; // Clicked outside menu
 				}
 				return; // Block all other interactions while paused
 			}
@@ -1401,6 +1424,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			LoadAIScriptForSelected();
 		} else {
 			prop_editor_open_ = false;
+			// Right Click on empty space toggles terrain editor
 			if (!terrain_edit_enabled_) {
 				SetTerrainEditEnabled(true);
 			}
@@ -2117,13 +2141,72 @@ bool App::InlineAutocomplete() {
 void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	auto& config = Config::Get();
 
-	// Autocomplete Ctrl combos — intercept before prop text editor so they work while editing.
-	// Detect Ctrl via GLUT *and* GetAsyncKeyState: GLUT modifiers are occasionally not
-	// reported for Ctrl+Space (key 0/space), which silently dropped inline autocomplete.
 	bool ctrlDown = (glutGetModifiers() & GLUT_ACTIVE_CTRL) != 0 ||
 	                (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
 	bool shiftDown = (glutGetModifiers() & GLUT_ACTIVE_SHIFT) != 0 ||
 	                 (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+
+	if (ctrlDown && (key == 8 || key == 'h' || key == 'H')) { // CTRL+H
+		ToggleOverlayWireframe();
+		return;
+	}
+
+	if (pause_mode_) {
+		if (pause_active_input_ == 0 || pause_active_input_ == 1) {
+			std::string& buf = (pause_active_input_ == 0) ? pause_level_input_ : pause_search_input_;
+			if (key == 27) { // ESC: clear focus
+				pause_active_input_ = -1;
+				return;
+			}
+			if (key == 13) { // Enter: submit
+				if (pause_active_input_ == 0) {
+					// Level input
+					if (!buf.empty()) {
+						int lvl = std::atoi(buf.c_str());
+						if (lvl >= 1 && lvl <= 14) {
+							LoadLevel(lvl);
+							TogglePauseMenu(); // Close pause menu on load
+						} else {
+							Logger::Get().Log(LogLevel::ERR, "Level must be between 1 and 14.");
+						}
+					}
+				} else if (pause_active_input_ == 1) {
+					// Model Search input
+					if (!buf.empty()) {
+						bool isId = true;
+						if (buf.length() != 8 || buf[3] != '_' || buf[6] != '_') isId = false;
+						for (int i = 0; i < buf.length(); i++) {
+							if (i != 3 && i != 6 && !isdigit(buf[i])) isId = false;
+						}
+						
+						if (isId) {
+							SearchModelById(buf);
+						} else {
+							SearchModelByName(buf);
+						}
+						TogglePauseMenu(); // Close pause menu to show result
+					}
+				}
+				pause_active_input_ = -1;
+				return;
+			}
+			if (key == 8) { // Backspace
+				if (!buf.empty()) buf.pop_back();
+				return;
+			}
+			if (key >= 32 && key < 127) {
+				buf += (char)key;
+				return;
+			}
+		}
+		// If we are in pause mode, we shouldn't process other keys except maybe ESC to unpause (already handled by DispatchEventBindings or explicitly)
+		// But don't block ESC so we can close menu.
+		if (key != 27) return; 
+	}
+
+	// Autocomplete Ctrl combos — intercept before prop text editor so they work while editing.
+	// Detect Ctrl via GLUT *and* GetAsyncKeyState: GLUT modifiers are occasionally not
+	// reported for Ctrl+Space (key 0/space), which silently dropped inline autocomplete.
 	if (ctrlDown) {
 		if (key == 14 && !shiftDown) { // Ctrl+N only (not Ctrl+Shift+N — that's TaskFindByTaskNote)
 			// Only open when a property text box is focused, so Enter knows which
@@ -3667,10 +3750,15 @@ void App::Frame(float delta_seconds) {
 			.show_hud_ = true,
 			.status_msg_ = status_message_,
 			.pause_mode_ = true,
+			.pause_active_input_ = pause_active_input_,
+			.pause_level_input_ = pause_level_input_,
+			.pause_search_input_ = pause_search_input_,
+			.pause_terrain_expanded_ = pause_terrain_expanded_,
 			.show_debug_ = show_debug_,
 			.show_help_ = show_help_,
 			.edit_mode_ = edit_mode_,
 			.terrain_edit_enabled_ = terrain_edit_enabled_,
+			.terrain_mod_options_ = terrain_mod_options_,
 			.selected_object_index_ = selected_object_index_,
 			.hover_object_index_ = hover_object_index_,
 			.hover_tree_index_ = hover_tree_index_,
@@ -3815,10 +3903,15 @@ void App::Frame(float delta_seconds) {
 		.show_hud_ = show_hud_,
 		.status_msg_ = status_message_,
 		.pause_mode_ = pause_mode_,
+		.pause_active_input_ = pause_active_input_,
+		.pause_level_input_ = pause_level_input_,
+		.pause_search_input_ = pause_search_input_,
+		.pause_terrain_expanded_ = pause_terrain_expanded_,
 		.show_debug_ = show_debug_,
 		.show_help_ = show_help_,
 		.edit_mode_ = edit_mode_,
 		.terrain_edit_enabled_ = terrain_edit_enabled_,
+		.terrain_mod_options_ = terrain_mod_options_,
 		.selected_object_index_ = selected_object_index_,
 		.hover_object_index_ = hover_object_index_,
 		.hover_tree_index_ = hover_tree_index_,
@@ -4201,6 +4294,8 @@ void App::SetTerrainEditEnabled(bool enabled) {
 			" | Radius: " + std::to_string((long)edit_brush_radius_) +
 			" | Strength: " + std::to_string((long)edit_brush_strength_);
 	}
+	UpdateCursorMode(); // Force cursor update instantly
+	glutPostRedisplay(); // Force instant UI refresh
 }
 
 bool App::GetTerrainEditEnabled() const {
@@ -5978,11 +6073,16 @@ static std::vector<ModelEntry> LoadAllModelsFromJson() {
 	return entries;
 }
 
-void App::SearchModelById() {
-	auto prompt = Utils::PromptForText("Search Model by ID", "Enter Model ID to search in IGIModels.json (e.g. 419_01_1):", "");
-	if (!prompt.has_value()) return;
+void App::SearchModelById(std::optional<std::string> query) {
+	std::string searchId;
+	if (query.has_value()) {
+		searchId = query.value();
+	} else {
+		auto prompt = Utils::PromptForText("Search Model by ID", "Enter Model ID to search in IGIModels.json (e.g. 419_01_1):", "");
+		if (!prompt.has_value()) return;
+		searchId = prompt.value();
+	}
 
-	std::string searchId = prompt.value();
 	searchId = Utils::Trim(searchId);
 	if (searchId.empty()) return;
 
@@ -6014,11 +6114,16 @@ void App::SearchModelById() {
 	MessageBoxA(NULL, resultMessage.c_str(), "IGIModels.json Search Results", MB_OK | MB_ICONINFORMATION);
 }
 
-void App::SearchModelByName() {
-	auto prompt = Utils::PromptForText("Search Model by Name", "Enter Model Name to search in IGIModels.json (e.g. Soldier):", "");
-	if (!prompt.has_value()) return;
+void App::SearchModelByName(std::optional<std::string> query) {
+	std::string searchName;
+	if (query.has_value()) {
+		searchName = query.value();
+	} else {
+		auto prompt = Utils::PromptForText("Search Model by Name", "Enter Model Name to search in IGIModels.json (e.g. Soldier):", "");
+		if (!prompt.has_value()) return;
+		searchName = prompt.value();
+	}
 
-	std::string searchName = prompt.value();
 	searchName = Utils::Trim(searchName);
 	if (searchName.empty()) return;
 
