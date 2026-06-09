@@ -89,6 +89,7 @@ public:
     // model id via IGIModels.json. Returns the input unchanged if it is not a known
     // enum (caller then renders/keeps the raw string).
     std::string ResolvePickupModelId(const std::string& enumId);
+    const std::map<std::string, std::string>& GetModelNamesMap() const { return modelNames_; }
     void SaveToQSC(const std::string& qscPath);
     // Write ONLY the subtree rooted at idx (the task + its descendants) as a proper
     // nested QSC block. Used for "save sub-task" / templates so it never dumps the

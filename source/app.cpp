@@ -1354,6 +1354,12 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 
 			}
 			else if (edit_mode_ && !enableCameraMode) {
+				if (terrain_edit_enabled_) {
+					int picked = PickObjectAtScreenPos(x, y);
+					if (picked >= 0) {
+						SetTerrainEditEnabled(false);
+					}
+				}
 				EditorProcessClick(); 
 				// Update manipulation data AFTER selection, so we get the newly selected object
 				marker_manip_.start_x_ = x;
@@ -1385,13 +1391,19 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 
 	// Right-click: open property editor for the object under cursor
 	if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN && !pause_mode_ && !enableCameraMode) {
-		int target = hover_object_index_ >= 0 ? hover_object_index_ : selected_object_index_;
+		int target = hover_object_index_;
 		if (target >= 0) {
+			if (terrain_edit_enabled_) {
+				SetTerrainEditEnabled(false);
+			}
 			selected_object_index_ = target;
 			prop_editor_open_ = true; prop_panel_scroll_ = 0; prop_text_edit_field_ = -1; prop_edit_obj_index_ = -1;
 			LoadAIScriptForSelected();
 		} else {
 			prop_editor_open_ = false;
+			if (!terrain_edit_enabled_) {
+				SetTerrainEditEnabled(true);
+			}
 		}
 	}
 
@@ -5011,10 +5023,9 @@ void App::SaveAndReloadObjects() {
 
 void App::RebuildLevelModelIds() {
 	level_model_ids_.clear();
-	for (auto& obj : level_.GetLevelObjects().GetObjects()) {
-		if (obj.deleted || obj.modelId.empty()) continue;
-		// Accept XXX_XX_X pattern (digits_digits_digit)
-		const std::string& m = obj.modelId;
+	level_.GetLevelObjects().LoadModelNames();
+	for (const auto& pair : level_.GetLevelObjects().GetModelNamesMap()) {
+		const std::string& m = pair.first;
 		bool ok = m.size() >= 7;
 		if (ok) {
 			for (char c : m) if (!isdigit(c) && c != '_') { ok = false; break; }

@@ -74,10 +74,8 @@ constexpr int MENU_CLOSE = 61;
 
 // menus
 static int g_menu_draw_parts;
-static int g_menu_terrain_draw_opts;
-static int g_menu_terrain_modifier_opts;
+static int g_menu_terrain_opts;
 static int g_menu_choose_level;
-static int g_menu_editor_tools;
 static int g_menu_model_lookup;
 static int g_menu_object_scale;
 static int g_menu_load_options;
@@ -91,11 +89,10 @@ static int g_update_menu_flags;
 // update menu flags
 constexpr int UPDATE_MENU_OVERLAY_WIREFRAME = FLAG_BIT(0);
 constexpr int UPDATE_MENU_DRAW_PARTS = FLAG_BIT(1);
-constexpr int UPDATE_MENU_TERRAIN_DRAW_OPTS = FLAG_BIT(2);
-constexpr int UPDATE_MENU_TERRAIN_MODIFIER_OPTS = FLAG_BIT(3);
-constexpr int UPDATE_MENU_EDITOR_TOOLS = FLAG_BIT(4);
+constexpr int UPDATE_MENU_TERRAIN_OPTS = FLAG_BIT(2);
 constexpr int UPDATE_MENU_SHOW_OPTIONS = FLAG_BIT(5);
 constexpr int UPDATE_MENU_CHOOSE_LEVEL = FLAG_BIT(6);
+constexpr int UPDATE_MENU_SCALE = FLAG_BIT(4);
 
 /*
 ================================================================================
@@ -144,31 +141,15 @@ static void OnDisplay() {
 
 static void UpdateOverlayWireframeMenuText();
 static void UpdateDrawPartsMenuText();
-static void UpdateTerrainDrawOptionsMenuText();
-static void UpdateTerrainModOptionsMenuText();
+static void UpdateTerrainOptionsMenuText();
 static void UpdateChooseLevelMenuText();
-static void UpdateEditorToolsMenuText();
-static void UpdateIGILiveDataMenuText();
 static void UpdateScaleMenuText();
 
 static void OnIdle() {
   g_app.OnIdle();
 
-  // Dynamic right-button menu: detach when an object is under the cursor so the
-  // right-click reaches Input_OnMouse (opens the property panel); re-attach over
-  // empty space so the normal GLUT context menu appears.
-  {
-    static bool s_right_menu_attached = true;
-    bool wantPanel = g_app.GetHoverObjectIndex() >= 0;
-    if (wantPanel && s_right_menu_attached) {
-      glutDetachMenu(GLUT_RIGHT_BUTTON);
-      s_right_menu_attached = false;
-    } else if (!wantPanel && !s_right_menu_attached) {
-      glutSetMenu(g_main_menu);
-      glutAttachMenu(GLUT_RIGHT_BUTTON);
-      s_right_menu_attached = true;
-    }
-  }
+  // Right-click always goes to Input_OnMouse for terrain/object editor switching.
+  // The GLUT context menu is on middle-click only.
 
   // update menu text
   if (g_update_menu_flags) {
@@ -180,21 +161,15 @@ static void OnIdle() {
       UpdateDrawPartsMenuText();
     }
 
-    if (g_update_menu_flags & UPDATE_MENU_TERRAIN_DRAW_OPTS) {
-      UpdateTerrainDrawOptionsMenuText();
-    }
-
-    if (g_update_menu_flags & UPDATE_MENU_TERRAIN_MODIFIER_OPTS) {
-      UpdateTerrainModOptionsMenuText();
+    if (g_update_menu_flags & UPDATE_MENU_TERRAIN_OPTS) {
+      UpdateTerrainOptionsMenuText();
     }
 
     if (g_update_menu_flags & UPDATE_MENU_CHOOSE_LEVEL) {
       UpdateChooseLevelMenuText();
     }
 
-    if (g_update_menu_flags & UPDATE_MENU_EDITOR_TOOLS) {
-      UpdateEditorToolsMenuText();
-      UpdateIGILiveDataMenuText();
+    if (g_update_menu_flags & UPDATE_MENU_SCALE) {
       UpdateScaleMenuText();
     }
 
@@ -250,52 +225,28 @@ static void UpdateDrawPartsMenuText() {
 
 }
 
-static void UpdateTerrainDrawOptionsMenuText() {
-  int opts = g_app.GetTerrainDrawOptions();
+static void UpdateTerrainOptionsMenuText() {
+  int drawOpts = g_app.GetTerrainDrawOptions();
+  int modOpts  = g_app.GetTerrainModOptions();
 
-  glutSetMenu(g_menu_terrain_draw_opts);
+  glutSetMenu(g_menu_terrain_opts);
 
-  if (opts & Renderer_Terrain::DRAW_TERRAIN_OPT_MAT) {
-    glutChangeToMenuEntry(1, "Texture   [+]", MENU_DRAW_TERRAIN_OPT_MAT);
-  } else {
-    glutChangeToMenuEntry(1, "Texture   [-]", MENU_DRAW_TERRAIN_OPT_MAT);
-  }
+  // Draw options (entries 1-3)
+  glutChangeToMenuEntry(1, (drawOpts & Renderer_Terrain::DRAW_TERRAIN_OPT_MAT) ? "Texture   [+]" : "Texture   [-]",
+      MENU_DRAW_TERRAIN_OPT_MAT);
+  glutChangeToMenuEntry(2, (drawOpts & Renderer_Terrain::DRAW_TERRAIN_OPT_LMP) ? "Light Map [+]" : "Light Map [-]",
+      MENU_DRAW_TERRAIN_OPT_LMP);
+  glutChangeToMenuEntry(3, (drawOpts & Renderer_Terrain::DRAW_TERRAIN_OPT_FOG) ? "Fog       [+]" : "Fog       [-]",
+      MENU_DRAW_TERRAIN_OPT_FOG);
 
-  if (opts & Renderer_Terrain::DRAW_TERRAIN_OPT_LMP) {
-    glutChangeToMenuEntry(2, "Light Map [+]", MENU_DRAW_TERRAIN_OPT_LMP);
-  } else {
-    glutChangeToMenuEntry(2, "Light Map [-]", MENU_DRAW_TERRAIN_OPT_LMP);
-  }
-
-  if (opts & Renderer_Terrain::DRAW_TERRAIN_OPT_FOG) {
-    glutChangeToMenuEntry(3, "Fog       [+]", MENU_DRAW_TERRAIN_OPT_FOG);
-  } else {
-    glutChangeToMenuEntry(3, "Fog       [-]", MENU_DRAW_TERRAIN_OPT_FOG);
-  }
-}
-
-static void UpdateTerrainModOptionsMenuText() {
-  int opts = g_app.GetTerrainModOptions();
-
-  glutSetMenu(g_menu_terrain_modifier_opts);
-
-  if (opts & TERRAIN_TEXTURE_MOD) {
-    glutChangeToMenuEntry(1, "Texture Modifier [+]", MENU_TERRAIN_TEX_MOD);
-  } else {
-    glutChangeToMenuEntry(1, "Texture Modifier [-]", MENU_TERRAIN_TEX_MOD);
-  }
-
-  if (opts & TERRAIN_HEIGHT_MOD) {
-    glutChangeToMenuEntry(2, "Height Map       [+]", MENU_TERRAIN_HEIGHT_MOD);
-  } else {
-    glutChangeToMenuEntry(2, "Height Map       [-]", MENU_TERRAIN_HEIGHT_MOD);
-  }
-
-  if (opts & TERRAIN_DISCARD_MOD) {
-    glutChangeToMenuEntry(3, "Discard Terrain  [+]", MENU_TERRAIN_DISCARD_MOD);
-  } else {
-    glutChangeToMenuEntry(3, "Discard Terrain  [-]", MENU_TERRAIN_DISCARD_MOD);
-  }
+  // Mod options (entries 4-6: separator at 4, mods at 5-7... GLUT has no separator, use a disabled label)
+  // Entries 4-6
+  glutChangeToMenuEntry(4, (modOpts & TERRAIN_TEXTURE_MOD)  ? "Texture Modifier [+]" : "Texture Modifier [-]",
+      MENU_TERRAIN_TEX_MOD);
+  glutChangeToMenuEntry(5, (modOpts & TERRAIN_HEIGHT_MOD)   ? "Height Map       [+]" : "Height Map       [-]",
+      MENU_TERRAIN_HEIGHT_MOD);
+  glutChangeToMenuEntry(6, (modOpts & TERRAIN_DISCARD_MOD)  ? "Discard Terrain  [+]" : "Discard Terrain  [-]",
+      MENU_TERRAIN_DISCARD_MOD);
 }
 
 static void UpdateChooseLevelMenuText() {
@@ -315,24 +266,8 @@ static void UpdateChooseLevelMenuText() {
   }
 }
 
-static void UpdateEditorToolsMenuText() {
-  glutSetMenu(g_menu_editor_tools);
-
-  if (g_app.GetTerrainEditEnabled()) {
-    glutChangeToMenuEntry(1, "Edit Objects [ ]", MENU_EDIT_OBJECTS);
-    glutChangeToMenuEntry(2, "Edit Terrain [*]", MENU_EDIT_TERRAIN);
-  } else {
-    glutChangeToMenuEntry(1, "Edit Objects [*]", MENU_EDIT_OBJECTS);
-    glutChangeToMenuEntry(2, "Edit Terrain [ ]", MENU_EDIT_TERRAIN);
-  }
-
-  // Editor Tools menu no longer has a separate IGI Live Data entry here.
-}
-
-static void UpdateIGILiveDataMenuText() {
-  // Keep this function for call-site compatibility; live data toggle isn't a
-  // visible menu entry.
-}
+// Editor Tools menu removed — terrain/object switching is done via right-click.
+// IGI Live Data toggle removed from menu (handled via HUD key).
 
 static void UpdateScaleMenuText() {
   float s = g_app.GetSelectedObjectScale();
@@ -371,36 +306,34 @@ static void OnMenu(int menu) {
 
   case MENU_DRAW_TERRAIN_OPT_MAT:
     g_app.ToggleTerrainDrawOption(Renderer_Terrain::DRAW_TERRAIN_OPT_MAT);
-    g_update_menu_flags |= UPDATE_MENU_TERRAIN_DRAW_OPTS;
+    g_update_menu_flags |= UPDATE_MENU_TERRAIN_OPTS;
     break;
   case MENU_DRAW_TERRAIN_OPT_LMP:
     g_app.ToggleTerrainDrawOption(Renderer_Terrain::DRAW_TERRAIN_OPT_LMP);
-    g_update_menu_flags |= UPDATE_MENU_TERRAIN_DRAW_OPTS;
+    g_update_menu_flags |= UPDATE_MENU_TERRAIN_OPTS;
     break;
   case MENU_DRAW_TERRAIN_OPT_FOG:
     g_app.ToggleTerrainDrawOption(Renderer_Terrain::DRAW_TERRAIN_OPT_FOG);
-    g_update_menu_flags |= UPDATE_MENU_TERRAIN_DRAW_OPTS;
+    g_update_menu_flags |= UPDATE_MENU_TERRAIN_OPTS;
     break;
   case MENU_TERRAIN_TEX_MOD:
     g_app.ToggleTerrainModOption(TERRAIN_TEXTURE_MOD);
-    g_update_menu_flags |= UPDATE_MENU_TERRAIN_MODIFIER_OPTS;
+    g_update_menu_flags |= UPDATE_MENU_TERRAIN_OPTS;
     break;
   case MENU_TERRAIN_HEIGHT_MOD:
     g_app.ToggleTerrainModOption(TERRAIN_HEIGHT_MOD);
-    g_update_menu_flags |= UPDATE_MENU_TERRAIN_MODIFIER_OPTS;
+    g_update_menu_flags |= UPDATE_MENU_TERRAIN_OPTS;
     break;
   case MENU_TERRAIN_DISCARD_MOD:
     g_app.ToggleTerrainModOption(TERRAIN_DISCARD_MOD);
-    g_update_menu_flags |= UPDATE_MENU_TERRAIN_MODIFIER_OPTS;
+    g_update_menu_flags |= UPDATE_MENU_TERRAIN_OPTS;
     break;
 
   case MENU_EDIT_OBJECTS:
     g_app.SetTerrainEditEnabled(false);
-    g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
     break;
   case MENU_EDIT_TERRAIN:
     g_app.SetTerrainEditEnabled(true);
-    g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
     break;
   case MENU_EDITOR_SAVE:
     g_app.SaveCurrentLevel();
@@ -422,35 +355,34 @@ static void OnMenu(int menu) {
     break;
   case MENU_IGI_LIVE_DATA:
     g_app.ToggleShowHUD();
-    g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
     break;
   case MENU_SCALE_0_1:
     g_app.SetSelectedObjectScale(0.1f);
-    g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
+    g_update_menu_flags |= UPDATE_MENU_SCALE;
     break;
   case MENU_SCALE_0_5:
     g_app.SetSelectedObjectScale(0.5f);
-    g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
+    g_update_menu_flags |= UPDATE_MENU_SCALE;
     break;
   case MENU_SCALE_1:
     g_app.SetSelectedObjectScale(1.0f);
-    g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
+    g_update_menu_flags |= UPDATE_MENU_SCALE;
     break;
   case MENU_SCALE_2:
     g_app.SetSelectedObjectScale(2.0f);
-    g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
+    g_update_menu_flags |= UPDATE_MENU_SCALE;
     break;
   case MENU_SCALE_5:
     g_app.SetSelectedObjectScale(5.0f);
-    g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
+    g_update_menu_flags |= UPDATE_MENU_SCALE;
     break;
   case MENU_SCALE_10:
     g_app.SetSelectedObjectScale(10.0f);
-    g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
+    g_update_menu_flags |= UPDATE_MENU_SCALE;
     break;
   case MENU_SCALE_20:
     g_app.SetSelectedObjectScale(20.0f);
-    g_update_menu_flags |= UPDATE_MENU_EDITOR_TOOLS;
+    g_update_menu_flags |= UPDATE_MENU_SCALE;
     break;
   case MENU_SHOW_ALL:
     // Toggle between all objects ON and all objects OFF
@@ -748,7 +680,7 @@ int main(int argc, char **argv) {
   }
 
   const char *HINT = "Alt+Enter:  toggle fullscreen mode\n"
-                     "F2:         toggle overlay wireframe\n"
+                     "CTRL+H / CTRL+F2: toggle overlay wireframe\n"
                      "F3:         toggle clip\n"
                      "F4:         show/hide cursor\n"
                      "PageUp:     increase move speed\n"
@@ -793,12 +725,11 @@ int main(int argc, char **argv) {
   glutAddMenuEntry("", MENU_DRAW_SKYDOME);
   glutAddMenuEntry("", MENU_DRAW_FLAT_SKY_LAYER);
 
-  g_menu_terrain_draw_opts = glutCreateMenu(OnMenu);
+  // Combined terrain draw + mod options in a single menu
+  g_menu_terrain_opts = glutCreateMenu(OnMenu);
   glutAddMenuEntry("", MENU_DRAW_TERRAIN_OPT_MAT);
   glutAddMenuEntry("", MENU_DRAW_TERRAIN_OPT_LMP);
   glutAddMenuEntry("", MENU_DRAW_TERRAIN_OPT_FOG);
-
-  g_menu_terrain_modifier_opts = glutCreateMenu(OnMenu);
   glutAddMenuEntry("", MENU_TERRAIN_TEX_MOD);
   glutAddMenuEntry("", MENU_TERRAIN_HEIGHT_MOD);
   glutAddMenuEntry("", MENU_TERRAIN_DISCARD_MOD);
@@ -808,20 +739,11 @@ int main(int argc, char **argv) {
     glutAddMenuEntry("", i);
   }
 
-  g_menu_editor_tools = glutCreateMenu(OnMenu);
-  glutAddMenuEntry("Edit Objects", MENU_EDIT_OBJECTS);
-  glutAddMenuEntry("Edit Terrain", MENU_EDIT_TERRAIN);
-
   g_menu_model_lookup = glutCreateMenu(OnMenu);
   glutAddMenuEntry("By ID", MENU_SEARCH_MODEL_BY_ID);
   glutAddMenuEntry("By Name", MENU_SEARCH_MODEL_BY_NAME);
   glutAddMenuEntry("Copy Model Name", MENU_COPY_MODEL_NAME);
   glutAddMenuEntry("Copy Model ID", MENU_COPY_MODEL_ID);
-
-  glutSetMenu(
-      g_menu_editor_tools); // Set back to editor tools before adding submenus
-  glutAddMenuEntry("Save Changes", MENU_EDITOR_SAVE);
-  glutAddMenuEntry("Export Texture Map", MENU_EXPORT_TEXMAP);
 
   g_menu_object_scale = glutCreateMenu(OnMenu);
   glutAddMenuEntry("0.1x", MENU_SCALE_0_1);
@@ -841,25 +763,22 @@ int main(int argc, char **argv) {
   g_main_menu = glutCreateMenu(OnMenu);
   glutAddMenuEntry("", MENU_OVERLAY_WIREFRAME);
   glutAddSubMenu("Draw Parts", g_menu_draw_parts);
-  glutAddSubMenu("Terrain Draw Options", g_menu_terrain_draw_opts);
-  glutAddSubMenu("Terrain Mod Options", g_menu_terrain_modifier_opts);
-  glutAddSubMenu("Editor Tools", g_menu_editor_tools);
+  glutAddSubMenu("Terrain Options", g_menu_terrain_opts);
+  glutAddMenuEntry("Save Changes", MENU_EDITOR_SAVE);
+  glutAddMenuEntry("Export Texture Map", MENU_EXPORT_TEXMAP);
   glutAddSubMenu("Model Search", g_menu_model_lookup);
   glutAddSubMenu("Object Scale", g_menu_object_scale);
   glutAddSubMenu("Load Options", g_menu_load_options);
   glutAddSubMenu("Choose Level", g_menu_choose_level);
   glutAddMenuEntry("Close", MENU_CLOSE);
 
-  // bind to right button
-  glutAttachMenu(GLUT_RIGHT_BUTTON);
+  // Menus are defined but not attached to any mouse button since we use the pause menu and specific input handlers.
 
   // init menu text
   UpdateOverlayWireframeMenuText();
   UpdateDrawPartsMenuText();
-  UpdateTerrainDrawOptionsMenuText();
-  UpdateTerrainModOptionsMenuText();
+  UpdateTerrainOptionsMenuText();
   UpdateChooseLevelMenuText();
-  UpdateEditorToolsMenuText();
   UpdateScaleMenuText();
 
   // Start in fullscreen (ALT+ENTER toggles back to the windowed size below).
