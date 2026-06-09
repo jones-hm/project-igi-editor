@@ -57,6 +57,8 @@ public:
 	bool					GetPauseMode() const;
 	void					SetEditBrush(int brush);
 	int						GetEditBrush() const;
+	// Returns true and consumes the click if (x,y) hit an on-screen terrain brush palette button.
+	bool					TerrainPaletteClick(int x, int y);
 	void					AdjustBrushRadius(double factor);   // multiply brush radius, clamp+status
 	void					AdjustBrushStrength(double delta);  // add to brush strength, clamp+status
 	void					ToggleShowHUD();

@@ -1035,6 +1035,137 @@ void Renderer::Draw(const draw_params_s &params,
       } else {
         draw_text_sm(tooltip_x, tooltip_y, "Terrain ID: -1", 1.0f, 1.0f, 1.0f);
       }
+
+      // Terrain-edit overlay: cursor brush-radius ring + active brush name label.
+      if (task_tree_view.terrain_edit_enabled_) {
+        const int vh = params.view_define_->viewport_height_;
+        // Cursor center in GL bottom-up coords (mouse y is top-down).
+        float cx = (float)task_tree_view.mouse_x_;
+        float cy = (float)(vh - task_tree_view.mouse_y_);
+
+        // Map world-space radius [5000,250000] -> pixel radius [20,160] (linear clamp).
+        double r = task_tree_view.terrain_brush_radius_;
+        if (r < 5000.0)   r = 5000.0;
+        if (r > 250000.0) r = 250000.0;
+        float radius = 20.0f + (float)((r - 5000.0) / (250000.0 - 5000.0)) * (160.0f - 20.0f);
+
+        const int segments = 48;
+        glColor3f(1.0f, 0.5f, 0.0f); // orange
+        glLineWidth(2.0f);
+        glBegin(GL_LINE_LOOP);
+        for (int i = 0; i < segments; ++i) {
+          float a = (float)i * 6.283185f / (float)segments;
+          glVertex2f(cx + cosf(a) * radius, cy + sinf(a) * radius);
+        }
+        glEnd();
+        // Inner falloff ring.
+        float inner = radius * 0.5f;
+        glColor4f(1.0f, 0.6f, 0.1f, 0.6f);
+        glBegin(GL_LINE_LOOP);
+        for (int i = 0; i < segments; ++i) {
+          float a = (float)i * 6.283185f / (float)segments;
+          glVertex2f(cx + cosf(a) * inner, cy + sinf(a) * inner);
+        }
+        glEnd();
+        glLineWidth(1.0f);
+
+        // Active brush name under the existing "Terrain ID" tooltip line.
+        static const char* kBrushNames[4] = { "Raise", "Lower", "Soften", "Flatten" };
+        int b = task_tree_view.terrain_brush_;
+        if (b < 0) b = 0; if (b > 3) b = 3;
+        draw_text_sm(tooltip_x, tooltip_y + 16, kBrushNames[b], 1.0f, 0.7f, 0.2f);
+      }
+    }
+
+    // On-screen 5-button terrain brush palette (bottom-right). Drawn independently
+    // of the hover-tooltip branch so it stays visible while the cursor is over an
+    // object or the left tree panel.
+    if (task_tree_view.terrain_edit_enabled_) {
+      const int vw = params.view_define_->viewport_width_;
+      const int vh = params.view_define_->viewport_height_;
+      int active_idx = TerrainPalette::IndexForBrush(task_tree_view.terrain_brush_);
+      for (int i = 0; i < TerrainPalette::kCount; ++i) {
+        int rx, ry_top, rw, rh;
+        TerrainPalette::GetButtonRect(i, vw, vh, rx, ry_top, rw, rh);
+        // Top-down rect -> GL bottom-up.
+        float bx = (float)rx;
+        float by = (float)(vh - (ry_top + rh));
+        float bw = (float)rw, bh = (float)rh;
+        bool active = (i == active_idx);
+
+        // Fill.
+        glEnable(GL_BLEND);
+        if (active) glColor4f(0.95f, 0.55f, 0.10f, 0.85f);
+        else        glColor4f(0.12f, 0.12f, 0.14f, 0.80f);
+        glBegin(GL_QUADS);
+        glVertex2f(bx, by);
+        glVertex2f(bx + bw, by);
+        glVertex2f(bx + bw, by + bh);
+        glVertex2f(bx, by + bh);
+        glEnd();
+
+        // Border.
+        if (active) glColor3f(1.0f, 0.85f, 0.3f);
+        else        glColor3f(0.55f, 0.55f, 0.6f);
+        glLineWidth(active ? 2.5f : 1.5f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(bx, by);
+        glVertex2f(bx + bw, by);
+        glVertex2f(bx + bw, by + bh);
+        glVertex2f(bx, by + bh);
+        glEnd();
+
+        // Centered line-art glyph.
+        float gcx = bx + bw * 0.5f;
+        float gcy = by + bh * 0.5f;
+        float s = bw * 0.28f;
+        glColor3f(active ? 0.1f : 0.9f, active ? 0.1f : 0.9f, active ? 0.1f : 0.95f);
+        glLineWidth(2.0f);
+        switch (i) {
+        case 0: // Select / exit: arrow pointing up-left
+          glBegin(GL_LINE_STRIP);
+          glVertex2f(gcx + s, gcy - s);
+          glVertex2f(gcx - s, gcy + s);
+          glEnd();
+          glBegin(GL_LINE_STRIP);
+          glVertex2f(gcx - s, gcy + s * 0.1f);
+          glVertex2f(gcx - s, gcy + s);
+          glVertex2f(gcx - s * 0.1f, gcy + s);
+          glEnd();
+          break;
+        case 1: // Raise: up triangle
+          glBegin(GL_LINE_LOOP);
+          glVertex2f(gcx, gcy + s);
+          glVertex2f(gcx - s, gcy - s);
+          glVertex2f(gcx + s, gcy - s);
+          glEnd();
+          break;
+        case 2: // Lower: down triangle
+          glBegin(GL_LINE_LOOP);
+          glVertex2f(gcx, gcy - s);
+          glVertex2f(gcx - s, gcy + s);
+          glVertex2f(gcx + s, gcy + s);
+          glEnd();
+          break;
+        case 3: // Soften: wavy line
+          glBegin(GL_LINE_STRIP);
+          for (int k = 0; k <= 12; ++k) {
+            float t = (float)k / 12.0f;
+            float px = gcx - s + t * 2.0f * s;
+            float py = gcy + sinf(t * 6.283185f) * s * 0.5f;
+            glVertex2f(px, py);
+          }
+          glEnd();
+          break;
+        case 4: // Flatten: horizontal line
+          glBegin(GL_LINES);
+          glVertex2f(gcx - s, gcy);
+          glVertex2f(gcx + s, gcy);
+          glEnd();
+          break;
+        }
+        glLineWidth(1.0f);
+      }
     }
 
     // Watermark — centered, versioned

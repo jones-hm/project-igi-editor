@@ -16,6 +16,44 @@
 #include <functional>
 
 /*
+ Terrain brush palette layout (shared between App click hit-testing and Renderer drawing).
+ 5 buttons in a vertical column anchored to the bottom-right corner.
+ Index 0 = Select/exit (arrow), 1=Raise, 2=Lower, 3=Soften, 4=Flatten.
+ Returns rect in TOP-DOWN screen coords (y grows downward, matching GLUT mouse y).
+*/
+namespace TerrainPalette {
+	static constexpr int kCount      = 5;
+	static constexpr int kBtnSize    = 36;
+	static constexpr int kBtnGap     = 6;
+	static constexpr int kMarginX    = 14;
+	static constexpr int kMarginY    = 14;
+
+	// Maps a palette button index (0..4) to the corresponding edit_brush_ value (0..3).
+	// Index 0 is the Select button (no brush). Returns -1 for Select.
+	inline int BrushForIndex(int idx) { return idx == 0 ? -1 : idx - 1; }
+	inline int IndexForBrush(int brush) { return brush + 1; }
+
+	inline void GetButtonRect(int idx, int viewport_w, int viewport_h, int& x, int& y, int& w, int& h) {
+		w = kBtnSize;
+		h = kBtnSize;
+		x = viewport_w - kMarginX - kBtnSize;
+		int total_h = kCount * kBtnSize + (kCount - 1) * kBtnGap;
+		int top = viewport_h - kMarginY - total_h;
+		y = top + idx * (kBtnSize + kBtnGap);
+	}
+
+	// Hit-test in top-down screen coords. Returns button index 0..4 or -1.
+	inline int HitTest(int mx, int my, int viewport_w, int viewport_h) {
+		for (int i = 0; i < kCount; ++i) {
+			int x, y, w, h;
+			GetButtonRect(i, viewport_w, viewport_h, x, y, w, h);
+			if (mx >= x && mx <= x + w && my >= y && my <= y + h) return i;
+		}
+		return -1;
+	}
+}
+
+/*
 ================================================================================
  Property-panel layout — single source of truth shared by the renderer (drawing)
  and the input handler (hit-testing). All rects are in SCREEN top-down pixels
@@ -327,6 +365,10 @@ public:
 		bool        ai_script_dirty_        = false;
 		int         ai_script_vscroll_      = 0;
 		int         ai_script_path_hscroll_ = 0;
+
+		// Terrain brush palette / cursor ring
+		int    terrain_brush_        = 0;   // 0=Raise,1=Lower,2=Soften,3=Flatten
+		double terrain_brush_radius_ = 0.0; // world-space brush radius (for cursor ring scale)
 	};
 
 

@@ -1297,6 +1297,13 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 				return; // Block all other interactions while paused
 			}
 
+			// Priority: on-screen terrain brush palette (bottom-right). Consume click so
+			// it does not also sculpt terrain / pick an object this frame.
+			if (TerrainPaletteClick(x, y)) {
+				mouse_state_.left_button_down_ = false; // stop Frame() from sculpting while held
+				return;
+			}
+
 			// Task picker mouse click: left-click on an item selects it
 			if (task_picker_open_) {
 				const int picker_x = 20;
@@ -3698,6 +3705,8 @@ void App::Frame(float delta_seconds) {
 			.ai_script_path_       = ai_script_path_,
 			.ai_script_text_       = ai_script_text_,
 			.ai_script_dirty_      = ai_script_dirty_,
+			.terrain_brush_        = edit_brush_,
+			.terrain_brush_radius_ = edit_brush_radius_,
 		};
 		draw_params_.level_objects_ = &level_.GetLevelObjects();
 		draw_params_.selected_object_index_ = selected_object_index_;
@@ -3843,6 +3852,8 @@ void App::Frame(float delta_seconds) {
 		.ai_script_dirty_       = ai_script_dirty_,
 		.ai_script_vscroll_     = ai_script_vscroll_,
 		.ai_script_path_hscroll_= ai_script_path_hscroll_,
+		.terrain_brush_         = edit_brush_,
+		.terrain_brush_radius_  = edit_brush_radius_,
 	};
 
 	renderer_.Draw(draw_params_, task_tree_view);
@@ -4213,6 +4224,19 @@ void App::SetEditBrush(int brush) {
 
 int App::GetEditBrush() const {
 	return edit_brush_;
+}
+
+bool App::TerrainPaletteClick(int x, int y) {
+	if (!edit_mode_ || !terrain_edit_enabled_) return false;
+	int idx = TerrainPalette::HitTest(x, y, window_state_.viewport_width_, window_state_.viewport_height_);
+	if (idx < 0) return false;
+	if (idx == 0) {
+		// Select/exit button: leave terrain edit, back to object editing.
+		SetTerrainEditEnabled(false);
+	} else {
+		SetEditBrush(TerrainPalette::BrushForIndex(idx));
+	}
+	return true;
 }
 
 void App::AdjustBrushRadius(double factor) {
