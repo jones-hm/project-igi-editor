@@ -40,6 +40,18 @@ struct DATFile {
 // Returns structured model-texture mappings for all models.
 DATFile DAT_Parse(const std::string& filepath);
 
+// Write a DATFile back to the exact text format DAT_Parse reads (machine-generated
+// header, CRLF line endings, count + per-model name/material-count/textures, the
+// trailing `waypoint`/`0`, then the texture manifest). Round-trips with DAT_Parse.
+bool DAT_WriteNative(const DATFile& dat, const std::string& outPath, std::string& err);
+
+// Add `modelName` with `textureNames` to a parsed DATFile: appends the model entry
+// (before the trailing `waypoint` entry), adds any new textures to allTextures, and
+// updates declaredModelCount/declaredTextureCount. Idempotent: if modelName already
+// present, returns false-but-ok via the `alreadyPresent` out flag (no change).
+void DAT_AddModel(DATFile& dat, const std::string& modelName,
+                  const std::vector<std::string>& textureNames, bool& alreadyPresent);
+
 // Format the parsed DAT as a JSON string.
 // If modelFilter is non-empty, only entries whose modelName contains it are included.
 std::string DAT_FormatJSON(const DATFile& dat, const std::string& modelFilter = "");

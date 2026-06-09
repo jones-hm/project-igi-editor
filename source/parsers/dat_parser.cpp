@@ -8,6 +8,7 @@
 #include "../utils.h"
 #include <fstream>
 #include <sstream>
+#include <algorithm>
 
 // Maximum plausible material count for a single model.
 // The DAT has a texture-manifest section after all model entries; its header
@@ -120,6 +121,83 @@ DATFile DAT_Parse(const std::string& filepath) {
 
     result.valid = true;
     return result;
+}
+
+bool DAT_WriteNative(const DATFile& dat, const std::string& outPath, std::string& err) {
+    // Open binary so we control CRLF exactly (no platform newline translation).
+    std::ofstream f(outPath, std::ios::binary);
+    if (!f.is_open()) {
+        err = "Cannot open output file: " + outPath;
+        Logger::Get().Log(LogLevel::ERR, "[DAT] " + err);
+        return false;
+    }
+
+    auto emit = [&f](const std::string& s) { f << s << "\r\n"; };
+
+    // Machine-generated header (two *** lines + a blank line — all skipped on read).
+    emit("*** This file is machine generated");
+    emit("*** DO NOT EDIT!");
+    emit("");
+
+    // Total model count (DAT_Parse reads this as tokens[0]).
+    emit(std::to_string(dat.declaredModelCount));
+
+    // Per-model: name, material count, then each texture. The trailing `waypoint`/`0`
+    // entry is stored in dat.models like any other model (0 textures), so emitting
+    // every model reproduces it verbatim.
+    for (const auto& m : dat.models) {
+        emit(m.modelName);
+        emit(std::to_string(m.textures.size()));
+        for (const auto& t : m.textures)
+            emit(t);
+    }
+
+    // Texture manifest: total count, then each texture name.
+    emit(std::to_string(dat.declaredTextureCount));
+    for (const auto& t : dat.allTextures)
+        emit(t);
+
+    if (!f.good()) {
+        err = "Write error to: " + outPath;
+        Logger::Get().Log(LogLevel::ERR, "[DAT] " + err);
+        return false;
+    }
+    Logger::Get().Log(LogLevel::INFO, "[DAT] Wrote native DAT to: " + outPath);
+    return true;
+}
+
+void DAT_AddModel(DATFile& dat, const std::string& modelName,
+                  const std::vector<std::string>& textureNames, bool& alreadyPresent) {
+    alreadyPresent = false;
+
+    // Idempotency check (ignore the `waypoint` sentinel).
+    for (const auto& m : dat.models) {
+        if (m.modelName == "waypoint")
+            continue;
+        if (m.modelName == modelName) {
+            alreadyPresent = true;
+            return;
+        }
+    }
+
+    DATModelEntry entry;
+    entry.modelName = modelName;
+    entry.textures  = textureNames;
+
+    // Insert before the trailing `waypoint` entry so the writer emits the new model
+    // ahead of waypoint/0 (preserving the manifest-boundary structure DAT_Parse needs).
+    auto wp = std::find_if(dat.models.begin(), dat.models.end(),
+                           [](const DATModelEntry& m) { return m.modelName == "waypoint"; });
+    dat.models.insert(wp, std::move(entry));
+    dat.declaredModelCount += 1;
+
+    // Add any new textures to the manifest, bumping the declared count per addition.
+    for (const auto& t : textureNames) {
+        if (std::find(dat.allTextures.begin(), dat.allTextures.end(), t) == dat.allTextures.end()) {
+            dat.allTextures.push_back(t);
+            dat.declaredTextureCount += 1;
+        }
+    }
 }
 
 std::string DAT_FormatReport(const DATFile& dat, const std::string& modelFilter) {

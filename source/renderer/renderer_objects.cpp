@@ -15,7 +15,7 @@
 #include "../parsers/qvm_decompiler.h"
 #include "../parsers/dat_parser.h"
 #include "../parsers/res_compiler.h"
-#include "../parsers/mtp_parser.h"
+#include "../parsers/mtp_tool.h"
 #include <sstream>
 
 // Strip pixel-format suffixes that appear in DAT texture IDs but aren't part
@@ -1105,37 +1105,85 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
         Logger::Get().Log(LogLevel::WARNING, std::string("[Renderer] AddModelToLevelRes: editor-content copy failed: ") + e.what());
     }
 
-    // 4. Register the model + its textures in the level .mtp so the GAME can resolve the
-    //    model's materials (otherwise it renders transparent in-game). A failure here is a
-    //    WARNING only -- the .res parts already succeeded.
+    // 4. Register the model + its textures so the GAME can resolve the model's
+    //    materials (otherwise it renders transparent in-game). We update the TEXT
+    //    level<N>.dat then drive mtp_decoder.exe to regenerate the binary level<N>.mtp
+    //    (the game accepts the tool's output; a natively-written .mtp crashed it).
+    //    A failure here is a WARNING only -- the .res parts already succeeded.
     {
         const std::string lvl = std::to_string(current_level_);
-        const std::string mtpPath = Utils::GetIGIRootPath() +
-            "\\missions\\location0\\level" + lvl + "\\level" + lvl + ".mtp";
-        if (!std::filesystem::exists(mtpPath)) {
-            Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: level .mtp not found, "
-                "skipping model->texture mapping: " + mtpPath);
+        const std::string lvlDir = Utils::GetIGIRootPath() +
+            "\\missions\\location0\\level" + lvl + "\\";
+        const std::string datPath = lvlDir + "level" + lvl + ".dat";
+        const std::string mtpPath = lvlDir + "level" + lvl + ".mtp";
+
+        if (!std::filesystem::exists(datPath)) {
+            Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: level .dat not found, "
+                "skipping model->texture mapping: " + datPath);
         } else {
+            // 4a. Back up the .dat once, then add the model mapping and write it back.
             bool proceed = true;
-            const std::string mtpBackup = mtpPath + ".orig";
-            if (!std::filesystem::exists(mtpBackup)) {
+            const std::string datBackup = datPath + ".orig";
+            if (!std::filesystem::exists(datBackup)) {
                 std::error_code ec;
-                std::filesystem::copy_file(mtpPath, mtpBackup,
+                std::filesystem::copy_file(datPath, datBackup,
                     std::filesystem::copy_options::overwrite_existing, ec);
                 if (ec) {
                     proceed = false;
                     Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: could not back up "
-                        ".mtp, skipping mapping update: " + mtpBackup + " (" + ec.message() + ")");
+                        ".dat, skipping mapping update: " + datBackup + " (" + ec.message() + ")");
                 }
             }
+
             if (proceed) {
-                std::string merr;
-                if (MTP_AddModel(mtpPath, mtpPath, modelId, GetTextureIdsForModel(modelId), merr)) {
-                    Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: registered " +
-                        modelId + " in " + mtpPath);
+                DATFile dat = DAT_Parse(datPath);
+                if (!dat.valid) {
+                    Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: .dat parse failed, "
+                        "skipping mapping update: " + dat.error);
                 } else {
-                    Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: .mtp update failed for " +
-                        modelId + ": " + merr);
+                    bool present = false;
+                    DAT_AddModel(dat, modelId, GetTextureIdsForModel(modelId), present);
+                    bool datReady = present; // already mapped -> .dat is fine as-is
+                    if (!present) {
+                        std::string derr;
+                        if (DAT_WriteNative(dat, datPath, derr)) {
+                            datReady = true;
+                            Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: added " +
+                                modelId + " to " + datPath);
+                        } else {
+                            Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: .dat write "
+                                "failed for " + modelId + ": " + derr);
+                        }
+                    } else {
+                        Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: " + modelId +
+                            " already mapped in " + datPath);
+                    }
+
+                    // 4b. Back up the .mtp once, then drive mtp_decoder.exe to rebuild it.
+                    if (datReady) {
+                        if (std::filesystem::exists(mtpPath)) {
+                            const std::string mtpBackup = mtpPath + ".orig";
+                            if (!std::filesystem::exists(mtpBackup)) {
+                                std::error_code ec;
+                                std::filesystem::copy_file(mtpPath, mtpBackup,
+                                    std::filesystem::copy_options::overwrite_existing, ec);
+                                if (ec)
+                                    Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: "
+                                        "could not back up .mtp: " + mtpBackup + " (" + ec.message() + ")");
+                            }
+                        }
+                        const std::string exePath = Utils::GetExeDirectory() +
+                            "\\content\\tools\\mtp_decoder.exe";
+                        std::string terr;
+                        if (RunMtpDecoder(exePath, datPath, mtpPath, terr)) {
+                            Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: regenerated " +
+                                mtpPath + " via mtp_decoder");
+                        } else {
+                            Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: mtp_decoder "
+                                "did not finish automatically -- press M in its window to write level" + lvl +
+                                ".mtp (" + terr + ")");
+                        }
+                    }
                 }
             }
         }

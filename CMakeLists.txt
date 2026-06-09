@@ -87,6 +87,7 @@ set_source_files_properties(
   source/parsers/res_compiler.cpp
   source/parsers/dat_parser.cpp
   source/parsers/mtp_parser.cpp
+  source/parsers/mtp_tool.cpp
   source/parsers/tex_parser.cpp
   source/parsers/graph_parser.cpp
   source/cli/asset_extractor.cpp
@@ -206,6 +207,7 @@ add_executable(igi_tests
     tests/test_verify_unit.cpp
     tests/test_verify_level.cpp
     tests/test_dat_parser.cpp
+    tests/test_dat_writer.cpp
     tests/test_graph_parser.cpp
     tests/test_res_parser.cpp
     tests/test_tex_parser.cpp
