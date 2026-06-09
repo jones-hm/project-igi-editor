@@ -8,6 +8,16 @@ This project is built upon the foundational work of the [Project-IGI-Terrain](ht
 
 ---
 
+## ⚖️ Legal Notice
+
+**This tool requires a legally licensed copy of Project I.G.I. installed on your system.**
+No game assets, models, textures, or any copyrighted content from Project I.G.I.
+are included in this repository or any releases.
+
+For full details, see [LEGAL.md](LEGAL.md).
+
+---
+
 ## 🎬 IGI Editor Video
 [![IGI Editor Video](https://img.youtube.com/vi/w4k5TRIy9eM/hqdefault.jpg)](https://www.youtube.com/watch?v=w4k5TRIy9eM)
 
