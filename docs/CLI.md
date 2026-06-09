@@ -197,6 +197,18 @@ Reads and extracts proprietary game assets stored within `.res` archives.
   ```
   *Reads global mapping info, animations, shadow maps, texture configurations, and mappings.*
 
+* **Convert MTP → DAT** (binary model-texture package → text DAT):
+  ```powershell
+  .\bin\Release\igi1ed.exe --mtp level1.mtp --to-dat [out.dat]
+  ```
+  *Parses the MTP's model→texture mappings and writes the equivalent text `.dat` (with the `waypoint` sentinel + texture manifest). Defaults to `<stem>.dat` next to the input.*
+
+* **Convert DAT → MTP** (text DAT → binary MTP, via `mtp_decoder.exe`):
+  ```powershell
+  .\bin\Release\igi1ed.exe --dat level1.dat --to-mtp [out.mtp]
+  ```
+  *Drives the bundled `content/tools/mtp_decoder.exe` (Packed-MTP mode) to regenerate the game-accepted `.mtp` next to the `.dat`; copies it to `out.mtp` if given. This is the same tool path the editor uses when importing a foreign model.*
+
 * **Parse TEX Textures**:
   ```powershell
   .\bin\Release\igi1ed.exe --tex sky_layer1.tex

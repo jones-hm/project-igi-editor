@@ -10,6 +10,7 @@
 #include "parsers/mef_parser.h"
 #include "parsers/dat_parser.h"
 #include "parsers/mtp_parser.h"
+#include "parsers/mtp_tool.h"
 #include "parsers/qsc_lexer.h"
 #include "parsers/qsc_parser.h"
 #include "parsers/qvm_compiler.h"
@@ -88,10 +89,12 @@ void CLIHandler::PrintHelp() {
       << "  --res-pack <dir> <out.res>             Auto-generate script and compile to .res\n"
       << "  --res-unpack <file.res> <dir>          Extract all resources from .res to directory\n"
       << "  --mtp <file.mtp>                       Parse MTP texture mappings\n"
+      << "  --mtp <file.mtp> --to-dat [out.dat]    Convert binary MTP -> text DAT\n"
       << "  --dat <file.dat>                       Parse DAT, print JSON to stdout\n"
       << "  --dat <file.dat> --output <file.json>  Write DAT JSON to file\n"
       << "  --dat <file.dat> --filter <model>      Include only entries matching model name\n"
       << "  --dat <file.dat> --text                Plain-text output instead of JSON\n"
+      << "  --dat <file.dat> --to-mtp [out.mtp]    Convert text DAT -> binary MTP (via mtp_decoder)\n"
       << "  --terrain <file>                       Parse terrain file\n"
       << "  --tex <file.tex> [--export-tga <dir>]  Parse texture and export\n"
       << "  --tex <in> [--ToPng <out>]             Convert TGA/PNG to PNG\n"
@@ -156,11 +159,18 @@ int CLIHandler::Process(int argc, char **argv) {
       }
       return ParseMEF(filepath);
     } else if (arg == "--mtp" && i + 1 < argc) {
-      return ParseMTP(argv[++i]);
+      std::string mtpPath = argv[++i];
+      if (i + 1 < argc && std::string(argv[i + 1]) == "--to-dat") {
+        ++i;
+        std::string out;
+        if (i + 1 < argc && argv[i + 1][0] != '-') out = argv[++i];
+        return ConvertMtpToDat(mtpPath, out);
+      }
+      return ParseMTP(mtpPath);
     } else if (arg == "--dat" && i + 1 < argc) {
       std::string datPath = argv[++i];
       std::string outPath, modelFilter;
-      bool useText = false;
+      bool useText = false, toMtp = false;
       while (i + 1 < argc) {
         std::string next = argv[i + 1];
         if (next == "--output" && i + 2 < argc) {
@@ -169,10 +179,14 @@ int CLIHandler::Process(int argc, char **argv) {
           modelFilter = argv[i + 2]; i += 2;
         } else if (next == "--text") {
           useText = true; ++i;
+        } else if (next == "--to-mtp") {
+          toMtp = true; ++i;
+          if (i + 1 < argc && argv[i + 1][0] != '-') { outPath = argv[i + 1]; ++i; }
         } else {
           break;
         }
       }
+      if (toMtp) return ConvertDatToMtp(datPath, outPath);
       return ParseDAT(datPath, outPath, modelFilter, useText);
     } else if (arg == "--qsc" && i + 1 < argc) {
       std::string inpath = argv[++i];
@@ -735,6 +749,76 @@ int CLIHandler::ParseMTP(const std::string &filepath) {
     Logger::Get().Log(LogLevel::ERR, "[CLI] Failed to parse MTP: " + mtp.error);
     return 1;
   }
+}
+
+// Convert a binary .mtp into the text .dat the game/tool format uses. Builds the
+// model→texture entries from the MTP INST mappings, appends the `waypoint` sentinel
+// the DAT format expects before its texture manifest, and writes via DAT_WriteNative.
+int CLIHandler::ConvertMtpToDat(const std::string &mtpPath, const std::string &outPath) {
+  Logger::Get().Log(LogLevel::INFO, "[CLI] Converting MTP -> DAT: " + mtpPath);
+  MTPFile mtp = MTP_Parse(mtpPath);
+  if (!mtp.valid) {
+    std::cerr << "ERROR: " << mtp.error << "\n";
+    return 1;
+  }
+  DATFile dat;
+  dat.valid = true;
+  for (const auto &m : mtp.mappings) {
+    DATModelEntry e;
+    e.modelName = m.modelName;
+    e.textures = m.textureNames;
+    dat.models.push_back(e);
+  }
+  // DAT format ends the model section with a `waypoint` entry (0 textures) before
+  // the texture manifest; add it so DAT_Parse/mtp_decoder read the result correctly.
+  dat.models.push_back(DATModelEntry{"waypoint", {}});
+  dat.allTextures = mtp.textures;
+  dat.declaredModelCount = (int)dat.models.size();
+  dat.declaredTextureCount = (int)dat.allTextures.size();
+
+  std::string outDat = outPath;
+  if (outDat.empty())
+    outDat = std::filesystem::path(mtpPath).replace_extension(".dat").string();
+  std::string err;
+  if (!DAT_WriteNative(dat, outDat, err)) {
+    std::cerr << "ERROR: could not write DAT: " << err << "\n";
+    return 1;
+  }
+  std::cout << "Wrote DAT: " << outDat << " ("
+            << (dat.models.size() ? dat.models.size() - 1 : 0) << " models, "
+            << dat.allTextures.size() << " textures)\n";
+  return 0;
+}
+
+// Convert a text .dat into a binary .mtp by driving the proven mtp_decoder.exe tool
+// (the same path the editor uses on model import). The tool writes <stem>.mtp next
+// to the .dat; if outPath is given the result is copied there.
+int CLIHandler::ConvertDatToMtp(const std::string &datPath, const std::string &outPath) {
+  Logger::Get().Log(LogLevel::INFO, "[CLI] Converting DAT -> MTP via mtp_decoder: " + datPath);
+  std::string exe = Utils::GetExeDirectory() + "\\content\\tools\\mtp_decoder.exe";
+  if (!std::filesystem::exists(exe)) {
+    std::cerr << "ERROR: mtp_decoder.exe not found at " << exe << "\n";
+    return 1;
+  }
+  std::string siblingMtp = std::filesystem::path(datPath).replace_extension(".mtp").string();
+  std::string err;
+  if (!RunMtpDecoder(exe, datPath, siblingMtp, err)) {
+    std::cerr << "ERROR: mtp_decoder did not produce the .mtp: " << err << "\n";
+    return 1;
+  }
+  std::string finalMtp = siblingMtp;
+  if (!outPath.empty() && outPath != siblingMtp) {
+    std::error_code ec;
+    std::filesystem::copy_file(siblingMtp, outPath,
+                               std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+      std::cerr << "ERROR: could not copy MTP to " << outPath << ": " << ec.message() << "\n";
+      return 1;
+    }
+    finalMtp = outPath;
+  }
+  std::cout << "Generated MTP: " << finalMtp << "\n";
+  return 0;
 }
 
 int CLIHandler::ParseTEX(const std::string &filepath,

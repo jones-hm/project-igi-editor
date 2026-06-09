@@ -48,6 +48,8 @@ private:
   static int ParseMTP(const std::string &filepath);
   static int ParseDAT(const std::string &filepath, const std::string &outPath,
                       const std::string &modelFilter, bool textMode = false);
+  static int ConvertMtpToDat(const std::string &mtpPath, const std::string &outPath);
+  static int ConvertDatToMtp(const std::string &datPath, const std::string &outPath);
   static int ParseTerrain(const std::string &filepath);
   static int ParseTEX(const std::string &filepath,
                       const std::string &exportArg, const std::string &mode = "");
