@@ -4,6 +4,8 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <map>
+#include <set>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include "logger.h"
@@ -1009,6 +1011,28 @@ static bool AddEntriesToRes(const std::string& resPath,
     return true;
 }
 
+// Family prefix of a model id = the substring before the FIRST underscore
+// (e.g. "405_01_1" -> "405", "igiagent_1" -> "igiagent"). The whole MEF family
+// shares this prefix: hull + LODs + sub-parts are SEPARATE mefs the game needs
+// all of (e.g. 405_01_1, 405_01_2..5, 405_02_1.., 405_03_1..). If there is no
+// underscore the id is its own prefix.
+static std::string ModelFamilyPrefix(const std::string& modelId) {
+    const size_t us = modelId.find('_');
+    return (us == std::string::npos) ? modelId : modelId.substr(0, us);
+}
+
+// True if `stem` (a .mef filename without extension) belongs to family `prefix`,
+// i.e. it begins with exactly "<prefix>_". Scoped to the EXACT prefix-group so
+// "405" does not pull in "4050" or unrelated ids. Case-insensitive.
+static bool StemInFamily(const std::string& stem, const std::string& prefix) {
+    const std::string want = prefix + "_";
+    if (stem.size() <= want.size()) return false;
+    for (size_t i = 0; i < want.size(); ++i)
+        if (std::tolower((unsigned char)stem[i]) != std::tolower((unsigned char)want[i]))
+            return false;
+    return true;
+}
+
 bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
                                           const std::function<void(size_t,size_t)>& onProgress) {
     const std::string levelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
@@ -1021,48 +1045,108 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
         return false;
     }
 
-    // Locate and read the loose .mef the editor is rendering from.
-    std::string mefPath = FindModelFile(modelId, /*isBuilding=*/false);
-    if (mefPath.empty()) mefPath = FindModelFile(modelId, true);
-    if (mefPath.empty()) {
-        Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: no loose .mef for " + modelId);
-        return false;
+    // ── Enumerate the whole <prefix>_* MEF family on disk ────────────────────
+    // IGI models are families: adding only <modelId>.mef leaves the hull/LODs/
+    // sub-parts behind, which works on a level that already has them but breaks
+    // (transparent/crash) elsewhere. Scan the SAME dirs FindModelFile searches,
+    // collect every "<prefix>_*.mef", dedupe by base model id (stem).
+    const std::string prefix = ModelFamilyPrefix(modelId);
+
+    std::vector<std::string> familyDirs;
+    {
+        const std::string exeDir = Utils::GetExeDirectory();
+        const std::string lvl = std::to_string(current_level_);
+        familyDirs.push_back(exeDir + "\\content\\models\\level" + lvl);
+        familyDirs.push_back(Utils::GetIGIModelsPath(current_level_));
+        for (int l = 1; l <= 14; ++l) {
+            if (l == current_level_) continue;
+            familyDirs.push_back(exeDir + "\\content\\models\\level" + std::to_string(l));
+            familyDirs.push_back(Utils::GetIGIModelsPath(l));
+        }
+        familyDirs.push_back(exeDir + "\\content\\models\\common");
+        familyDirs.push_back(Utils::GetIGIRootPath() + "\\missions\\location0\\common\\models");
+        familyDirs.push_back(Utils::GetIGIRootPath() + "\\content\\models");
     }
-    std::ifstream mf(mefPath, std::ios::binary);
-    std::vector<uint8_t> mefBytes((std::istreambuf_iterator<char>(mf)), std::istreambuf_iterator<char>());
-    if (mefBytes.empty()) {
-        Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: empty/unreadable .mef: " + mefPath);
+
+    // Map base model id -> resolved .mef path (first dir wins; deduped by id).
+    std::map<std::string, std::string> familyModels; // ordered for stable logging
+    for (const std::string& dir : familyDirs) {
+        std::error_code ec;
+        if (!std::filesystem::exists(dir, ec)) continue;
+        for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+            if (ec) break;
+            if (!entry.is_regular_file()) continue;
+            const std::filesystem::path& p = entry.path();
+            if (p.extension() != ".mef") continue;
+            const std::string stem = p.stem().string();
+            if (!StemInFamily(stem, prefix)) continue;
+            familyModels.emplace(stem, p.string()); // keep first path seen for a given id
+        }
+    }
+
+    // ALWAYS include the originally-requested model even if the glob missed it.
+    if (!familyModels.count(modelId)) {
+        std::string mefPath = FindModelFile(modelId, /*isBuilding=*/false);
+        if (mefPath.empty()) mefPath = FindModelFile(modelId, true);
+        if (!mefPath.empty()) familyModels.emplace(modelId, mefPath);
+    }
+
+    if (familyModels.empty()) {
+        Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: no .mef found for family '" +
+            prefix + "' (requested " + modelId + ")");
         return false;
     }
 
-    // 1. Pack the model into the models archive (single batched streaming append).
-    const std::string modelEntry = "LOCAL:models/" + modelId + ".mef";
+    // 1. Batch-add ALL family MEFs to the models archive (single streaming append).
+    std::vector<RESEntry> modelEntries;
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> looseModels; // for editor-content copy
+    modelEntries.reserve(familyModels.size());
+    for (const auto& fm : familyModels) {
+        std::ifstream mf(fm.second, std::ios::binary);
+        std::vector<uint8_t> mefBytes((std::istreambuf_iterator<char>(mf)), std::istreambuf_iterator<char>());
+        if (mefBytes.empty()) {
+            Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: empty/unreadable family .mef, skipping: " + fm.second);
+            continue;
+        }
+        looseModels.emplace_back(fm.first, mefBytes);
+        modelEntries.push_back(RESEntry{ "LOCAL:models/" + fm.first + ".mef", std::move(mefBytes) });
+    }
+    if (modelEntries.empty()) {
+        Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: all family .mef files empty/unreadable for '" + prefix + "'");
+        return false;
+    }
+
     std::string err;
-    if (!AddEntriesToRes(modelsRes, { RESEntry{ modelEntry, mefBytes } }, err)) {
+    if (!AddEntriesToRes(modelsRes, modelEntries, err)) {
         Logger::Get().Log(LogLevel::ERR, "[Renderer] AddModelToLevelRes: model add failed: " + err);
         return false;
     }
-    Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: model " + modelId + " -> " + modelsRes);
+    Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: family '" + prefix + "' (" +
+        std::to_string(modelEntries.size()) + " mef) -> " + modelsRes);
 
-    // 2. Pack the model's textures into the textures archive in ONE batched streaming
-    //    append (the textures .res is 200MB+ — stream it once, never per-texture, and
-    //    never RES_Parse it into RAM).
+    // 2. Gather + batch-add ALL family textures into the textures archive in ONE
+    //    batched streaming append (the textures .res is 200MB+ — stream it once,
+    //    never per-texture, and never RES_Parse it into RAM).
     const bool haveTexRes = std::filesystem::exists(texturesRes);
     int texAdded = 0;
     std::vector<std::pair<std::string, std::vector<uint8_t>>> looseTextures;  // for editor-content copy
     std::vector<RESEntry> texEntries;
-    for (const std::string& texId : GetTextureIdsForModel(modelId)) {
-        std::string texPath = FindTextureFile(texId);
-        if (texPath.empty()) {
-            Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: texture " + texId +
-                " not found on disk, skipping");
-            continue;
+    std::set<std::string> seenTex;
+    for (const auto& fm : familyModels) {
+        for (const std::string& texId : GetTextureIdsForModel(fm.first)) {
+            if (!seenTex.insert(texId).second) continue; // dedupe across the family
+            std::string texPath = FindTextureFile(texId);
+            if (texPath.empty()) {
+                Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: texture " + texId +
+                    " not found on disk, skipping");
+                continue;
+            }
+            std::ifstream tf(texPath, std::ios::binary);
+            std::vector<uint8_t> texBytes((std::istreambuf_iterator<char>(tf)), std::istreambuf_iterator<char>());
+            if (texBytes.empty()) continue;
+            looseTextures.emplace_back(texId, texBytes);
+            texEntries.push_back(RESEntry{ "LOCAL:textures/" + texId + ".tex", std::move(texBytes) });
         }
-        std::ifstream tf(texPath, std::ios::binary);
-        std::vector<uint8_t> texBytes((std::istreambuf_iterator<char>(tf)), std::istreambuf_iterator<char>());
-        if (texBytes.empty()) continue;
-        looseTextures.emplace_back(texId, texBytes);
-        texEntries.push_back(RESEntry{ "LOCAL:textures/" + texId + ".tex", std::move(texBytes) });
     }
 
     if (!texEntries.empty()) {
@@ -1075,8 +1159,8 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
             if (AddEntriesToRes(texturesRes, texEntries, terr, onProgress)) {
                 texAdded = (int)texEntries.size();
             } else {
-                Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: texture pack failed for " +
-                    modelId + ": " + terr);
+                Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: texture pack failed for family '" +
+                    prefix + "': " + terr);
                 looseTextures.clear();
             }
         }
@@ -1089,9 +1173,9 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
         const std::string lvl = std::to_string(current_level_);
         std::filesystem::path modelDst = std::filesystem::path(exeDir) / "content" / "models" / ("level" + lvl);
         std::filesystem::create_directories(modelDst);
-        {
-            std::ofstream out((modelDst / (modelId + ".mef")).string(), std::ios::binary);
-            out.write(reinterpret_cast<const char*>(mefBytes.data()), (std::streamsize)mefBytes.size());
+        for (const auto& m : looseModels) {
+            std::ofstream out((modelDst / (m.first + ".mef")).string(), std::ios::binary);
+            out.write(reinterpret_cast<const char*>(m.second.data()), (std::streamsize)m.second.size());
         }
         if (!looseTextures.empty()) {
             std::filesystem::path texDst = std::filesystem::path(exeDir) / "content" / "textures" / ("level" + lvl);
@@ -1141,22 +1225,27 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
                     Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: .dat parse failed, "
                         "skipping mapping update: " + dat.error);
                 } else {
-                    bool present = false;
-                    DAT_AddModel(dat, modelId, GetTextureIdsForModel(modelId), present);
-                    bool datReady = present; // already mapped -> .dat is fine as-is
-                    if (!present) {
+                    // Add EVERY family model to the .dat; write once if any were new.
+                    bool anyAdded = false;
+                    for (const auto& fm : familyModels) {
+                        bool present = false;
+                        DAT_AddModel(dat, fm.first, GetTextureIdsForModel(fm.first), present);
+                        if (!present) anyAdded = true;
+                    }
+                    bool datReady = true; // either we'll write below, or it's already complete
+                    if (anyAdded) {
                         std::string derr;
                         if (DAT_WriteNative(dat, datPath, derr)) {
-                            datReady = true;
-                            Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: added " +
-                                modelId + " to " + datPath);
+                            Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: added family '" +
+                                prefix + "' to " + datPath);
                         } else {
+                            datReady = false;
                             Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: .dat write "
-                                "failed for " + modelId + ": " + derr);
+                                "failed for family '" + prefix + "': " + derr);
                         }
                     } else {
-                        Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: " + modelId +
-                            " already mapped in " + datPath);
+                        Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: family '" + prefix +
+                            "' already mapped in " + datPath);
                     }
 
                     // 4b. Back up the .mtp once, then drive mtp_decoder.exe to rebuild it.
@@ -1189,8 +1278,8 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
         }
     }
 
-    Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: added model " + modelId +
-        " + " + std::to_string(texAdded) + " texture(s)");
+    Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: packed family '" + prefix + "' = " +
+        std::to_string(modelEntries.size()) + " model(s) + " + std::to_string(texAdded) + " texture(s)");
     return true;
 }
 
