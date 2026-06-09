@@ -69,23 +69,25 @@ static std::vector<std::string> ParseStringArray(const uint8_t* data, uint32_t d
     return strings;
 }
 
-// Parse INST chunk: model-texture instance mappings
+// Parse INST chunk: model-texture instance mappings.
+// Verified layout (level1.mtp): NO count prefix. The chunk is a packed array of
+// entries, one per model (count == MODS count). Each entry is:
+//   uint32 LE modelIdx, uint32 LE texCount, texCount * uint32 LE texIdx.
+// Parsing walks to the end of the chunk data.
 static std::vector<MTPModelTexture> ParseInstChunk(const uint8_t* data, uint32_t dataSize,
     const std::vector<std::string>& models, const std::vector<std::string>& textures) {
     std::vector<MTPModelTexture> mappings;
 
-    if (dataSize < 4) {
-        return mappings;
-    }
+    size_t offset = 0;
+    while (offset + 8 <= dataSize) {
+        uint32_t modelIdx = ReadU32LE(data + offset);
+        offset += 4;
+        uint32_t texCount = ReadU32LE(data + offset);
+        offset += 4;
 
-    uint32_t count = ReadU32LE(data);
-    size_t offset = 4;
-
-    for (uint32_t i = 0; i < count && offset + 4 <= dataSize; i++) {
-        uint16_t modelIdx = ReadU16LE(data + offset);
-        offset += 2;
-        uint16_t texCount = ReadU16LE(data + offset);
-        offset += 2;
+        if (offset + (size_t)texCount * 4 > dataSize) {
+            break; // truncated/unexpected
+        }
 
         MTPModelTexture mapping;
         if (modelIdx < models.size()) {
@@ -95,9 +97,9 @@ static std::vector<MTPModelTexture> ParseInstChunk(const uint8_t* data, uint32_t
             mapping.modelName = "<model_" + std::to_string(modelIdx) + ">";
         }
 
-        for (uint16_t t = 0; t < texCount && offset + 2 <= dataSize; t++) {
-            uint16_t texIdx = ReadU16LE(data + offset);
-            offset += 2;
+        for (uint32_t t = 0; t < texCount; t++) {
+            uint32_t texIdx = ReadU32LE(data + offset);
+            offset += 4;
 
             if (texIdx < textures.size()) {
                 mapping.textureNames.push_back(textures[texIdx]);
@@ -158,6 +160,12 @@ MTPFile MTP_Parse(const std::string& filepath) {
     // Parse chunks starting after "FORM" + size + "MTP " (12 bytes)
     size_t offset = 12;
 
+    // INST references MODS/TEXF by index, but in real files (e.g. level1.mtp) the INST
+    // chunk appears BEFORE TEXF. Defer INST parsing until the whole file is walked so
+    // both the model and texture string tables are fully populated.
+    const uint8_t* instData = nullptr;
+    uint32_t instSize = 0;
+
     while (offset + 8 <= fileSize) {
         char fourcc[5] = {};
         memcpy(fourcc, data + offset, 4);
@@ -185,8 +193,8 @@ MTPFile MTP_Parse(const std::string& filepath) {
             result.textures = ParseStringArray(chunkData, chunkSize);
         }
         else if (MatchFourCC(reinterpret_cast<const uint8_t*>(fourcc), "INST")) {
-            result.mappings = ParseInstChunk(chunkData, chunkSize,
-                result.models, result.textures);
+            instData = chunkData;
+            instSize = chunkSize;
         }
 
         offset += chunkSize;
@@ -197,6 +205,11 @@ MTPFile MTP_Parse(const std::string& filepath) {
         }
     }
 
+    // Now that MODS/TEXF are fully read, resolve INST mappings.
+    if (instData != nullptr) {
+        result.mappings = ParseInstChunk(instData, instSize, result.models, result.textures);
+    }
+
     result.valid = true;
     Logger::Get().Log(LogLevel::INFO, "[MTP] Parsed " + filepath +
         " | Models: " + std::to_string(result.models.size()) +
@@ -204,4 +217,175 @@ MTPFile MTP_Parse(const std::string& filepath) {
         " | Mappings: " + std::to_string(result.mappings.size()));
 
     return result;
+}
+
+// --- Write helpers ---------------------------------------------------------
+
+static void WriteU32BE(std::vector<uint8_t>& out, uint32_t v) {
+    out.push_back((uint8_t)((v >> 24) & 0xFF));
+    out.push_back((uint8_t)((v >> 16) & 0xFF));
+    out.push_back((uint8_t)((v >> 8) & 0xFF));
+    out.push_back((uint8_t)(v & 0xFF));
+}
+
+static void WriteU32LE(std::vector<uint8_t>& out, uint32_t v) {
+    out.push_back((uint8_t)(v & 0xFF));
+    out.push_back((uint8_t)((v >> 8) & 0xFF));
+    out.push_back((uint8_t)((v >> 16) & 0xFF));
+    out.push_back((uint8_t)((v >> 24) & 0xFF));
+}
+
+// Encode a string-array chunk body: uint32 LE count, then each string + '\0'.
+static std::vector<uint8_t> EncodeStringArray(const std::vector<std::string>& strings) {
+    std::vector<uint8_t> data;
+    WriteU32LE(data, (uint32_t)strings.size());
+    for (const std::string& s : strings) {
+        data.insert(data.end(), s.begin(), s.end());
+        data.push_back(0);
+    }
+    return data;
+}
+
+struct MTPChunk {
+    char fourcc[4];
+    std::vector<uint8_t> data;
+};
+
+bool MTP_AddModel(const std::string& mtpPath, const std::string& outPath,
+                  const std::string& modelName, const std::vector<std::string>& textureNames,
+                  std::string& err) {
+    // 1. Read the whole file.
+    std::ifstream file(mtpPath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        err = "Could not open file: " + mtpPath;
+        return false;
+    }
+    size_t fileSize = (size_t)file.tellg();
+    if (fileSize < 12) {
+        err = "File too small for FORM header: " + mtpPath;
+        return false;
+    }
+    std::vector<uint8_t> buf(fileSize);
+    file.seekg(0);
+    file.read(reinterpret_cast<char*>(buf.data()), fileSize);
+    file.close();
+
+    const uint8_t* data = buf.data();
+    if (!MatchFourCC(data, "FORM")) {
+        err = "Not a FORM/IFF file: " + mtpPath;
+        return false;
+    }
+    if (!MatchFourCC(data + 8, "MTP ")) {
+        err = "Not an MTP file: " + mtpPath;
+        return false;
+    }
+
+    // 2. Walk chunks in file order, capturing them verbatim.
+    std::vector<MTPChunk> chunks;
+    size_t offset = 12;
+    while (offset + 8 <= fileSize) {
+        MTPChunk c;
+        memcpy(c.fourcc, data + offset, 4);
+        uint32_t chunkSize = ReadU32BE(data + offset + 4);
+        offset += 8;
+        if (offset + chunkSize > fileSize) {
+            err = "Chunk extends beyond file end (corrupt MTP): " + mtpPath;
+            return false;
+        }
+        c.data.assign(data + offset, data + offset + chunkSize);
+        chunks.push_back(std::move(c));
+        offset += chunkSize;
+        if (offset % 2 != 0) offset++; // 2-byte alignment pad (not counted in size)
+    }
+
+    // 3. Locate MODS, TEXF, INST.
+    int modsIdx = -1, texfIdx = -1, instIdx = -1;
+    for (size_t i = 0; i < chunks.size(); ++i) {
+        const uint8_t* fc = reinterpret_cast<const uint8_t*>(chunks[i].fourcc);
+        if (MatchFourCC(fc, "MODS")) modsIdx = (int)i;
+        else if (MatchFourCC(fc, "TEXF")) texfIdx = (int)i;
+        else if (MatchFourCC(fc, "INST")) instIdx = (int)i;
+    }
+    if (modsIdx < 0 || texfIdx < 0 || instIdx < 0) {
+        err = "MTP missing required MODS/TEXF/INST chunk: " + mtpPath;
+        return false;
+    }
+
+    // 4. Decode MODS; idempotency check.
+    std::vector<std::string> models =
+        ParseStringArray(chunks[modsIdx].data.data(), (uint32_t)chunks[modsIdx].data.size());
+    for (const std::string& m : models) {
+        if (m == modelName) {
+            // Already present: copy input -> outPath verbatim (if different) and return.
+            if (outPath != mtpPath) {
+                std::ofstream o(outPath, std::ios::binary | std::ios::trunc);
+                if (!o.is_open()) { err = "Could not open output: " + outPath; return false; }
+                o.write(reinterpret_cast<const char*>(buf.data()), (std::streamsize)buf.size());
+            }
+            return true;
+        }
+    }
+
+    // 5. Append new model; new modelIdx = current MODS count.
+    uint32_t newModelIdx = (uint32_t)models.size();
+    models.push_back(modelName);
+
+    // 6. Decode TEXF; resolve/append each requested texture.
+    std::vector<std::string> textures =
+        ParseStringArray(chunks[texfIdx].data.data(), (uint32_t)chunks[texfIdx].data.size());
+    std::vector<uint32_t> resolvedTexIdx;
+    resolvedTexIdx.reserve(textureNames.size());
+    for (const std::string& t : textureNames) {
+        int idx = -1;
+        for (size_t i = 0; i < textures.size(); ++i) {
+            if (textures[i] == t) { idx = (int)i; break; }
+        }
+        if (idx < 0) {
+            idx = (int)textures.size();
+            textures.push_back(t);
+        }
+        resolvedTexIdx.push_back((uint32_t)idx);
+    }
+
+    // 7. Re-encode MODS / TEXF bodies.
+    chunks[modsIdx].data = EncodeStringArray(models);
+    chunks[texfIdx].data = EncodeStringArray(textures);
+
+    // 8. Rebuild INST. Verified layout has NO count prefix: it is a packed array of
+    //    entries (one per model). We keep the existing entry bytes verbatim and append
+    //    one new entry: u32 LE modelIdx, u32 LE texCount, texCount * u32 LE texIdx.
+    {
+        std::vector<uint8_t>& inst = chunks[instIdx].data;
+        std::vector<uint8_t> newInst = inst; // existing entries unchanged
+        WriteU32LE(newInst, newModelIdx);
+        WriteU32LE(newInst, (uint32_t)resolvedTexIdx.size());
+        for (uint32_t ti : resolvedTexIdx) WriteU32LE(newInst, ti);
+        chunks[instIdx].data = std::move(newInst);
+    }
+
+    // 9/10. Serialize: FORM + placeholder size + "MTP " + chunks (BE sizes, 2-byte pad).
+    std::vector<uint8_t> out;
+    out.insert(out.end(), {'F', 'O', 'R', 'M'});
+    size_t formSizePos = out.size();
+    WriteU32BE(out, 0); // placeholder
+    out.insert(out.end(), {'M', 'T', 'P', ' '});
+    for (const MTPChunk& c : chunks) {
+        out.insert(out.end(), c.fourcc, c.fourcc + 4);
+        WriteU32BE(out, (uint32_t)c.data.size());
+        out.insert(out.end(), c.data.begin(), c.data.end());
+        if (c.data.size() % 2 != 0) out.push_back(0); // pad, not counted in size
+    }
+    // FORM size = total file size - 8 (everything after the size field).
+    uint32_t formSize = (uint32_t)(out.size() - 8);
+    out[formSizePos + 0] = (uint8_t)((formSize >> 24) & 0xFF);
+    out[formSizePos + 1] = (uint8_t)((formSize >> 16) & 0xFF);
+    out[formSizePos + 2] = (uint8_t)((formSize >> 8) & 0xFF);
+    out[formSizePos + 3] = (uint8_t)(formSize & 0xFF);
+
+    // 11. Write to outPath.
+    std::ofstream o(outPath, std::ios::binary | std::ios::trunc);
+    if (!o.is_open()) { err = "Could not open output: " + outPath; return false; }
+    o.write(reinterpret_cast<const char*>(out.data()), (std::streamsize)out.size());
+    if (!o.good()) { err = "Write failed: " + outPath; return false; }
+    return true;
 }

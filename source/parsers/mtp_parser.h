@@ -25,3 +25,11 @@ struct MTPFile {
 
 // Parse an MTP file
 MTPFile MTP_Parse(const std::string& filepath);
+
+// Add a model and its textures to an MTP file's MODS/TEXF/INST chunks, preserving all
+// other chunks byte-for-byte. Idempotent: if modelName is already in MODS, returns true
+// without modifying the file. Writes the result to outPath (may equal the input path).
+// Returns false (with err set) on parse/IO failure. Does NOT create backups (caller does).
+bool MTP_AddModel(const std::string& mtpPath, const std::string& outPath,
+                  const std::string& modelName, const std::vector<std::string>& textureNames,
+                  std::string& err);

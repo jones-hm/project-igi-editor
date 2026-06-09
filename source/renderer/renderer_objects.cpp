@@ -15,6 +15,7 @@
 #include "../parsers/qvm_decompiler.h"
 #include "../parsers/dat_parser.h"
 #include "../parsers/res_compiler.h"
+#include "../parsers/mtp_parser.h"
 #include <sstream>
 
 // Strip pixel-format suffixes that appear in DAT texture IDs but aren't part
@@ -1071,6 +1072,42 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId) {
         }
     } catch (const std::exception& e) {
         Logger::Get().Log(LogLevel::WARNING, std::string("[Renderer] AddModelToLevelRes: editor-content copy failed: ") + e.what());
+    }
+
+    // 4. Register the model + its textures in the level .mtp so the GAME can resolve the
+    //    model's materials (otherwise it renders transparent in-game). A failure here is a
+    //    WARNING only -- the .res parts already succeeded.
+    {
+        const std::string lvl = std::to_string(current_level_);
+        const std::string mtpPath = Utils::GetIGIRootPath() +
+            "\\missions\\location0\\level" + lvl + "\\level" + lvl + ".mtp";
+        if (!std::filesystem::exists(mtpPath)) {
+            Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: level .mtp not found, "
+                "skipping model->texture mapping: " + mtpPath);
+        } else {
+            bool proceed = true;
+            const std::string mtpBackup = mtpPath + ".orig";
+            if (!std::filesystem::exists(mtpBackup)) {
+                std::error_code ec;
+                std::filesystem::copy_file(mtpPath, mtpBackup,
+                    std::filesystem::copy_options::overwrite_existing, ec);
+                if (ec) {
+                    proceed = false;
+                    Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: could not back up "
+                        ".mtp, skipping mapping update: " + mtpBackup + " (" + ec.message() + ")");
+                }
+            }
+            if (proceed) {
+                std::string merr;
+                if (MTP_AddModel(mtpPath, mtpPath, modelId, GetTextureIdsForModel(modelId), merr)) {
+                    Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: registered " +
+                        modelId + " in " + mtpPath);
+                } else {
+                    Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: .mtp update failed for " +
+                        modelId + ": " + merr);
+                }
+            }
+        }
     }
 
     Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: added model " + modelId +

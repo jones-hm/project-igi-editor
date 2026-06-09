@@ -210,6 +210,7 @@ add_executable(igi_tests
     tests/test_res_parser.cpp
     tests/test_tex_parser.cpp
     tests/test_mtp_parser.cpp
+    tests/test_mtp_writer.cpp
     tests/test_fnt_parser.cpp
     tests/test_pickup_resolve.cpp
     tests/test_res_model_set.cpp
