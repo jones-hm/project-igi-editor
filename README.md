@@ -6,6 +6,16 @@ Professional 3D **modding** suite featuring click-to-select map selection, train
 
 This project is built upon the foundational work of the [Project-IGI-Terrain](https://github.com/hjcminus/Project-IGI-Terrain) repository. Special thanks to [hjcminus](https://github.com/hjcminus) for their research and for bringing this codebase to light. It is built using C++17 and OpenGL, and it is cross-platform, but it is mainly tested on Windows.
 
+---
+
+## 🎬 Demo Video
+
+Click the thumbnail below to watch the IGI Editor in action:
+
+[![IGI Editor Demo](https://img.youtube.com/vi/w4k5TRIy9eM/maxresdefault.jpg)](https://www.youtube.com/watch?v=w4k5TRIy9eM)
+
+---
+
 ## 📸 Screenshots
 
 With the release of our premium modding features, we have expanded our workspace visualization with high-fidelity telemetry, dynamic objective tree views, and comprehensive level environment rendering.
