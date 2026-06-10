@@ -27,7 +27,5 @@ ResModelSet::ResModelSet(const RESFile& res) {
 }
 
 bool ResModelSet::Contains(const std::string& modelId) const {
-    std::string lower; lower.reserve(modelId.size());
-    for (char c : modelId) lower.push_back((char)std::tolower((unsigned char)c));
-    return ids_.find(lower) != ids_.end();
+    return ids_.find(modelId) != ids_.end();
 }
