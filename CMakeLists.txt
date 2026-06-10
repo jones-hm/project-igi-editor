@@ -109,6 +109,8 @@ set_source_files_properties(
   source/cli/cli_handler.cpp
   source/cli/cli_tests.cpp
   source/cli/verify_level.cpp
+  source/level/app_level.cpp
+  source/editor/task_ops.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 

@@ -13,6 +13,9 @@
 #include <optional>
 #include <set>
 
+// Global hotkey ID shared between app.cpp (OnIdle) and level/app_level.cpp (LaunchGame)
+constexpr int HOTKEY_ID_TOGGLE_GAME = 0x47;
+
 /*
 ================================================================================
  App
