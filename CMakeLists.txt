@@ -184,6 +184,52 @@ else()
   target_link_libraries(igi-editor PRIVATE glut GL GLEW)
 endif()
 
+# ─── gconv: standalone CLI game asset converter ──────────────────────────────
+file(GLOB GCONV_SOURCES "gconv/*.h" "gconv/*.cpp")
+
+add_executable(gconv ${GCONV_SOURCES} ${SOURCES_PARSERS})
+
+set_target_properties(gconv PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}/bin/Release"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${PROJECT_SOURCE_DIR}/bin/Debug"
+    OUTPUT_NAME "gconv"
+)
+
+# gconv has no GL/GLUT — only standard + GLM + parser headers
+target_include_directories(gconv PRIVATE
+    ${PROJECT_SOURCE_DIR}/gconv          # gconv/pch.h overrides source/pch.h
+    ${PROJECT_SOURCE_DIR}/source         # common.h, level_common.h, etc.
+    ${PROJECT_SOURCE_DIR}/source/parsers
+    ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1
+    ${PROJECT_SOURCE_DIR}/third_party
+)
+
+# gconv uses no PCH — but parsers include "pch.h"; provide gconv/pch.h
+# All gconv files and parser files compiled for this target skip the editor PCH
+set_target_properties(gconv PROPERTIES
+    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+)
+
+if (MSVC)
+    # /FI force-includes gconv/pch.h into every TU (parsers rely on pch.h being
+    # available but don't #include it themselves; this replicates the PCH
+    # force-include without dragging in GL/app headers).
+    target_compile_options(gconv PRIVATE
+        "/bigobj" "/FS"
+        "/FI${PROJECT_SOURCE_DIR}/gconv/pch.h"
+    )
+endif()
+
+# Parser files compiled for gconv must not use the editor PCH.
+# gconv/common_impl.cpp, logger_impl.cpp, utils_impl.cpp are unity wrappers
+# that live in gconv/ (first in include dirs) so their #include "pch.h"
+# resolves to gconv/pch.h (no GL), not source/pch.h.
+set_source_files_properties(
+    ${SOURCES_PARSERS}
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON
+)
+# ─────────────────────────────────────────────────────────────────────────────
+
 include(FetchContent)
 FetchContent_Declare(
     googletest
