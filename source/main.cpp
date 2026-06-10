@@ -673,8 +673,11 @@ int main(int argc, char **argv) {
   if (g_gl_info.support_version_45_) {
     Str_Cat(g_folders.shader_folder_, count_of(g_folders.shader_folder_),
             "/45");
+  } else if (g_gl_info.legacy_glsl_) {
+    Str_Cat(g_folders.shader_folder_, count_of(g_folders.shader_folder_),
+            "/21");
   } else {
-    // try version 4.1
+    // OpenGL 4.1 core profile
     Str_Cat(g_folders.shader_folder_, count_of(g_folders.shader_folder_),
             "/41");
   }
