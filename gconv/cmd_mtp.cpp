@@ -7,9 +7,9 @@ static void print_usage()
 {
     std::cerr <<
         "Usage:\n"
-        "  gconv1 mtp dump <input.mtp> [-o <output.json>]\n"
-        "  gconv1 mtp info <input.mtp>\n"
-        "  gconv1 mtp to-dat <input.mtp> [-o <out.dat>]\n";
+        "  gconv mtp dump <input.mtp> [-o <output.json>]\n"
+        "  gconv mtp info <input.mtp>\n"
+        "  gconv mtp to-dat <input.mtp> [-o <out.dat>]\n";
 }
 
 // Minimal JSON string escaping

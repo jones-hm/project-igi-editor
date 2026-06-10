@@ -187,21 +187,25 @@ endif()
 # ─── gconv: standalone CLI game asset converter ──────────────────────────────
 file(GLOB GCONV_SOURCES "gconv/*.h" "gconv/*.cpp")
 
+if (WIN32)
+  list(APPEND GCONV_SOURCES "assets/gconv1.rc")
+endif()
+
 add_executable(gconv1 ${GCONV_SOURCES} ${SOURCES_PARSERS})
 
 set_target_properties(gconv1 PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}/bin/Release"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${PROJECT_SOURCE_DIR}/bin/Debug"
-    OUTPUT_NAME "gconv1"
+    OUTPUT_NAME "gconv"
 )
 
-# Deploy gconv1.exe to content/tools/ alongside the editor
+# Deploy gconv.exe to content/tools/ alongside the editor
 add_custom_command(TARGET gconv1 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:igi-editor>/content/tools"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:gconv1>"
-        "$<TARGET_FILE_DIR:igi-editor>/content/tools/gconv1.exe"
-    COMMENT "Deploying gconv1.exe to tools/"
+        "$<TARGET_FILE_DIR:igi-editor>/content/tools/gconv.exe"
+    COMMENT "Deploying gconv.exe to tools/"
 )
 
 # gconv1 has no GL/GLUT — only standard + GLM + parser headers
@@ -272,6 +276,7 @@ add_executable(igi_tests
     tests/test_pickup_resolve.cpp
     tests/test_res_model_set.cpp
     tests/test_res_stream_append.cpp
+    tests/test_gconv_cli.cpp
 )
 
 # Explicit runtime so igi_tests always matches igi-editor (/MDd Debug, /MD Release).

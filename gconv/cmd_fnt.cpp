@@ -10,8 +10,8 @@ static void print_usage()
 {
     std::cerr <<
         "Usage:\n"
-        "  gconv1 fnt info <file.fnt>\n"
-        "  gconv1 fnt export <file.fnt> -o <out.png>\n";
+        "  gconv fnt info <file.fnt>\n"
+        "  gconv fnt export <file.fnt> -o <out.png>\n";
 }
 
 int cmd_fnt(int argc, char** argv)

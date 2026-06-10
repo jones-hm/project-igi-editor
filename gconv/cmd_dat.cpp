@@ -8,9 +8,9 @@ static void print_usage()
 {
     std::cerr <<
         "Usage:\n"
-        "  gconv1 dat info <file.dat>\n"
-        "  gconv1 dat export <file.dat> [-o <out.json>] [--filter <model>] [--text]\n"
-        "  gconv1 dat to-mtp <file.dat> [-o <out.mtp>]\n";
+        "  gconv dat info <file.dat>\n"
+        "  gconv dat export <file.dat> [-o <out.json>] [--filter <model>] [--text]\n"
+        "  gconv dat to-mtp <file.dat> [-o <out.mtp>]\n";
 }
 
 static const char* opt_val(int argc, char** argv, const char* name)
@@ -129,9 +129,8 @@ int cmd_dat(int argc, char** argv)
             return 2;
         }
 
-        // Locate mtp_decoder.exe relative to gconv1 executable
-        // For gconv1, the exe is in bin/Release/content/tools/; mtp_decoder is a sibling.
-        // Use the same directory as gconv1.
+        // Locate mtp_decoder.exe relative to gconv executable
+        // gconv.exe is in bin/Release/content/tools/; mtp_decoder is a sibling.
         std::string exe_dir;
 #ifdef _WIN32
         char buf[MAX_PATH] = {};
@@ -142,7 +141,7 @@ int cmd_dat(int argc, char** argv)
         if (!std::filesystem::exists(decoder_exe))
         {
             std::cerr << "dat to-mtp: mtp_decoder.exe not found at: " << decoder_exe << "\n";
-            std::cerr << "  Place mtp_decoder.exe in the same directory as gconv1.exe\n";
+            std::cerr << "  Place mtp_decoder.exe in the same directory as gconv.exe\n";
             return 1;
         }
 

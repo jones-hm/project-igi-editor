@@ -12,7 +12,7 @@ namespace fs = std::filesystem;
 static void print_tex_help()
 {
     std::cout <<
-        "Usage: gconv1 tex <subcommand> [options]\n"
+        "Usage: gconv tex <subcommand> [options]\n"
         "\n"
         "Subcommands:\n"
         "  decode <input.tex|.spr|.pic> -o <output_dir>\n"
@@ -271,6 +271,6 @@ int cmd_tex(int argc, char** argv)
     }
 
     std::cerr << "tex: unknown subcommand '" << subcmd << "'\n";
-    std::cerr << "Run 'gconv1 tex --help' for usage.\n";
+    std::cerr << "Run 'gconv tex --help' for usage.\n";
     return 1;
 }

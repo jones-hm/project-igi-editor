@@ -36,6 +36,8 @@
 *.ps1
 *.zip
 *.rc
+!assets/igi-editor.rc
+!assets/gconv1.rc
 bin/*/shaders
 scratch/*
 # CMake

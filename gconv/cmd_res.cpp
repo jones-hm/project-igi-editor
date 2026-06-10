@@ -8,12 +8,12 @@ static void print_usage()
 {
     std::cerr <<
         "Usage:\n"
-        "  gconv1 res list <input.res>\n"
-        "  gconv1 res extract <input.res> -o <output_dir>\n"
-        "  gconv1 res extract <input.res> --file <name> -o <output_dir>\n"
-        "  gconv1 res compile <file.qsc>\n"
-        "  gconv1 res pack <dir> <out.res>\n"
-        "  gconv1 res unpack <file.res> <dir>\n";
+        "  gconv res list <input.res>\n"
+        "  gconv res extract <input.res> -o <output_dir>\n"
+        "  gconv res extract <input.res> --file <name> -o <output_dir>\n"
+        "  gconv res compile <file.qsc>\n"
+        "  gconv res pack <dir> <out.res>\n"
+        "  gconv res unpack <file.res> <dir>\n";
 }
 
 // Return the value of a named option (e.g. "-o", "--file"), or nullptr if absent.
@@ -157,7 +157,7 @@ int cmd_res(int argc, char** argv)
     {
         if (argc < 4)
         {
-            std::cerr << "res pack: usage: gconv1 res pack <dir> <out.res>\n";
+            std::cerr << "res pack: usage: gconv res pack <dir> <out.res>\n";
             return 1;
         }
         std::string dir     = argv[2];
@@ -192,7 +192,7 @@ int cmd_res(int argc, char** argv)
     {
         if (argc < 4)
         {
-            std::cerr << "res unpack: usage: gconv1 res unpack <file.res> <dir>\n";
+            std::cerr << "res unpack: usage: gconv res unpack <file.res> <dir>\n";
             return 1;
         }
         std::string res_path = argv[2];
