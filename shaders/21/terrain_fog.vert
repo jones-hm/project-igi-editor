@@ -16,6 +16,7 @@ varying vec3 vs_out_pos_in_view;
 void main() {
     vec4 v4 = vec4(vs_in_pos_local, 1.0);
 
+    vec4 pos_view      = g_mv_objects * v4;
     gl_Position        = g_mvp_objects * v4;
-    vs_out_pos_in_view = (g_mvp_objects * v4).xyz;
+    vs_out_pos_in_view = pos_view.xyz;
 }
