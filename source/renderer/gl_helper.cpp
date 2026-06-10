@@ -53,7 +53,7 @@ bool GL_Init() {
 	g_gl_info.legacy_glsl_ = !g_gl_info.support_version_41_;
 
 	if (g_gl_info.legacy_glsl_) {
-		Log(log_type_t::LOG_ERROR, __FILE__, __LINE__,
+		Log(log_type_t::LOG_INFO, __FILE__, __LINE__,
 			"OpenGL 4.1 not supported (context: %s, GLSL: %s). "
 			"Falling back to legacy GLSL 1.20 shader set (shaders/21). "
 			"This is expected on Wine/macOS with OpenGL 2.1 contexts.\n",

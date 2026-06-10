@@ -15,7 +15,8 @@ const float FOG_NEAR_FACTOR = 0.333333;
 float calc_fog_blend_alpha() {
     float distance = length(vs_out_pos_in_view);
     float fog_near = g_fog_far * FOG_NEAR_FACTOR;
-    float visibility = (g_fog_far - distance) / (g_fog_far - fog_near);
+    float denom = max(g_fog_far - fog_near, 0.0001);
+    float visibility = (g_fog_far - distance) / denom;
     visibility = clamp(visibility, 0.0, 1.0);
     return 1.0 - visibility;
 }
