@@ -9,6 +9,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <unordered_set>
 
 // Maximum plausible material count for a single model.
 // The DAT has a texture-manifest section after all model entries; its header
@@ -192,9 +193,11 @@ void DAT_AddModel(DATFile& dat, const std::string& modelName,
     dat.declaredModelCount += 1;
 
     // Add any new textures to the manifest, bumping the declared count per addition.
+    std::unordered_set<std::string> existingTextures(dat.allTextures.begin(), dat.allTextures.end());
     for (const auto& t : textureNames) {
-        if (std::find(dat.allTextures.begin(), dat.allTextures.end(), t) == dat.allTextures.end()) {
+        if (existingTextures.find(t) == existingTextures.end()) {
             dat.allTextures.push_back(t);
+            existingTextures.insert(t);
             dat.declaredTextureCount += 1;
         }
     }
