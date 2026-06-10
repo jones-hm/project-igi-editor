@@ -2,17 +2,24 @@
 #include "cmd_tex.h"
 #include "tex_parser.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "../../third_party/tinygltf/stb_image.h"
+// stb_image_write is defined in cmd_fnt.cpp; just include header here
+#include "../../third_party/tinygltf/stb_image_write.h"
+
 namespace fs = std::filesystem;
 
 static void print_tex_help()
 {
     std::cout <<
-        "Usage: gconv tex <subcommand> [options]\n"
+        "Usage: gconv1 tex <subcommand> [options]\n"
         "\n"
         "Subcommands:\n"
         "  decode <input.tex|.spr|.pic> -o <output_dir>\n"
         "  decode <folder/> -o <output_dir> --batch\n"
         "  info   <input.tex|.spr|.pic>\n"
+        "  to-png <input.tga|.tex> -o <out.png>\n"
+        "  to-tga <input.png|.tex> -o <out.tga>\n"
         "\n"
         "Exit codes: 0=success 1=bad args 2=file not found 3=parse error 4=write error\n";
 }
@@ -172,7 +179,98 @@ int cmd_tex(int argc, char** argv)
         }
     }
 
+    if (subcmd == "to-png" || subcmd == "to-tga")
+    {
+        if (argc < 3)
+        {
+            std::cerr << "tex " << subcmd << ": missing input file\n";
+            return 1;
+        }
+        std::string input = argv[2];
+
+        std::string outpath;
+        for (int i = 3; i < argc - 1; ++i)
+            if (std::string(argv[i]) == "-o") { outpath = argv[i + 1]; break; }
+
+        if (outpath.empty())
+        {
+            std::cerr << "tex " << subcmd << ": missing -o <output>\n";
+            return 1;
+        }
+
+        if (!fs::exists(input))
+        {
+            std::cerr << "tex " << subcmd << ": file not found: " << input << "\n";
+            return 2;
+        }
+
+        // Determine input type by extension
+        std::string ext = fs::path(input).extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+        if (ext == ".tga" || ext == ".png")
+        {
+            // Use stb_image to load and stb_image_write to convert
+            int w, h, channels;
+            unsigned char* data = stbi_load(input.c_str(), &w, &h, &channels, 4);
+            if (!data)
+            {
+                std::cerr << "tex " << subcmd << ": failed to load image: " << input << "\n";
+                return 3;
+            }
+            int rc = 0;
+            if (subcmd == "to-png")
+                rc = stbi_write_png(outpath.c_str(), w, h, 4, data, w * 4);
+            else
+                rc = stbi_write_tga(outpath.c_str(), w, h, 4, data);
+            stbi_image_free(data);
+            if (!rc)
+            {
+                std::cerr << "tex " << subcmd << ": failed to write: " << outpath << "\n";
+                return 4;
+            }
+            std::cout << "tex: converted " << input << " -> " << outpath << "\n";
+            return 0;
+        }
+        else
+        {
+            // Try TEX parse for .tex/.spr/.pic
+            TEXFile tex = TEX_Parse(input);
+            if (!tex.valid)
+            {
+                std::cerr << "tex " << subcmd << ": parse error: " << tex.error << "\n";
+                return 3;
+            }
+            if (tex.images.empty())
+            {
+                std::cerr << "tex " << subcmd << ": no images in file\n";
+                return 3;
+            }
+            const TEXImage& img = tex.images[0];
+            if (subcmd == "to-png")
+            {
+                int rc = stbi_write_png(outpath.c_str(), img.width, img.height, 4,
+                                        img.pixels.data(), img.width * 4);
+                if (!rc)
+                {
+                    std::cerr << "tex to-png: failed to write PNG: " << outpath << "\n";
+                    return 4;
+                }
+            }
+            else
+            {
+                if (!TEX_WriteTGA(outpath, img))
+                {
+                    std::cerr << "tex to-tga: failed to write TGA: " << outpath << "\n";
+                    return 4;
+                }
+            }
+            std::cout << "tex: converted " << input << " -> " << outpath << "\n";
+            return 0;
+        }
+    }
+
     std::cerr << "tex: unknown subcommand '" << subcmd << "'\n";
-    std::cerr << "Run 'gconv tex --help' for usage.\n";
+    std::cerr << "Run 'gconv1 tex --help' for usage.\n";
     return 1;
 }

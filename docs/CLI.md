@@ -1,327 +1,182 @@
-# IGI Editor v1.5.0 — CLI & GUI Reference Guide
+# IGI Editor v3.0.0 — CLI & GUI Reference Guide
 
 The **IGI Editor** is a hybrid toolkit that operates in two primary modes:
 1. **Graphical User Interface (GUI) Application**: A real-time 3D viewport editor for heightmaps, objects, Splines, AI, and level layouts.
-2. **Headless Command Line Interface (CLI)**: A powerful, high-performance C++ utility toolchain for parsing, decompiling, compiling, and exporting proprietary Project IGI assets.
+2. **Editor CLI**: Headless commands for level verification, testing, and resource extraction.
+3. **gconv1.exe**: Standalone asset converter for all parser operations (located in `content/tools/`).
 
 ---
 
-## 🖥️ 1. Graphical User Interface (GUI) Mode
+## igi1ed.exe — Editor (GUI + headless verification)
 
-To launch the graphical editor, run the compiled executable `igi1ed.exe` from your terminal or a batch script.
+### GUI Launch Options
 
-### Launch Options & Syntax
 ```powershell
 .\bin\Release\igi1ed.exe -level <num> [options]
 ```
 
 | Argument | Parameter Type | Description |
 | :--- | :--- | :--- |
-| `-level` | `integer (1-14)` | **Required.** Specifies which of the 14 original game levels to load. |
+| `-level` | `integer (1-14)` | Specifies which of the 14 original game levels to load. |
 | `-w` | `integer` | Width of the editor window in pixels (e.g., `-w 1280`). |
 | `-h` | `integer` | Height of the editor window in pixels (e.g., `-h 720`). |
 | `-draw_parts` | `bitmask (0-127)` | Controls which elements of the level environment are parsed and rendered. |
-| `-stick_to_ground` | *Flag* | Enforces automated ground-snapping/snapping-to-terrain on load. |
+| `-stick_to_ground` | *Flag* | Enforces automated ground-snapping on load. |
+
+### Selective Loading (`-draw_parts` Bitmask)
+
+| Bit Value | Subsystem |
+| :---: | :--- |
+| **1** | Terrain |
+| **2** | Sky |
+| **4** | Objects |
+| **8** | Flat Sky |
+| **16** | Buildings |
+| **32** | Props |
+| **64** | AI Units |
+
+### GUI Keyboard Controls
+
+| Key | Action |
+| :--- | :--- |
+| `W` / `S` / `A` / `D` | Fly forward, backward, left, right |
+| `Q` / `Z` | Adjust altitude (Up / Down) |
+| `PageUp` / `PageDown` | Increase / Decrease movement speed |
+| `Alt + Enter` | Toggle Fullscreen Mode |
+| `F4` | Toggle Edit Mode |
+| `F3` | Toggle Collision clipping |
+| `F2` | Toggle Terrain Paint brush mode |
+| `LMB Click` | Select object in Edit Mode |
+| `F11` | Teleport camera to selected object |
 
 ---
 
-### 🎨 Selective Loading & Rendering (`-draw_parts` Bitmask)
+### Editor CLI Commands
 
-The `-draw_parts` option uses a bitmask to optimize memory consumption and load times by selectively disabling subsystems. Add the values of the components you wish to render:
-
-| Bit Value | Subsystem | Description |
-| :---: | :--- | :--- |
-| **1** | Terrain | Loads the 3D Quadtree Heightmap (`.ctr` / `.lmp` / `.hmp`). |
-| **2** | Sky | Standard skybox rendering layers. |
-| **4** | Objects | Core gameplay interactive objects. |
-| **8** | Flat Sky | Secondary backdrop sky mapping. |
-| **16** | Buildings | Primary buildings meshes (MEF model structures). |
-| **32** | Props | Miscellaneous non-building object models (crates, fences, assets). |
-| **64** | AI Units | AI patrol units, team structures, and soldier meshes. |
-
-#### Commonly Used Bitmask Combinations
-* **Minimal Terrain Only**:
-  ```powershell
-  .\bin\Release\igi1ed.exe -level 1 -draw_parts 1
-  ```
-* **Terrain & Buildings** (Value: `17` = `1 + 16`):
-  ```powershell
-  .\bin\Release\igi1ed.exe -level 1 -draw_parts 17
-  ```
-* **Terrain & Props** (Value: `33` = `1 + 32`):
-  ```powershell
-  .\bin\Release\igi1ed.exe -level 1 -draw_parts 33
-  ```
-* **Terrain & AI Patrols** (Value: `65` = `1 + 64`):
-  ```powershell
-  .\bin\Release\igi1ed.exe -level 1 -draw_parts 65
-  ```
-* **Full Level Editing Suite** (Value: `127` = all parts):
-  ```powershell
-  .\bin\Release\igi1ed.exe -level 1 -draw_parts 127
-  ```
-
----
-
-### ⌨️ GUI Keyboard & Mouse Controls
-
-Once inside the graphical editor, use the following hotkeys to navigate the 3D space and modify entities:
-
-| Control Category | Key | Action |
-| :--- | :--- | :--- |
-| **Camera Movement** | `W` / `S` / `A` / `D` | Fly forward, backward, left, right |
-| | `Q` / `Z` | Adjust altitude (Up / Down) |
-| | `PageUp` / `PageDown` | Increase / Decrease movement speed |
-| | `Alt + Enter` | Toggle Fullscreen Mode |
-| | `LeftArrow` / `RightArrow` | Roll camera rotation |
-| **Editor Modes** | `F4` | **Toggle Edit Mode (Displays selection crosshairs & telemetry)** |
-| | `F3` | Toggle Collision clipping (noclip) |
-| | `F2` | Toggle Terrain Paint brush mode |
-| **Object Selection** | `LMB Click` | Select an object or building under the cursor in Edit Mode |
-| | `F11` | Teleport camera directly to the selected object |
-| **IGI 2 Modifiers** | `LMB Drag + Shift` | Move selected object on XY Plane |
-| | `LMB Drag + Ctrl` | Move selected object on XZ Plane |
-| | `LMB Drag + A` / `B` / `G` | Rotate selected object on Alpha / Beta / Gamma axes |
-| | `S` | Snap selected object directly to the terrain |
-| | `Space` | Reset selected object's rotation |
-
----
-
-## ⚙️ 2. Headless Command Line Interface (CLI)
-
-The IGI Editor contains an in-process, headless compiler and parser suite written in native C++17. When any of the CLI flags are provided, the GUI is bypassed entirely, making it suitable for batch modding pipelines, decompiling/compiling automation, and unit testing.
-
-### General Syntax
 ```powershell
-.\bin\Release\igi1ed.exe [command_flag] [arguments]
+.\bin\Release\igi1ed.exe --help
+.\bin\Release\igi1ed.exe --run-tests
+.\bin\Release\igi1ed.exe --verify-level --level 1 [--level 2 ...]
+.\bin\Release\igi1ed.exe --extract-level <N> [outdir]
 ```
 
-### 🧪 Global Testing Command
-* **Run All Parser C++ Unit Tests**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --run-tests
-  ```
-  *Executes test coverage across all custom parser suites (MEF, QVM, RES, TEX, MTP, Graphs) to verify format parsing integrity.*
+#### `--run-tests`
+Runs all native C++ parser unit tests (QSC, QVM, RES, TEX, MTP, etc.).
+
+#### `--verify-level`
+Launches igi1ed headlessly, loads each specified level, compares QVM instructions against the editor log.
+
+Flags:
+- `--skip-launch` — use existing log without re-launching editor
+- `--timeout <sec>` — kill editor after N seconds
+- `--game-path <path>` — IGI1 install path
+- `--log <path>` — override log file path
+- `--report-json <file>` — write aggregated JSON report
+- `--report-md <file>` — write aggregated Markdown report
+- `--report-dir <dir>` — write per-level reports to directory
+- `--delay <sec>` — delay between levels (default: 5)
+
+#### `--extract-level <N> [outdir]`
+Extracts all model, texture, and terrain assets for level N to a directory (defaults to `levels/levelN/`).
 
 ---
 
-### 📦 3D Model Parsers (`--mef`)
+## gconv1.exe — Asset Converter (located in `content/tools/`)
 
-Parses Project IGI proprietary MEF model geometries. The editor contains both binary MEF and ASCII MEF C++ parsing systems, automatically falling back to ASCII if the file is an open format.
+Standalone CLI tool for reading, converting, and inspecting IGI game assets. No OpenGL or editor context required.
 
-* **Parse and Display MEF Structure**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --mef models/001_01_1.mef
-  ```
-  *Outputs mesh layouts, vertices, normals, faces, bone matrices, textures, and attachment metadata.*
+```powershell
+.\bin\Release\content\tools\gconv1.exe --help
+.\bin\Release\content\tools\gconv1.exe <command> --help
+```
 
-* **Export proprietary MEF to OBJ**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --mef models/001_01_1.mef --export-obj models/001_01_1.obj
-  ```
-  *Converts the proprietary mesh layout into a standard Wavefront OBJ model for editing in Blender/Maya.*
+### Commands
 
-* **Export MEF to ASCII MEF**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --mef models/001_01_1.mef --export-mef models/001_01_1_ascii.mef
-  ```
-  *De-serializes a binary game model into human-readable ASCII format.*
+#### `tex` — Texture Operations
 
----
+```powershell
+gconv1 tex info   <input.tex|.spr|.pic>
+gconv1 tex decode <input.tex|.spr|.pic> -o <output_dir>
+gconv1 tex decode <folder/> -o <output_dir> --batch
+gconv1 tex to-png <input.tga|.tex> -o <out.png>
+gconv1 tex to-tga <input.png|.tex> -o <out.tga>
+```
 
-### 📜 QSC Script & QVM Bytecode Suite (`--qsc`, `--qvm`)
+#### `mef` — 3D Mesh Operations
 
-Provides a complete, in-process C++ compiler and decompiler pipeline for mission scripts (`objects.qsc` / `objects.qvm`), bypassing the need for separate assembly binaries.
+```powershell
+gconv1 mef info   <input.mef>
+gconv1 mef dump   <input.mef> [-o <output.txt>]
+gconv1 mef export <input.mef> -o <output.obj>
+gconv1 mef export <folder/> -o <output_dir> --batch
+gconv1 mef bundle <input.mef> -o <outdir> --dat <file.dat> --texdir <dir>
+```
 
-* **Lexical Analysis (QSC Tokens)**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --qsc objects.qsc --lex
-  ```
-  *Tokenizes the QSC source and prints out the lexical structure with line and column identifiers.*
+#### `qsc` — QSC Quest Script
 
-* **Syntax Tree Parsing (QSC AST)**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --qsc objects.qsc --parse
-  ```
-  *Parses the tokens into an Abstract Syntax Tree (AST), displaying instruction call and argument hierarchies.*
+```powershell
+gconv1 qsc validate <file.qsc>
+gconv1 qsc compile  <file.qsc> -o <out.qvm>
+gconv1 qsc lex      <file.qsc>
+gconv1 qsc parse    <file.qsc>
+```
 
-* **Compile QSC to QVM (Bytecode)**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --qsc objects.qsc --compile objects.qvm
-  ```
-  *Compiles the high-level QSC script into optimized, executable QVM bytecode for the game engine.*
+#### `qvm` — QVM Bytecode
 
-* **Decompile QVM back to QSC**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --qvm objects.qvm --decompile objects.qsc
-  ```
-  *Performs native, full reverse engineering of compiled QVM bytecode into standard QSC source code.*
+```powershell
+gconv1 qvm info       <file.qvm>
+gconv1 qvm decompile  <file.qvm> -o <out.qsc>
+gconv1 qvm disasm     <file.qvm>
+```
 
-* **Parse and Inspect QVM Headers**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --qvm objects.qvm
-  ```
-  *Lists bytecode size, instruction metrics, string literals, and identifiers.*
+#### `res` — RES Archive
 
----
+```powershell
+gconv1 res list    <input.res>
+gconv1 res extract <input.res> -o <output_dir> [--file <name>]
+gconv1 res compile <file.qsc>
+gconv1 res pack    <dir> <out.res>
+gconv1 res unpack  <file.res> <dir>
+```
 
-### 🗃️ RES Resource Archives (`--res`)
+#### `mtp` — MTP Terrain Properties
 
-Reads and extracts proprietary game assets stored within `.res` archives.
+```powershell
+gconv1 mtp info   <input.mtp>
+gconv1 mtp dump   <input.mtp> [-o <output.json>]
+gconv1 mtp to-dat <input.mtp> [-o <out.dat>]
+```
 
-* **List RES Directory Contents**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --res level1.res
-  ```
-  *Lists all files packed inside the archive along with their respective file sizes.*
+#### `dat` — DAT Model-Texture Data
 
-* **Extract a Single Resource File**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --res level1.res --extract LOCAL:models/tree.mef models/tree.mef
-  ```
-  *Unpacks a specified asset entry matching the given internal path.*
+```powershell
+gconv1 dat info   <file.dat>
+gconv1 dat export <file.dat> [-o <out.json>] [--filter <model>] [--text]
+gconv1 dat to-mtp <file.dat> [-o <out.mtp>]
+```
 
-* **Extract All Packaged Resources**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --res level1.res --extract-all output_directory/
-  ```
-  *Unpacks all archive structures recursively, recreating their folders into the destination directory.*
+#### `fnt` — FNT Bitmap Font
 
----
+```powershell
+gconv1 fnt info   <file.fnt>
+gconv1 fnt export <file.fnt> -o <out.png>
+```
 
-### 🎨 Texture Mappings & Formats (`--mtp`, `--tex`)
+#### `terrain` — Terrain Height/Cube Data
 
-* **Parse MTP Texture Mapping Info**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --mtp textures.mtp
-  ```
-  *Reads global mapping info, animations, shadow maps, texture configurations, and mappings.*
+```powershell
+gconv1 terrain info       <file.ctr|.lmp>
+gconv1 terrain export-lmp <file.lmp> -o <outdir>
+gconv1 terrain export-ctr <file.ctr> -o <outdir>
+```
 
-* **Convert MTP → DAT** (binary model-texture package → text DAT):
-  ```powershell
-  .\bin\Release\igi1ed.exe --mtp level1.mtp --to-dat [out.dat]
-  ```
-  *Parses the MTP's model→texture mappings and writes the equivalent text `.dat` (with the `waypoint` sentinel + texture manifest). Defaults to `<stem>.dat` next to the input.*
+#### `graph` — AI Navigation Graph
 
-* **Convert DAT → MTP** (text DAT → binary MTP, via `mtp_decoder.exe`):
-  ```powershell
-  .\bin\Release\igi1ed.exe --dat level1.dat --to-mtp [out.mtp]
-  ```
-  *Drives the bundled `content/tools/mtp_decoder.exe` (Packed-MTP mode) to regenerate the game-accepted `.mtp` next to the `.dat`; copies it to `out.mtp` if given. This is the same tool path the editor uses when importing a foreign model.*
-
-* **Parse TEX Textures**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --tex sky_layer1.tex
-  ```
-  *Reads TEX texture file structures, listing dimensions and image modes for all mipmap layers.*
-
-* **Export TEX to TGA Image Files**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --tex sky_layer1.tex --export-tga output_images/
-  ```
-  *Extracts raw image assets from the TEX format and saves them as standard, uncompressed TGA files.*
-
-* **Convert TGA/PNG Images**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --tex input.tga --ToPng output.png
-  .\bin\Release\igi1ed.exe --tex input.png --ToTga output.tga
-  ```
-  *Provides quick lossless image conversion natively through the CLI without invoking the full parser.*
+```powershell
+gconv1 graph info   <file.dat>
+gconv1 graph export <file.dat> -o <out.json>
+```
 
 ---
 
-### 🔤 Bitmap Fonts (`--fnt`)
-
-* **Parse FNT and List Characters**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --fnt editorsm.fnt
-  ```
-  *Reads an ILFF-based font file and outputs its dimension stats and concatenated glyph characters.*
-
-* **Export Font Texture Atlas**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --fnt editorsm.fnt --export-png atlas.png
-  ```
-  *Extracts the embedded bitmap texture from the `.fnt` file and saves it as a PNG image.*
-
----
-
-### 🏔️ Terrain & Navigation Systems (`--terrain`, `--graph`)
-
-* **Parse Terrain Quadtrees & Lightmaps**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --terrain terrain.ctr
-  .\bin\Release\igi1ed.exe --terrain terrain.lmp
-  ```
-  *Parses Quadtree nodes (`.ctr`) or lightmap layers (`.lmp`) to verify structural heightmap integrity.*
-
-* **Parse Navigation Graphs (AI Paths)**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --graph graph.dat
-  ```
-  *Reads navigation node networks (`.dat`) including positions, surface materials, and connectivity matrices for AI.*
-
----
-
-### 📊 Game Data File Parser (`--dat`)
-
-Parses Project IGI database and game object definition archives (`.dat`), outputting JSON or plaintext structures with advanced filtering.
-
-* **Parse DAT and Output JSON to Console**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --dat object_data.dat
-  ```
-  *Decodes the database and formats object records as JSON printed directly to stdout.*
-
-* **Export DAT JSON to File**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --dat object_data.dat --output out.json
-  ```
-  *Writes the structured JSON payload directly to the specified destination path.*
-
-* **Filter by Model Name**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --dat object_data.dat --filter MODEL_NAME
-  ```
-  *Extracts and returns only entries containing the specified model name prefix or query.*
-
-* **Plain-text Report Mode**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --dat object_data.dat --text [--output out.txt]
-  ```
-  *Outputs a clean, human-readable tabular plaintext report instead of JSON representation.*
-
----
-
-### 🛠️ Resource Extraction Automation
-
-To streamline modding setup across the 14 levels, the editor features an automated extraction utility.
-
-* **Extract Level Assets**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --extract-level <level_number> [<out_dir>]
-  ```
-  *Automates asset unpacking: extracts 3D meshes from the level's `.res` file, gathers texture mappings from `.tex`, copies Quadtree structures, and populates the models, textures, and terrain folders into the output directory (defaults to `levels/level<num>`).*
-
----
-
-### 🧪 Automated Level Verification & Testing Suite (`--verify-level`)
-
-Runs high-speed integration testing across game levels to compare compiled QVM instructions (ground truth) against the editor output logs (`igi1ed.log`) for verification.
-
-* **Basic Verification**:
-  ```powershell
-  .\bin\Release\igi1ed.exe --verify-level --level 1 --level 2
-  ```
-  *Launches and executes comparison checks across the specified levels.*
-
-* **Available Flags and Customization**:
-  * `--skip-launch`: Bypasses launching the editor again and runs checks using existing logs.
-  * `--timeout <seconds>`: Force-kills the editor after the specified runtime limit (default is `0` which waits indefinitely).
-  * `--game-path <path>`: Specifies custom path to the original Project IGI installation directory.
-  * `--log <path>`: Overrides the target editor log file path to check.
-  * `--report-json <file>`: Writes an aggregated JSON report containing verification metrics.
-  * `--report-md <file>`: Generates a beautiful markdown summary report for CI pipeline reporting.
-  * `--report-dir <dir>`: Writes individual JSON and Markdown verification reports for each tested level to the specified directory.
-  * `--delay <seconds>`: Time interval between level checks (defaults to `5` seconds).
-
+Run `gconv1 --help` for the full command tree, or `gconv1 <command> --help` for per-command usage.

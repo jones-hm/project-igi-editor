@@ -1,13 +1,15 @@
 #include "pch.h"
 #include "cmd_mtp.h"
 #include "mtp_parser.h"
+#include "dat_parser.h"
 
 static void print_usage()
 {
     std::cerr <<
         "Usage:\n"
-        "  gconv mtp dump <input.mtp> [-o <output.json>]\n"
-        "  gconv mtp info <input.mtp>\n";
+        "  gconv1 mtp dump <input.mtp> [-o <output.json>]\n"
+        "  gconv1 mtp info <input.mtp>\n"
+        "  gconv1 mtp to-dat <input.mtp> [-o <out.dat>]\n";
 }
 
 // Minimal JSON string escaping
@@ -167,6 +169,60 @@ int cmd_mtp(int argc, char** argv)
             for (const auto& t : mtp.textures)
                 std::cout << "  " << t << "\n";
         }
+        return 0;
+    }
+
+    // ── to-dat ────────────────────────────────────────────────────────────────
+    if (sub == "to-dat")
+    {
+        if (argc < 3)
+        {
+            std::cerr << "mtp to-dat: missing <input.mtp>\n";
+            return 1;
+        }
+        std::string path = argv[2];
+
+        const char* out_arg = nullptr;
+        for (int i = 3; i < argc - 1; ++i)
+            if (strcmp(argv[i], "-o") == 0) { out_arg = argv[i + 1]; break; }
+
+        if (!std::filesystem::exists(path))
+        {
+            std::cerr << "mtp to-dat: file not found: " << path << "\n";
+            return 2;
+        }
+
+        MTPFile mtp = MTP_Parse(path);
+        if (!mtp.valid)
+        {
+            std::cerr << "mtp to-dat: parse error: " << mtp.error << "\n";
+            return 3;
+        }
+
+        // Build DAT from MTP mappings
+        DATFile dat;
+        dat.valid = true;
+        for (const auto& m : mtp.mappings)
+        {
+            DATModelEntry e;
+            e.modelName = m.modelName;
+            e.textures  = m.textureNames;
+            dat.models.push_back(e);
+        }
+        dat.models.push_back(DATModelEntry{"waypoint", {}});
+        dat.allTextures           = mtp.textures;
+        dat.declaredModelCount    = (int)dat.models.size();
+        dat.declaredTextureCount  = (int)dat.allTextures.size();
+
+        std::string out_dat = out_arg ? std::string(out_arg)
+                                      : std::filesystem::path(path).replace_extension(".dat").string();
+        std::string err;
+        if (!DAT_WriteNative(dat, out_dat, err))
+        {
+            std::cerr << "mtp to-dat: write failed: " << err << "\n";
+            return 4;
+        }
+        std::cout << "Wrote DAT: " << out_dat << "\n";
         return 0;
     }
 

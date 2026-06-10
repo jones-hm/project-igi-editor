@@ -9,13 +9,14 @@ namespace fs = std::filesystem;
 static void print_mef_help()
 {
     std::cout <<
-        "Usage: gconv mef <subcommand> [options]\n"
+        "Usage: gconv1 mef <subcommand> [options]\n"
         "\n"
         "Subcommands:\n"
         "  export <input.mef> -o <output.obj>\n"
         "  export <folder/> -o <output_dir> --batch\n"
         "  dump   <input.mef> [-o <output.txt>]\n"
         "  info   <input.mef>\n"
+        "  bundle <input.mef> -o <outdir> --dat <file.dat> --texdir <dir>\n"
         "\n"
         "Exit codes: 0=success 1=bad args 2=file not found 3=parse error 4=write error\n";
 }
@@ -281,7 +282,55 @@ int cmd_mef(int argc, char** argv)
         }
     }
 
+    if (subcmd == "bundle")
+    {
+        if (argc < 3)
+        {
+            std::cerr << "mef bundle: missing input file\n";
+            return 1;
+        }
+        std::string input = argv[2];
+
+        std::string outdir, dat_path, tex_dir;
+        for (int i = 3; i < argc - 1; ++i)
+        {
+            std::string a = argv[i];
+            if (a == "-o"       && i + 1 < argc) { outdir   = argv[++i]; }
+            else if (a == "--dat"    && i + 1 < argc) { dat_path = argv[++i]; }
+            else if (a == "--texdir" && i + 1 < argc) { tex_dir  = argv[++i]; }
+        }
+
+        if (outdir.empty())
+        {
+            std::cerr << "mef bundle: missing -o <outdir>\n";
+            return 1;
+        }
+
+        if (!fs::exists(input))
+        {
+            std::cerr << "mef bundle: file not found: " << input << "\n";
+            return 2;
+        }
+
+        ParsedGeometry geo;
+        try { geo = ParseMefFile(input); }
+        catch (const std::exception& e)
+        {
+            std::cerr << "mef bundle: parse error: " << e.what() << "\n";
+            return 3;
+        }
+
+        std::string model_stem = fs::path(input).stem().string();
+        if (!MefExporter::ExportToObjBundle(geo, model_stem, outdir, dat_path, tex_dir))
+        {
+            std::cerr << "mef bundle: export failed\n";
+            return 4;
+        }
+        std::cout << "mef bundle: exported to " << (fs::path(outdir) / model_stem).string() << "\n";
+        return 0;
+    }
+
     std::cerr << "mef: unknown subcommand '" << subcmd << "'\n";
-    std::cerr << "Run 'gconv mef --help' for usage.\n";
+    std::cerr << "Run 'gconv1 mef --help' for usage.\n";
     return 1;
 }

@@ -1,15 +1,19 @@
 #include "pch.h"
 #include "cmd_res.h"
 #include "res_parser.h"
+#include "res_compiler.h"
 #include <filesystem>
 
 static void print_usage()
 {
     std::cerr <<
         "Usage:\n"
-        "  gconv res list <input.res>\n"
-        "  gconv res extract <input.res> -o <output_dir>\n"
-        "  gconv res extract <input.res> --file <name> -o <output_dir>\n";
+        "  gconv1 res list <input.res>\n"
+        "  gconv1 res extract <input.res> -o <output_dir>\n"
+        "  gconv1 res extract <input.res> --file <name> -o <output_dir>\n"
+        "  gconv1 res compile <file.qsc>\n"
+        "  gconv1 res pack <dir> <out.res>\n"
+        "  gconv1 res unpack <file.res> <dir>\n";
 }
 
 // Return the value of a named option (e.g. "-o", "--file"), or nullptr if absent.
@@ -121,6 +125,113 @@ int cmd_res(int argc, char** argv)
         }
 
         std::cout << "Extracted " << extracted << " file(s) to " << out_dir << "\n";
+        return 0;
+    }
+
+    // ── compile ───────────────────────────────────────────────────────────────
+    if (sub == "compile")
+    {
+        if (argc < 3)
+        {
+            std::cerr << "res compile: missing <file.qsc>\n";
+            return 1;
+        }
+        std::string qsc_path = argv[2];
+        if (!std::filesystem::exists(qsc_path))
+        {
+            std::cerr << "res compile: file not found: " << qsc_path << "\n";
+            return 2;
+        }
+        std::string err;
+        if (!RES_Compile(qsc_path, err))
+        {
+            std::cerr << "res compile: " << err << "\n";
+            return 3;
+        }
+        std::cout << "res compile: success\n";
+        return 0;
+    }
+
+    // ── pack ──────────────────────────────────────────────────────────────────
+    if (sub == "pack")
+    {
+        if (argc < 4)
+        {
+            std::cerr << "res pack: usage: gconv1 res pack <dir> <out.res>\n";
+            return 1;
+        }
+        std::string dir     = argv[2];
+        std::string out_res = argv[3];
+        // Normalize separators for RES_GenerateQSC
+        for (auto& c : out_res) if (c == '\\') c = '/';
+
+        if (!std::filesystem::is_directory(dir))
+        {
+            std::cerr << "res pack: not a directory: " << dir << "\n";
+            return 2;
+        }
+
+        std::string qsc_path = (std::filesystem::path(dir) / "resource.qsc").string();
+        std::string err;
+        if (!RES_GenerateQSC(dir, qsc_path, out_res, err))
+        {
+            std::cerr << "res pack (generate qsc): " << err << "\n";
+            return 3;
+        }
+        if (!RES_Compile(qsc_path, err))
+        {
+            std::cerr << "res pack (compile): " << err << "\n";
+            return 3;
+        }
+        std::cout << "res pack: packed to " << out_res << "\n";
+        return 0;
+    }
+
+    // ── unpack ────────────────────────────────────────────────────────────────
+    if (sub == "unpack")
+    {
+        if (argc < 4)
+        {
+            std::cerr << "res unpack: usage: gconv1 res unpack <file.res> <dir>\n";
+            return 1;
+        }
+        std::string res_path = argv[2];
+        std::string out_dir  = argv[3];
+
+        if (!std::filesystem::exists(res_path))
+        {
+            std::cerr << "res unpack: file not found: " << res_path << "\n";
+            return 2;
+        }
+
+        std::error_code ec;
+        std::filesystem::create_directories(out_dir, ec);
+        if (ec)
+        {
+            std::cerr << "res unpack: cannot create dir: " << ec.message() << "\n";
+            return 4;
+        }
+
+        int extracted = 0;
+        std::string err;
+        bool ok = RES_ForEachEntry(res_path,
+            [&](const std::string& name, const uint8_t* data, size_t size) {
+                std::filesystem::path entry_path(name);
+                std::filesystem::path out_path =
+                    std::filesystem::path(out_dir) / entry_path.filename();
+
+                std::ofstream ofs(out_path, std::ios::binary);
+                if (!ofs) { std::cerr << "res unpack: cannot write: " << out_path << "\n"; return; }
+                ofs.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(size));
+                ++extracted;
+            }, err);
+
+        if (!ok)
+        {
+            std::cerr << "res unpack: " << err << "\n";
+            return 3;
+        }
+        std::cout << "Unpacked " << extracted << " file(s) to " << out_dir << "\n";
         return 0;
     }
 

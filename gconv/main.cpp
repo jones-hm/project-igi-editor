@@ -7,6 +7,8 @@
 #include "cmd_mtp.h"
 #include "cmd_terrain.h"
 #include "cmd_graph.h"
+#include "cmd_dat.h"
+#include "cmd_fnt.h"
 
 // Exit codes:
 //   0 = success
@@ -18,21 +20,23 @@
 static void print_help()
 {
     std::cout <<
-        "gconv v1.0 \xe2\x80\x94 IGI Game Asset Converter\n"
+        "gconv1 v3.0 \xe2\x80\x94 IGI Game Asset Converter\n"
         "\n"
-        "Usage: gconv <command> [options]\n"
+        "Usage: gconv1 <command> [options]\n"
         "\n"
         "Commands:\n"
-        "  tex      TEX/SPR/PIC texture operations (decode, info)\n"
-        "  mef      MEF 3D mesh operations (export to OBJ, dump, info)\n"
+        "  tex      TEX/SPR/PIC texture operations (decode, info, to-png, to-tga)\n"
+        "  mef      MEF 3D mesh operations (export to OBJ, bundle, dump, info)\n"
         "  qsc      QSC quest script (compile to QVM, validate)\n"
         "  qvm      QVM bytecode (decompile to QSC, disasm, info)\n"
-        "  res      RES archive (list, extract)\n"
-        "  mtp      MTP terrain properties (dump to JSON, info)\n"
+        "  res      RES archive (list, extract, compile, pack, unpack)\n"
+        "  mtp      MTP terrain properties (dump to JSON, info, to-dat)\n"
         "  terrain  Terrain height/cube data (export-lmp, export-ctr, info)\n"
         "  graph    AI navigation graph (export to JSON, info)\n"
+        "  dat      DAT model-texture data (info, export, to-mtp)\n"
+        "  fnt      FNT font file (info, export PNG)\n"
         "\n"
-        "Run 'gconv <command> --help' for command-specific help.\n";
+        "Run 'gconv1 <command> --help' for command-specific help.\n";
 }
 
 int main(int argc, char** argv)
@@ -53,7 +57,7 @@ int main(int argc, char** argv)
 
     if (cmd == "--version" || cmd == "-v")
     {
-        std::cout << "gconv version 1.0\n";
+        std::cout << "gconv1 version 3.0\n";
         return 0;
     }
 
@@ -69,8 +73,10 @@ int main(int argc, char** argv)
     if (cmd == "mtp")     return cmd_mtp(sub_argc, sub_argv);
     if (cmd == "terrain") return cmd_terrain(sub_argc, sub_argv);
     if (cmd == "graph")   return cmd_graph(sub_argc, sub_argv);
+    if (cmd == "dat")     return cmd_dat(sub_argc, sub_argv);
+    if (cmd == "fnt")     return cmd_fnt(sub_argc, sub_argv);
 
-    std::cerr << "gconv: unknown command '" << cmd << "'\n";
-    std::cerr << "Run 'gconv --help' for usage.\n";
+    std::cerr << "gconv1: unknown command '" << cmd << "'\n";
+    std::cerr << "Run 'gconv1 --help' for usage.\n";
     return 1;
 }

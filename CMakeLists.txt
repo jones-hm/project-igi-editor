@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 # target_precompile_headers
 #   Added in version 3.16
 
-project (igi_editor 
-  VERSION 1.5
+project (igi_editor
+  VERSION 3.0
   LANGUAGES C CXX)
 
 # Designated initializers, introduced in C++20
@@ -187,16 +187,25 @@ endif()
 # ─── gconv: standalone CLI game asset converter ──────────────────────────────
 file(GLOB GCONV_SOURCES "gconv/*.h" "gconv/*.cpp")
 
-add_executable(gconv ${GCONV_SOURCES} ${SOURCES_PARSERS})
+add_executable(gconv1 ${GCONV_SOURCES} ${SOURCES_PARSERS})
 
-set_target_properties(gconv PROPERTIES
+set_target_properties(gconv1 PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}/bin/Release"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${PROJECT_SOURCE_DIR}/bin/Debug"
-    OUTPUT_NAME "gconv"
+    OUTPUT_NAME "gconv1"
 )
 
-# gconv has no GL/GLUT — only standard + GLM + parser headers
-target_include_directories(gconv PRIVATE
+# Deploy gconv1.exe to content/tools/ alongside the editor
+add_custom_command(TARGET gconv1 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:igi-editor>/content/tools"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:gconv1>"
+        "$<TARGET_FILE_DIR:igi-editor>/content/tools/gconv1.exe"
+    COMMENT "Deploying gconv1.exe to tools/"
+)
+
+# gconv1 has no GL/GLUT — only standard + GLM + parser headers
+target_include_directories(gconv1 PRIVATE
     ${PROJECT_SOURCE_DIR}/gconv          # gconv/pch.h overrides source/pch.h
     ${PROJECT_SOURCE_DIR}/source         # common.h, level_common.h, etc.
     ${PROJECT_SOURCE_DIR}/source/parsers
@@ -204,9 +213,9 @@ target_include_directories(gconv PRIVATE
     ${PROJECT_SOURCE_DIR}/third_party
 )
 
-# gconv uses no PCH — but parsers include "pch.h"; provide gconv/pch.h
-# All gconv files and parser files compiled for this target skip the editor PCH
-set_target_properties(gconv PROPERTIES
+# gconv1 uses no PCH — but parsers include "pch.h"; provide gconv/pch.h
+# All gconv1 files and parser files compiled for this target skip the editor PCH
+set_target_properties(gconv1 PROPERTIES
     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
 )
 
@@ -214,13 +223,13 @@ if (MSVC)
     # /FI force-includes gconv/pch.h into every TU (parsers rely on pch.h being
     # available but don't #include it themselves; this replicates the PCH
     # force-include without dragging in GL/app headers).
-    target_compile_options(gconv PRIVATE
+    target_compile_options(gconv1 PRIVATE
         "/bigobj" "/FS"
         "/FI${PROJECT_SOURCE_DIR}/gconv/pch.h"
     )
 endif()
 
-# Parser files compiled for gconv must not use the editor PCH.
+# Parser files compiled for gconv1 must not use the editor PCH.
 # gconv/common_impl.cpp, logger_impl.cpp, utils_impl.cpp are unity wrappers
 # that live in gconv/ (first in include dirs) so their #include "pch.h"
 # resolves to gconv/pch.h (no GL), not source/pch.h.
