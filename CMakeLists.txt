@@ -78,6 +78,7 @@ set_source_files_properties(
   source/app_input.cpp
   source/app_view.cpp
   source/app_lookup.cpp
+  source/app_editor.cpp
   source/renderer/renderer_flat_sky_layers.cpp
   source/renderer/renderer_objects.cpp
   source/renderer/renderer_objects_atta.cpp

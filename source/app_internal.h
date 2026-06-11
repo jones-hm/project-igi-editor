@@ -34,6 +34,26 @@ using namespace TaskSchemaNS;
 #include <sstream>
 #include <algorithm>
 #include <unordered_map>
+#include <atomic>
+
+
+// ── game-process monitor + global-hotkey id (shared: core + app_editor) ──
+struct GameMonitorParam {
+	HANDLE             hProcess;
+	std::atomic<bool>* pExited;
+};
+
+inline DWORD WINAPI GameMonitorProc(LPVOID param) {
+	auto* p = static_cast<GameMonitorParam*>(param);
+	HANDLE h      = p->hProcess;
+	auto*  pExited = p->pExited;
+	delete p;
+	WaitForSingleObject(h, INFINITE);
+	pExited->store(true, std::memory_order_release);
+	return 0;
+}
+
+constexpr int HOTKEY_ID_TOGGLE_GAME = 0x47; // arbitrary non-conflicting ID
 
 
 // ── tuning constants ──
