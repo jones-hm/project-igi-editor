@@ -151,8 +151,12 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
             const std::string fname = entry.path().filename().string();
             const std::string stem  = entry.path().stem().string();
 
-            // Full modelId in filename
-            if (fname.find(modelId) != std::string::npos) return entry.path().string();
+            // Exact id or "<id>_<lod/variant>" — boundary-aware so "009_01_1" never
+            // matches "1009_01_1.mef" (a different model whose name contains the id).
+            if (stem == modelId ||
+                (stem.rfind(modelId, 0) == 0 && stem.size() > modelId.size() &&
+                 stem[modelId.size()] == '_'))
+                return entry.path().string();
 
             // Variation fallback: require type prefix at stem start (e.g. "003_" not "1003_")
             size_t firstUnderscore = modelId.find_first_of('_');

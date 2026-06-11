@@ -225,9 +225,19 @@ std::string Renderer_Objects::FindTextureFile(const std::string& textureId) cons
             if (!entry.is_regular_file()) continue;
             if (entry.path().extension() != ".tex") continue;
             const std::string stem = entry.path().stem().string();
-            if (stem == textureId ||
-                stem.find(textureId) != std::string::npos ||
-                textureId.find(stem) != std::string::npos) {
+            // Match the exact id, or a pixel-format suffix variant ("<id>_argb8888"),
+            // but NOT a loose substring: "009_01_1" must never grab "1009_01_1.tex"
+            // (a different texture). The old substring test loaded wrong textures for
+            // AI/weapon models whose id is a tail-substring of another id.
+            const bool match =
+                stem == textureId ||
+                (stem.size() > textureId.size() &&
+                 stem.compare(0, textureId.size(), textureId) == 0 &&
+                 stem[textureId.size()] == '_') ||
+                (textureId.size() > stem.size() &&
+                 textureId.compare(0, stem.size(), stem) == 0 &&
+                 textureId[stem.size()] == '_');
+            if (match) {
                 return entry.path().string();
             }
         }
