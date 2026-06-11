@@ -1353,7 +1353,9 @@ void Renderer::Draw(const draw_params_s &params,
 
     if (task_tree_view.pause_mode_) {
       const int menu_w = 460;
-      const int menu_h = 480;
+      const int tex_panel_h = 120;
+      const bool exp_tex = task_tree_view.pause_tex_expanded_;
+      const int menu_h = 480 + (exp_tex ? tex_panel_h : 0);
       const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
       const int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
       const int viewport_h = params.view_define_->viewport_height_;
@@ -1408,6 +1410,11 @@ void Renderer::Draw(const draw_params_s &params,
       snprintf(bufHgt, sizeof(bufHgt), "  [%c] Height", hgt ? 'X' : ' ');
       snprintf(bufDsc, sizeof(bufDsc), "  [%c] Discard", dsc ? 'X' : ' ');
 
+      // Count loaded textures for header label
+      int num_tex = task_tree_view.level_tex_names_ ? (int)task_tree_view.level_tex_names_->size() : 0;
+      char texHdrBuf[48];
+      snprintf(texHdrBuf, sizeof(texHdrBuf), "Textures: %d %s", num_tex, exp_tex ? "[-]" : "[+]");
+
       std::vector<const char*> btn_labels;
       btn_labels.push_back("Resume");
       const int FONT_ROW = btn_labels.size();
@@ -1417,17 +1424,20 @@ void Renderer::Draw(const draw_params_s &params,
       const int SEARCH_ROW = btn_labels.size();
       btn_labels.push_back("Model Search");
       const int TERRAIN_HEADER_ROW = btn_labels.size();
-      
+
       bool exp = task_tree_view.pause_terrain_expanded_;
       btn_labels.push_back(exp ? "Terrain Options: [-]" : "Terrain Options: [+]");
-      
+
       int TERRAIN_TEX_ROW = -1, TERRAIN_HGT_ROW = -1, TERRAIN_DSC_ROW = -1;
       if (exp) {
         TERRAIN_TEX_ROW = btn_labels.size(); btn_labels.push_back(bufTex);
         TERRAIN_HGT_ROW = btn_labels.size(); btn_labels.push_back(bufHgt);
         TERRAIN_DSC_ROW = btn_labels.size(); btn_labels.push_back(bufDsc);
       }
-      
+
+      const int TEX_LIST_ROW = btn_labels.size();
+      btn_labels.push_back(texHdrBuf);
+
       const int RESET_ROW = btn_labels.size();
       btn_labels.push_back("Reset Level");
       const int SAVE_ROW = btn_labels.size();
@@ -1437,8 +1447,26 @@ void Renderer::Draw(const draw_params_s &params,
 
       const int NUM_BTNS = btn_labels.size();
 
+      // Rows at or after TEX_LIST_ROW are offset down by tex_panel_h when expanded.
+      auto row_screen_y = [&](int idx) {
+        int y = screen_menu_top + 85 + idx * 35;
+        if (idx > TEX_LIST_ROW && exp_tex) y += tex_panel_h;
+        return y;
+      };
+
+      // Shared spinner-box draw helper (reused for FONT_ROW and LEVEL_ROW)
+      auto sbox = [&](int x1, int w, const char *txt, int row_top, int row_bot, int lbl_y) {
+        glColor3f(0.0f, 0.7f, 0.0f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2i(x1, row_bot); glVertex2i(x1 + w, row_bot);
+        glVertex2i(x1 + w, row_top); glVertex2i(x1, row_top);
+        glEnd();
+        int tw = (int)strlen(txt) * 6;
+        draw_text_sys(x1 + (w - tw) / 2, lbl_y, txt, 0.0f, 0.9f, 0.0f);
+      };
+
       for (int i = 0; i < NUM_BTNS; ++i) {
-        int screen_btn_y = screen_menu_top + 85 + i * 35;
+        int screen_btn_y = row_screen_y(i);
         int gl_btn_y = viewport_h - screen_btn_y;
 
         bool hovered = (task_tree_view.mouse_x_ >= menu_x &&
@@ -1447,64 +1475,54 @@ void Renderer::Draw(const draw_params_s &params,
                         task_tree_view.mouse_y_ <= screen_btn_y + 15);
 
         if (i == FONT_ROW) {
-          // Whole row "Font: <type>  [-] <n> [+]" is centered as one group.
-          // Layout constants MUST match the click handler in app.cpp.
+          // "Font: <type>  [-] <n> [+]" — layout MUST match click handler
           const int sz_box_w = 34, btn_w = 22, gap = 6;
-          const int label_w  = 96;   // "Font: Editor"/"Font: System" (~8px/char)
-          const int label_gap = 16;
-          const int controls_w = btn_w + gap + sz_box_w + gap + btn_w;
-          const int group_w = label_w + label_gap + controls_w;
+          const int label_w = 96, label_gap = 16;
+          const int group_w = label_w + label_gap + btn_w + gap + sz_box_w + gap + btn_w;
           int gx = menu_x + (menu_w - group_w) / 2;
-
-          // Left: font-type toggle label.
           draw_text_sys(gx, screen_btn_y, font_btn_label,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
-
-          // Right: [-] [size] [+] size control.
           int minus_x = gx + label_w + label_gap;
           int box_x   = minus_x + btn_w + gap;
           int plus_x  = box_x + sz_box_w + gap;
-          int row_top = gl_btn_y - 14, row_bot = gl_btn_y + 10;
+          int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
+          char szbuf[8]; snprintf(szbuf, sizeof(szbuf), "%d", Config::Get().systemFontSize);
+          sbox(minus_x, btn_w,    "-",    rt, rb, screen_btn_y);
+          sbox(box_x,   sz_box_w, szbuf,  rt, rb, screen_btn_y);
+          sbox(plus_x,  btn_w,    "+",    rt, rb, screen_btn_y);
 
-          auto sbox = [&](int x1, int w, const char *txt) {
-            glColor3f(0.0f, 0.7f, 0.0f);
-            glBegin(GL_LINE_LOOP);
-            glVertex2i(x1, row_bot); glVertex2i(x1 + w, row_bot);
-            glVertex2i(x1 + w, row_top); glVertex2i(x1, row_top);
-            glEnd();
-            int tw = (int)strlen(txt) * 6;
-            draw_text_sys(x1 + (w - tw) / 2, screen_btn_y, txt, 0.0f, 0.9f, 0.0f);
-          };
-          char szbuf[8];
-          snprintf(szbuf, sizeof(szbuf), "%d", Config::Get().systemFontSize);
-          sbox(minus_x, btn_w, "-");
-          sbox(box_x,   sz_box_w, szbuf);
-          sbox(plus_x,  btn_w, "+");
-        } else if (i == LEVEL_ROW || i == SEARCH_ROW) {
-          // Input Box row
-          const int label_w = 110;
-          const int box_w = 200;
-          const int gap = 10;
-          int gx = menu_x + (menu_w - (label_w + gap + box_w)) / 2;
-          
-          draw_text_sys(gx, screen_btn_y, btn_labels[i],
+        } else if (i == LEVEL_ROW) {
+          // Level spinner: "Select Level  [-] [N] [+]" — layout MUST match click handler
+          const int num_box_w = 40, btn_w = 22, gap = 6;
+          const int label_w = 96, label_gap = 16;
+          const int group_w = label_w + label_gap + btn_w + gap + num_box_w + gap + btn_w;
+          int gx = menu_x + (menu_w - group_w) / 2;
+          draw_text_sys(gx, screen_btn_y, "Select Level",
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
-                        
+          int minus_x = gx + label_w + label_gap;
+          int box_x   = minus_x + btn_w + gap;
+          int plus_x  = box_x + num_box_w + gap;
+          int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
+          sbox(minus_x, btn_w,      "-",   rt, rb, screen_btn_y);
+          sbox(box_x,   num_box_w, task_tree_view.pause_level_input_.c_str(), rt, rb, screen_btn_y);
+          sbox(plus_x,  btn_w,      "+",   rt, rb, screen_btn_y);
+
+        } else if (i == SEARCH_ROW) {
+          // Model Search text input box
+          const int label_w = 110, box_w = 200, gap = 10;
+          int gx = menu_x + (menu_w - (label_w + gap + box_w)) / 2;
+          draw_text_sys(gx, screen_btn_y, "Model Search",
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
           int box_x = gx + label_w + gap;
-          int row_top = gl_btn_y - 14, row_bot = gl_btn_y + 10;
-          
-          bool is_active = (task_tree_view.pause_active_input_ == (i == LEVEL_ROW ? 0 : 1));
-          
-          if (is_active) glColor3f(0.0f, 1.0f, 0.0f);
-          else glColor3f(0.0f, 0.5f, 0.0f);
-          
+          int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
+          bool is_active = (task_tree_view.pause_active_input_ == 1);
+          glColor3f(0.0f, is_active ? 1.0f : 0.5f, 0.0f);
           glBegin(GL_LINE_LOOP);
-          glVertex2i(box_x, row_bot); glVertex2i(box_x + box_w, row_bot);
-          glVertex2i(box_x + box_w, row_top); glVertex2i(box_x, row_top);
+          glVertex2i(box_x, rb); glVertex2i(box_x + box_w, rb);
+          glVertex2i(box_x + box_w, rt); glVertex2i(box_x, rt);
           glEnd();
-          
-          std::string buf = (i == LEVEL_ROW) ? task_tree_view.pause_level_input_ : task_tree_view.pause_search_input_;
-          if (is_active && (clock() / 500) % 2 == 0) buf += "_"; // cursor blink
+          std::string buf = task_tree_view.pause_search_input_;
+          if (is_active && (clock() / 500) % 2 == 0) buf += "_";
           draw_text_sys(box_x + 5, screen_btn_y, buf.c_str(), 1.0f, 1.0f, 1.0f);
 
         } else if (i == TERRAIN_HEADER_ROW) {
@@ -1514,15 +1532,89 @@ void Renderer::Draw(const draw_params_s &params,
             glEnable(GL_BLEND);
             glColor4f(0.0f, 0.8f, 0.0f, 0.35f);
             glBegin(GL_QUADS);
-            glVertex2i(menu_x, gl_btn_y - 15);
-            glVertex2i(menu_x + menu_w, gl_btn_y - 15);
-            glVertex2i(menu_x + menu_w, gl_btn_y + 15);
-            glVertex2i(menu_x, gl_btn_y + 15);
+            glVertex2i(menu_x, gl_btn_y - 15); glVertex2i(menu_x + menu_w, gl_btn_y - 15);
+            glVertex2i(menu_x + menu_w, gl_btn_y + 15); glVertex2i(menu_x, gl_btn_y + 15);
             glEnd();
             glDisable(GL_BLEND);
           }
           draw_text_sys(menu_x + menu_w / 2 - 40, screen_btn_y, btn_labels[i],
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+
+        } else if (i == TEX_LIST_ROW) {
+          // Texture List header — clickable toggle
+          if (hovered) {
+            glEnable(GL_BLEND);
+            glColor4f(0.0f, 0.8f, 0.0f, 0.35f);
+            glBegin(GL_QUADS);
+            glVertex2i(menu_x + 20, gl_btn_y - 16); glVertex2i(menu_x + menu_w - 20, gl_btn_y - 16);
+            glVertex2i(menu_x + menu_w - 20, gl_btn_y + 12); glVertex2i(menu_x + 20, gl_btn_y + 12);
+            glEnd();
+            glDisable(GL_BLEND);
+          }
+          draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 4),
+                        screen_btn_y, btn_labels[i],
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+
+          // Draw texture sub-panel immediately below the header row when expanded
+          if (exp_tex && task_tree_view.level_tex_names_) {
+            const auto& names = *task_tree_view.level_tex_names_;
+            int px = menu_x + 10;
+            int pw = menu_w - 20;
+            int py_top = screen_btn_y + 18; // screen Y of panel top
+            int py_bot = py_top + tex_panel_h - 4;
+            int gl_py_top = viewport_h - py_top;
+            int gl_py_bot = viewport_h - py_bot;
+
+            // Dark panel background
+            glEnable(GL_BLEND);
+            glColor4f(0.0f, 0.08f, 0.0f, 0.92f);
+            glBegin(GL_QUADS);
+            glVertex2i(px, gl_py_bot); glVertex2i(px + pw, gl_py_bot);
+            glVertex2i(px + pw, gl_py_top); glVertex2i(px, gl_py_top);
+            glEnd();
+            glDisable(GL_BLEND);
+
+            // Panel border
+            glColor3f(0.0f, 0.6f, 0.0f);
+            glBegin(GL_LINE_LOOP);
+            glVertex2i(px, gl_py_bot); glVertex2i(px + pw, gl_py_bot);
+            glVertex2i(px + pw, gl_py_top); glVertex2i(px, gl_py_top);
+            glEnd();
+
+            // Texture entries (two columns, small font, ~9px line height)
+            const int line_h = 13;
+            const int visible = (tex_panel_h - 8) / line_h;
+            const int col_w = pw / 2 - 8;
+            int scroll = task_tree_view.pause_tex_scroll_;
+            int start = scroll * 2; // 2 columns per scroll step
+            for (int ti = 0; ti < visible * 2 && (start + ti) < (int)names.size(); ++ti) {
+              int col = ti % 2;
+              int row = ti / 2;
+              int tx = px + 6 + col * (col_w + 8);
+              int ty = py_top + 4 + row * line_h;
+              const std::string& name = names[start + ti];
+              // Truncate long names to fit column
+              std::string disp = (name.size() > 20) ? name.substr(0, 19) + "…" : name;
+              DrawFontTextSm(tx, viewport_h - ty - 9, disp.c_str(), 0.6f, 1.0f, 0.6f);
+            }
+
+            // Scroll indicator (right edge, tiny bar)
+            if ((int)names.size() > visible * 2) {
+              int total_rows = ((int)names.size() + 1) / 2;
+              float frac = (float)scroll / (float)(total_rows - visible);
+              int bar_h = tex_panel_h - 10;
+              int indicator_y = py_top + 4 + (int)(frac * (bar_h - 8));
+              glColor3f(0.0f, 0.7f, 0.0f);
+              int bx = px + pw - 6;
+              glBegin(GL_QUADS);
+              glVertex2i(bx, viewport_h - indicator_y - 6);
+              glVertex2i(bx + 4, viewport_h - indicator_y - 6);
+              glVertex2i(bx + 4, viewport_h - indicator_y);
+              glVertex2i(bx, viewport_h - indicator_y);
+              glEnd();
+            }
+          }
+
         } else {
           if (hovered) {
             glEnable(GL_BLEND);

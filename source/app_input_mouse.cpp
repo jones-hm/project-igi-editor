@@ -12,6 +12,15 @@ void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 		else               { help_scroll_offset_++; }
 		return;
 	}
+	// Scroll texture list sub-panel in pause menu
+	if (pause_mode_ && pause_tex_expanded_) {
+		int total_tex = (int)level_tex_names_.size();
+		int visible_rows = (120 - 8) / 13; // tex_panel_h=120, line_h=13
+		int max_scroll = ((total_tex + 1) / 2) - visible_rows;
+		if (direction > 0) { if (pause_tex_scroll_ > 0) pause_tex_scroll_--; }
+		else               { if (pause_tex_scroll_ < max_scroll) pause_tex_scroll_++; }
+		return;
+	}
 	// Over property panel: scroll it
 	if (prop_editor_open_ &&
 	    x >= PropPanel::kLeft && x <= PropPanel::kLeft + PropPanel::kWidth) {
@@ -215,21 +224,16 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			}
 
 			if (pause_mode_) {
-				// *** MUST match renderer.cpp pause menu constants exactly ***
+				// *** Layout MUST match renderer_draw.cpp pause menu exactly ***
 				const int menu_w = 460;
-				const int menu_h = 480;
+				const int tex_panel_h = 120;
+				const int menu_h = 480 + (pause_tex_expanded_ ? tex_panel_h : 0);
 				const int menu_x = (window_state_.viewport_width_  - menu_w) / 2;
 				const int screen_menu_top = (window_state_.viewport_height_ - menu_h) / 2;
-
-				auto btn_hit = [&](int idx, int mouse_y) -> bool {
-					int btn_y = screen_menu_top + 85 + idx * 35;
-					return (mouse_y >= btn_y - 15 && mouse_y <= btn_y + 15);
-				};
 
 				if (x >= menu_x && x <= menu_x + menu_w &&
 				    y >= screen_menu_top && y <= screen_menu_top + menu_h) {
 					mouse_state_.left_button_down_ = false;
-					// Deselect text boxes by default if we click anywhere in menu
 					int clicked_input = -1;
 
 					int btn_idx = 0;
@@ -244,15 +248,26 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 						TERRAIN_HGT_ROW = btn_idx++;
 						TERRAIN_DSC_ROW = btn_idx++;
 					}
+					int TEX_LIST_ROW = btn_idx++;
 					int RESET_ROW = btn_idx++;
 					int SAVE_ROW = btn_idx++;
 					int QUIT_ROW = btn_idx++;
 
-					if      (btn_hit(RESUME_ROW, y)) { TogglePauseMenu(); }                    // Resume
-					else if (btn_hit(FONT_ROW, y)) {                                         // Font row: toggle + [-] size [+]
+					// Row Y offset: rows after TEX_LIST_ROW are shifted down by tex_panel_h
+					auto row_y = [&](int idx) {
+						int ry = screen_menu_top + 85 + idx * 35;
+						if (idx > TEX_LIST_ROW && pause_tex_expanded_) ry += tex_panel_h;
+						return ry;
+					};
+					auto btn_hit2 = [&](int idx) -> bool {
+						int ry = row_y(idx);
+						return (y >= ry - 15 && y <= ry + 15);
+					};
+
+					if      (btn_hit2(RESUME_ROW)) { TogglePauseMenu(); }
+					else if (btn_hit2(FONT_ROW)) {
 						const int sz_box_w = 34, btn_w = 22, gap = 6, label_w = 96, label_gap = 16;
-						const int controls_w = btn_w + gap + sz_box_w + gap + btn_w;
-						const int group_w = label_w + label_gap + controls_w;
+						const int group_w = label_w + label_gap + btn_w + gap + sz_box_w + gap + btn_w;
 						int gx = menu_x + (menu_w - group_w) / 2;
 						int minus_x = gx + label_w + label_gap;
 						int box_x   = minus_x + btn_w + gap;
@@ -266,15 +281,31 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 							Config::Get().useEditorFont = !Config::Get().useEditorFont; Config::Save();
 						}
 					}
-					else if (btn_hit(LEVEL_ROW, y)) { clicked_input = 0; }                    // Select Level Input
-					else if (btn_hit(SEARCH_ROW, y)) { clicked_input = 1; }                    // Model Search Input
-					else if (btn_hit(TERRAIN_HEADER_ROW, y)) { pause_terrain_expanded_ = !pause_terrain_expanded_; }
-					else if (pause_terrain_expanded_ && btn_hit(TERRAIN_TEX_ROW, y)) { ToggleTerrainModOption(1); }            // Texture
-					else if (pause_terrain_expanded_ && btn_hit(TERRAIN_HGT_ROW, y)) { ToggleTerrainModOption(2); }            // Height
-					else if (pause_terrain_expanded_ && btn_hit(TERRAIN_DSC_ROW, y)) { ToggleTerrainModOption(4); }            // Discard
-					else if (btn_hit(RESET_ROW, y)) { ResetLevel(); TogglePauseMenu(); }      // Reset Level
-					else if (btn_hit(SAVE_ROW, y)) { SaveCurrentLevel(); }                   // Save Level
-					else if (btn_hit(QUIT_ROW,y)) { exit(0); }                              // Quit
+					else if (btn_hit2(LEVEL_ROW)) {
+						// Level spinner: [-] [N] [+] — layout MUST match renderer
+						const int num_box_w = 40, btn_w = 22, gap = 6, label_w = 96, label_gap = 16;
+						const int group_w = label_w + label_gap + btn_w + gap + num_box_w + gap + btn_w;
+						int gx = menu_x + (menu_w - group_w) / 2;
+						int minus_x = gx + label_w + label_gap;
+						int plus_x  = minus_x + btn_w + gap + num_box_w + gap;
+						int cur = pause_level_input_.empty() ? 1 : std::atoi(pause_level_input_.c_str());
+						if (x >= minus_x && x < minus_x + btn_w) {
+							cur = (cur > 1) ? cur - 1 : 1;
+							pause_level_input_ = std::to_string(cur);
+						} else if (x >= plus_x && x < plus_x + btn_w) {
+							cur = (cur < 14) ? cur + 1 : 14;
+							pause_level_input_ = std::to_string(cur);
+						}
+					}
+					else if (btn_hit2(SEARCH_ROW)) { clicked_input = 1; }
+					else if (btn_hit2(TERRAIN_HEADER_ROW)) { pause_terrain_expanded_ = !pause_terrain_expanded_; }
+					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_TEX_ROW)) { ToggleTerrainModOption(1); }
+					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_HGT_ROW)) { ToggleTerrainModOption(2); }
+					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_DSC_ROW)) { ToggleTerrainModOption(4); }
+					else if (btn_hit2(TEX_LIST_ROW)) { pause_tex_expanded_ = !pause_tex_expanded_; pause_tex_scroll_ = 0; }
+					else if (btn_hit2(RESET_ROW)) { ResetLevel(); TogglePauseMenu(); }
+					else if (btn_hit2(SAVE_ROW)) { SaveCurrentLevel(); }
+					else if (btn_hit2(QUIT_ROW)) { exit(0); }
 
 					pause_active_input_ = clicked_input;
 				} else {

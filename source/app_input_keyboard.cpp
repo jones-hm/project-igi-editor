@@ -497,56 +497,43 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	}
 
 	if (pause_mode_) {
-		if (pause_active_input_ == 0 || pause_active_input_ == 1) {
-			std::string& buf = (pause_active_input_ == 0) ? pause_level_input_ : pause_search_input_;
-			if (key == 27) { // ESC: clear focus
-				pause_active_input_ = -1;
-				return;
-			}
-			if (key == 13) { // Enter: submit
-				if (pause_active_input_ == 0) {
-					// Level input
-					if (!buf.empty()) {
-						int lvl = std::atoi(buf.c_str());
-						if (lvl >= 1 && lvl <= 14) {
-							LoadLevel(lvl);
-							TogglePauseMenu(); // Close pause menu on load
-						} else {
-							Logger::Get().Log(LogLevel::ERR, "Level must be between 1 and 14.");
-						}
+		if (key == 13) { // Enter
+			if (pause_active_input_ == 1) {
+				// Submit model search
+				if (!pause_search_input_.empty()) {
+					bool isId = true;
+					if (pause_search_input_.length() != 8 || pause_search_input_[3] != '_' || pause_search_input_[6] != '_') isId = false;
+					for (int i = 0; i < (int)pause_search_input_.length(); i++) {
+						if (i != 3 && i != 6 && !isdigit(pause_search_input_[i])) isId = false;
 					}
-				} else if (pause_active_input_ == 1) {
-					// Model Search input
-					if (!buf.empty()) {
-						bool isId = true;
-						if (buf.length() != 8 || buf[3] != '_' || buf[6] != '_') isId = false;
-						for (int i = 0; i < buf.length(); i++) {
-							if (i != 3 && i != 6 && !isdigit(buf[i])) isId = false;
-						}
-						
-						if (isId) {
-							SearchModelById(buf);
-						} else {
-							SearchModelByName(buf);
-						}
-						TogglePauseMenu(); // Close pause menu to show result
-					}
+					if (isId) SearchModelById(pause_search_input_);
+					else       SearchModelByName(pause_search_input_);
+					TogglePauseMenu();
 				}
 				pause_active_input_ = -1;
-				return;
+			} else {
+				// Load level from spinner
+				if (!pause_level_input_.empty()) {
+					int lvl = std::atoi(pause_level_input_.c_str());
+					if (lvl >= 1 && lvl <= 14) {
+						LoadLevel(lvl);
+						TogglePauseMenu();
+					} else {
+						Logger::Get().Log(LogLevel::ERR, "Level must be between 1 and 14.");
+					}
+				}
 			}
-			if (key == 8) { // Backspace
-				if (!buf.empty()) buf.pop_back();
-				return;
-			}
-			if (key >= 32 && key < 127) {
-				buf += (char)key;
-				return;
-			}
+			return;
 		}
-		// If we are in pause mode, we shouldn't process other keys except maybe ESC to unpause (already handled by DispatchEventBindings or explicitly)
-		// But don't block ESC so we can close menu.
-		if (key != 27) return; 
+		if (key == 27) { // ESC: clear search focus or close menu
+			if (pause_active_input_ != -1) { pause_active_input_ = -1; return; }
+		}
+		if (pause_active_input_ == 1) {
+			// Search text input
+			if (key == 8 && !pause_search_input_.empty()) { pause_search_input_.pop_back(); return; }
+			if (key >= 32 && key < 127) { pause_search_input_ += (char)key; return; }
+		}
+		if (key != 27) return;
 	}
 
 	// Autocomplete Ctrl combos — intercept before prop text editor so they work while editing.

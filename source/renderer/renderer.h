@@ -338,6 +338,9 @@ public:
 		std::string pause_level_input_;
 		std::string pause_search_input_;
 		bool pause_terrain_expanded_ = false;
+		bool pause_tex_expanded_ = false;
+		int  pause_tex_scroll_   = 0;
+		const std::vector<std::string>* level_tex_names_ = nullptr;
 		bool show_debug_;
 		bool show_help_;
 		bool edit_mode_;
