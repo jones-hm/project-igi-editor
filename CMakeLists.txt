@@ -78,8 +78,11 @@ set_source_files_properties(
   source/renderer/renderer_flat_sky_layers.cpp
   source/renderer/renderer_objects.cpp
   source/renderer/renderer_objects_atta.cpp
+  source/renderer/renderer_objects_mesh.cpp
   source/renderer/renderer_objects_metadata.cpp
+  source/renderer/renderer_objects_picking.cpp
   source/renderer/renderer_objects_texture.cpp
+  source/renderer/renderer_objects_visual.cpp
   source/renderer/renderer_skydome.cpp
   source/renderer/renderer_splines.cpp
   source/renderer/renderer_terrain.cpp
