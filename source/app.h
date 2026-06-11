@@ -144,9 +144,6 @@ private:
   std::string pause_search_input_ = "";
   int pause_active_input_ = -1; // -1: none, 1: search
   bool pause_terrain_expanded_ = false;
-  bool pause_tex_expanded_ = false;
-  int pause_tex_scroll_ = 0;
-  std::vector<std::string> level_tex_names_;
   int edit_brush_;
   double edit_brush_radius_ = 5000.0;
   double edit_brush_strength_ = 7.0;

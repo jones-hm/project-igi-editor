@@ -564,6 +564,25 @@ int main(int argc, char **argv) {
 #endif
     return 1;
   }
+  {
+    const std::vector<std::string> requiredEditorPaths = {
+      "\\editor\\shaders",
+      "\\editor\\qed",
+      "\\editor\\tools\\igi1conv.exe",
+    };
+    for (const auto& rel : requiredEditorPaths) {
+      if (!std::filesystem::exists(exeDir + rel)) {
+        std::string errorMsg = "Fatal Error: Required editor file missing:\n" + exeDir + rel +
+                               "\n\nPlease reinstall or restore the 'editor' directory.";
+#if defined(_WIN32)
+        Utils::LogAndShowError(errorMsg, "IGI Editor - Launch Error");
+#else
+        fprintf(stderr, "%s\n", errorMsg.c_str());
+#endif
+        return 1;
+      }
+    }
+  }
 
   // setup path of res and shaders folders (GUI mode only)
   Folders_Init();

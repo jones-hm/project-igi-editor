@@ -12,15 +12,6 @@ void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 		else               { help_scroll_offset_++; }
 		return;
 	}
-	// Scroll texture list sub-panel in pause menu
-	if (pause_mode_ && pause_tex_expanded_) {
-		int total_tex = (int)level_tex_names_.size();
-		int visible_rows = (120 - 8) / 13; // tex_panel_h=120, line_h=13
-		int max_scroll = ((total_tex + 1) / 2) - visible_rows;
-		if (direction > 0) { if (pause_tex_scroll_ > 0) pause_tex_scroll_--; }
-		else               { if (pause_tex_scroll_ < max_scroll) pause_tex_scroll_++; }
-		return;
-	}
 	// Over property panel: scroll it
 	if (prop_editor_open_ &&
 	    x >= PropPanel::kLeft && x <= PropPanel::kLeft + PropPanel::kWidth) {
@@ -226,8 +217,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			if (pause_mode_) {
 				// *** Layout MUST match renderer_draw.cpp pause menu exactly ***
 				const int menu_w = 460;
-				const int tex_panel_h = 120;
-				const int menu_h = 480 + (pause_tex_expanded_ ? tex_panel_h : 0);
+				const int menu_h = 480;
 				const int menu_x = (window_state_.viewport_width_  - menu_w) / 2;
 				const int screen_menu_top = (window_state_.viewport_height_ - menu_h) / 2;
 
@@ -248,19 +238,12 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 						TERRAIN_HGT_ROW = btn_idx++;
 						TERRAIN_DSC_ROW = btn_idx++;
 					}
-					int TEX_LIST_ROW = btn_idx++;
 					int RESET_ROW = btn_idx++;
 					int SAVE_ROW = btn_idx++;
 					int QUIT_ROW = btn_idx++;
 
-					// Row Y offset: rows after TEX_LIST_ROW are shifted down by tex_panel_h
-					auto row_y = [&](int idx) {
-						int ry = screen_menu_top + 85 + idx * 35;
-						if (idx > TEX_LIST_ROW && pause_tex_expanded_) ry += tex_panel_h;
-						return ry;
-					};
 					auto btn_hit2 = [&](int idx) -> bool {
-						int ry = row_y(idx);
+						int ry = screen_menu_top + 85 + idx * 35;
 						return (y >= ry - 15 && y <= ry + 15);
 					};
 
@@ -302,7 +285,6 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_TEX_ROW)) { ToggleTerrainModOption(1); }
 					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_HGT_ROW)) { ToggleTerrainModOption(2); }
 					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_DSC_ROW)) { ToggleTerrainModOption(4); }
-					else if (btn_hit2(TEX_LIST_ROW)) { pause_tex_expanded_ = !pause_tex_expanded_; pause_tex_scroll_ = 0; }
 					else if (btn_hit2(RESET_ROW)) { ResetLevel(); TogglePauseMenu(); }
 					else if (btn_hit2(SAVE_ROW)) { SaveCurrentLevel(); }
 					else if (btn_hit2(QUIT_ROW)) { exit(0); }
