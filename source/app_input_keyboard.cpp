@@ -1052,6 +1052,14 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 										std::string detail = compileErr.empty() ? "(no detail)" : compileErr;
 										Logger::Get().Log(LogLevel::ERR, "[App] Failed to compile new AI script: " + detail);
 										status_message_ = "Warning: Failed to compile new AI script for Task " + newIdStr + ".";
+										// Remove any partial .qvm left by a failed CompileToFile
+										std::error_code ecQvm;
+										if (std::filesystem::exists(qvmPath)) {
+											std::filesystem::remove(qvmPath, ecQvm);
+											if (ecQvm) {
+												Logger::Get().Log(LogLevel::WARNING, "[App] Failed to remove partial QVM: " + qvmPath + " (" + ecQvm.message() + ")");
+											}
+										}
 									}
 
 									// Remove temporary qsc file

@@ -31,22 +31,22 @@ void Terrain::GenerateCubeData() {
 
 			uint32_t p = render_cube->packed_tex_modifier_indices_;
 
-			for (int i = 0; i < 4; ++i) {
+			for (int j = 0; j < 4; ++j) {
 				// check 4 bytes one by one
 				uint8_t tm_idx_add_one = (uint8_t)p;
 
 				if (tm_idx_add_one) {
 					const texture_modifier_s* texture_modifier = texture_modifiers_ + (tm_idx_add_one - 1);
 
-					tex_mod_info_buf[i].bitmap_line_width_shift_ = texture_modifier->bitmap_line_width_shift_;
-					tex_mod_info_buf[i].local_pos_to_bitmap_pos_ = texture_modifier->local_pos_to_bitmap_pos_;
-					tex_mod_info_buf[i].cube_min_x_ = (float)texture_modifier->cube_min_x_;
-					tex_mod_info_buf[i].cube_min_y_ = (float)texture_modifier->cube_min_y_;
-					tex_mod_info_buf[i].bitmap_item_ = texture_modifier->bitmap_item_;
-					tex_mod_info_buf[i].material_idx_ = texture_modifier->material_idx_;
+					tex_mod_info_buf[j].bitmap_line_width_shift_ = texture_modifier->bitmap_line_width_shift_;
+					tex_mod_info_buf[j].local_pos_to_bitmap_pos_ = texture_modifier->local_pos_to_bitmap_pos_;
+					tex_mod_info_buf[j].cube_min_x_ = (float)texture_modifier->cube_min_x_;
+					tex_mod_info_buf[j].cube_min_y_ = (float)texture_modifier->cube_min_y_;
+					tex_mod_info_buf[j].bitmap_item_ = texture_modifier->bitmap_item_;
+					tex_mod_info_buf[j].material_idx_ = texture_modifier->material_idx_;
 				}
 				else {
-					tex_mod_info_buf[i].bitmap_line_width_shift_ = 0;	// no modifier
+					tex_mod_info_buf[j].bitmap_line_width_shift_ = 0;	// no modifier
 				}
 
 				p >>= 8;

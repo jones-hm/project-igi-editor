@@ -523,8 +523,8 @@ void main() {
     glm::mat4 model = glm::mat4(1.0f);
     model = glm::translate(model, glm::vec3(obj.pos));
     model = glm::rotate(model, static_cast<float>(obj.rot.z), glm::vec3(0.0f, 0.0f, 1.0f));
-    model = glm::rotate(model, static_cast<float>(obj.rot.y), glm::vec3(0.0f, 1.0f, 0.0f));
     model = glm::rotate(model, static_cast<float>(obj.rot.x), glm::vec3(1.0f, 0.0f, 0.0f));
+    model = glm::rotate(model, static_cast<float>(obj.rot.y), glm::vec3(0.0f, 1.0f, 0.0f));
 
     // For weapons, they are authored with Y-up (legacy OBJ style), so they stand upright.
     // We rotate them by 90 degrees on Pitch (X axis) to lay them flat on the ground.

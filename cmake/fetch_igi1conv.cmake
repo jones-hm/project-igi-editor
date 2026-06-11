@@ -9,7 +9,9 @@
 # binary so offline builds always work.
 
 set(_igi1conv_dst "${CMAKE_CURRENT_SOURCE_DIR}/assets/editor/tools/igi1conv.exe")
-set(_igi1conv_url "https://github.com/jones-hm/project-igi-conv/releases/latest/download/igi1conv.exe")
+set(_igi1conv_version "v1.0.0")
+set(_igi1conv_sha256 "7df362e107cae9c638885842a637d1e77da60edf7e0213dba1940ab5572ea258")
+set(_igi1conv_url "https://github.com/jones-hm/project-igi-conv/releases/download/${_igi1conv_version}/igi1conv.exe")
 set(_igi1conv_tmp "${CMAKE_CURRENT_BINARY_DIR}/igi1conv_latest.exe")
 
 if(DEFINED ENV{IGI1CONV_NO_FETCH})
@@ -28,9 +30,16 @@ if(_igi1conv_code EQUAL 0 AND EXISTS "${_igi1conv_tmp}")
     file(SIZE "${_igi1conv_tmp}" _igi1conv_size)
     # A real PE binary is well over 100 KB; a 404 page or redirect stub is tiny.
     if(_igi1conv_size GREATER 100000)
+        file(SHA256 "${_igi1conv_tmp}" _igi1conv_actual_sha256)
+        string(TOLOWER "${_igi1conv_actual_sha256}" _igi1conv_actual_sha256)
+        if(NOT _igi1conv_actual_sha256 STREQUAL _igi1conv_sha256)
+            message(STATUS "igi1conv: checksum mismatch (got ${_igi1conv_actual_sha256}); keeping committed binary")
+            file(REMOVE "${_igi1conv_tmp}")
+            return()
+        endif()
         execute_process(COMMAND ${CMAKE_COMMAND} -E copy_if_different
                         "${_igi1conv_tmp}" "${_igi1conv_dst}")
-        message(STATUS "igi1conv: refreshed bundled binary from latest release (${_igi1conv_size} bytes)")
+        message(STATUS "igi1conv: refreshed bundled binary from ${_igi1conv_version} (${_igi1conv_size} bytes)")
     else()
         message(STATUS "igi1conv: download too small (${_igi1conv_size} bytes); keeping committed binary")
     endif()

@@ -87,7 +87,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 						// The property panel is a foreground overlay: ANY click anywhere in
 						// the left panel strip is consumed so background 3D objects are never
 						// selected/manipulated while the editor is open.
-						if (x >= 0 && x <= L.panel_x + L.panel_w) {
+						if (x >= L.panel_x && x <= L.panel_x + L.panel_w) {
 							// +4px tolerance on all sides for pixel-perfect feel at any DPI
 							auto inRect = [&](const PropPanel::Widget& w) {
 								return x >= w.x1 - 4 && x <= w.x2 + 4 && y >= w.y1 - 4 && y <= w.y2 + 4;

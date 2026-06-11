@@ -223,7 +223,7 @@ For the full test reference — suites, filters, fixture descriptions, and build
 ## 🛠️ Future Roadmap
 
 With the successful release of **Version 2.0.0**, core features like the **Native MEF Parser**, **Asset Extractor**, **QVM Toolchain**, **Task Tree Editor**, **Train & Spline Engine**, **Click-to-Select Map View**, and **Headless CLI** have been fully realized. Future milestones include:
-- **Native Game Convertor tool**: `igi1conv` — a standalone game asset converter matching `gconv.exe` from the IGI 2 Editor — now lives in its own repo at [project-igi-conv](https://github.com/jones-hm/project-igi-conv). The editor bundles the prebuilt binary at `editor/tools/igi1conv.exe`.
+- **Native Game Converter tool**: `igi1conv` — a standalone game asset converter matching `gconv.exe` from the IGI 2 Editor — now lives in its own repo at [project-igi-conv](https://github.com/jones-hm/project-igi-conv). The editor bundles the prebuilt binary at `editor/tools/igi1conv.exe`.
 - **Upgraded compatibility**: A better upgraded version to support the Neo Remastered mod.
 - **Visual 3D Graph Editor (Coming Soon)**: A full-featured Visual 3D Graph Editor displaying interactive nodes and visuals to seamlessly construct game logic, path routes, and area connections.
 - **Weapon & Item Configurator**: Rich telemetry overlays and visual UI for modifying active gun parameters, ammunition slots, and dropping custom inventory directly onto the battlefield.

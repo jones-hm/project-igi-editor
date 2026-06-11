@@ -81,16 +81,12 @@ DATFile DAT_Parse(const std::string& filepath) {
     if (cursor < tokens.size()) {
         try {
             result.declaredTextureCount = std::stoi(tokens[cursor++]);
-            // The original compiler ignored declaredTextureCount and read all remaining tokens as textures!
-            // level1.dat actually has 427 tokens but declares 426.
-            while (cursor < tokens.size()) {
-                std::string t = tokens[cursor];
-                // Check if we hit the next section (VNAM/BANM count), which is numeric.
-                // However, textures can be purely numeric (like "0").
-                // In vanilla DAT, texture manifest is the last section before optional sections.
-                // Since this format is completely flat, we just consume everything until we hit
-                // something that looks like an optional section count if needed, but in level1.dat
-                // textures are exactly the rest of the file.
+            // Read exactly declaredTextureCount textures so VNAM/BANM/shadow sections can follow.
+            // level1.dat declares 426 but has 427 entries; the extra token is consumed harmlessly
+            // as a failed VNAM count parse and silently caught below.
+            int texLimit = std::min(result.declaredTextureCount,
+                                    (int)(tokens.size() - cursor));
+            for (int i = 0; i < texLimit; ++i) {
                 result.allTextures.push_back(tokens[cursor++]);
             }
         } catch (...) {
