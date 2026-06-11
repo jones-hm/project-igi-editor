@@ -77,6 +77,8 @@ set_source_files_properties(
   source/app.cpp
   source/renderer/renderer_flat_sky_layers.cpp
   source/renderer/renderer_objects.cpp
+  source/renderer/renderer_objects_metadata.cpp
+  source/renderer/renderer_objects_texture.cpp
   source/renderer/renderer_skydome.cpp
   source/renderer/renderer_splines.cpp
   source/renderer/renderer_terrain.cpp
