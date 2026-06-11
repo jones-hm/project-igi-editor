@@ -553,10 +553,10 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  std::string contentPath = exeDir + "\\content";
+  std::string contentPath = exeDir + "\\editor";
   if (!std::filesystem::exists(contentPath) || !std::filesystem::is_directory(contentPath)) {
-    std::string errorMsg = "Fatal Error: 'content' directory not found in:\n" + exeDir +
-                           "\n\nPlease make sure the 'content' directory is present next to the editor executable.";
+    std::string errorMsg = "Fatal Error: 'editor' directory not found in:\n" + exeDir +
+                           "\n\nPlease make sure the 'editor' directory is present next to the editor executable.";
 #if defined(_WIN32)
     Utils::LogAndShowError(errorMsg, "IGI Editor - Launch Error");
 #else

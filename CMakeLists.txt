@@ -166,10 +166,10 @@ if (WIN32)
   endif()
 
   add_custom_command(TARGET igi-editor POST_BUILD
-    # Copy assets/content structure directly
+    # Copy assets/editor structure directly
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-      "${PROJECT_SOURCE_DIR}/assets/content"
-      "$<TARGET_FILE_DIR:igi-editor>/content"
+      "${PROJECT_SOURCE_DIR}/assets/editor"
+      "$<TARGET_FILE_DIR:igi-editor>/editor"
 
     # Copy files to root (DLLs and version)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -178,7 +178,7 @@ if (WIN32)
       "${PROJECT_SOURCE_DIR}/version"
       "$<TARGET_FILE_DIR:igi-editor>"
 
-    COMMENT "Copying runtime files to content/ structure"
+    COMMENT "Copying runtime files to editor/ structure"
   )
 else()
   target_link_libraries(igi-editor PRIVATE glut GL GLEW)
@@ -194,8 +194,8 @@ endif()
 add_executable(gconv1 ${GCONV_SOURCES} ${SOURCES_PARSERS})
 
 set_target_properties(gconv1 PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}/bin/Release/content/tools"
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${PROJECT_SOURCE_DIR}/bin/Debug/content/tools"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}/bin/Release/editor/tools"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${PROJECT_SOURCE_DIR}/bin/Debug/editor/tools"
     OUTPUT_NAME "gconv"
 )
 

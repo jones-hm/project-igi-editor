@@ -80,11 +80,11 @@ static KeyBinding ParseKeyBinding(const std::string& binding) {
 }
 
 std::string Config::GetConfigPath() {
-    return Utils::GetExeDirectory() + "\\content\\qed\\qedconfig.qsc";
+    return Utils::GetExeDirectory() + "\\editor\\qed\\qedconfig.qsc";
 }
 
 std::string Config::GetKeybindingsPath() {
-    return Utils::GetExeDirectory() + "\\content\\qed\\qedkeybindings.qsc";
+    return Utils::GetExeDirectory() + "\\editor\\qed\\qedkeybindings.qsc";
 }
 
 void Config::CreateDefault() {
@@ -148,10 +148,10 @@ void Config::CreateDefault() {
 
 void Config::Init() {
     CreateDefault();
-    std::string contentDir = Utils::GetExeDirectory() + "\\content";
+    std::string contentDir = Utils::GetExeDirectory() + "\\editor";
     if (!std::filesystem::exists(contentDir)) {
-        Logger::Get().Log(LogLevel::FATAL, "FATAL: content directory not found: " + contentDir);
-        Utils::ShowError("ERROR: FATAL\ncontent directory not found:\n" + contentDir + "\nEditor will now exit.", "IGI Editor - Launch Error");
+        Logger::Get().Log(LogLevel::FATAL, "FATAL: editor directory not found: " + contentDir);
+        Utils::ShowError("ERROR: FATAL\neditor directory not found:\n" + contentDir + "\nEditor will now exit.", "IGI Editor - Launch Error");
         std::exit(1);
     }
     std::string qedDir = contentDir + "\\qed";
@@ -178,7 +178,7 @@ void Config::Init() {
 }
 
 void Config::Load() {
-    std::string qedDir = Utils::GetExeDirectory() + "\\content\\qed";
+    std::string qedDir = Utils::GetExeDirectory() + "\\editor\\qed";
     if (!std::filesystem::exists(qedDir)) return;
 
     auto ParseLine = [&](const std::string& line) {

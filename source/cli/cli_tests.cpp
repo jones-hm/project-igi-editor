@@ -495,8 +495,8 @@ static void TestOneFNT(const std::string& path, const std::string& tag) {
 }
 
 static void TestFNT() {
-    TestOneFNT("assets\\content\\qed\\editor.fnt", "editor");
-    TestOneFNT("assets\\content\\qed\\editorsm.fnt", "editorsm");
+    TestOneFNT("assets\\editor\\qed\\editor.fnt", "editor");
+    TestOneFNT("assets\\editor\\qed\\editorsm.fnt", "editorsm");
 
     FntFont missing = FNT_Parse("scratch\\cpp_tests\\nope.fnt");
     ASSERT_FALSE(missing.valid, "Nonexistent FNT file should be invalid");

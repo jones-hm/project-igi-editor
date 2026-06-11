@@ -308,18 +308,18 @@ static GLuint LoadOneSpr(const char* path, int& w, int& h) {
 void App::LoadAllCursors() {
 	// Order must match CursorMode enum values (0..9)
 	const char* paths[NUM_CURSORS] = {
-		"content\\qed\\TerrainEditIcon_Pointer.spr",     // 0 Default
-		"content\\qed\\highlighttool.spr",               // 1 Hover
-		"content\\qed\\activetool.spr",                  // 2 Selected
-		"content\\qed\\TerrainEditIcon_Lift.spr",        // 3 TerrainLift
-		"content\\qed\\TerrainEditIcon_Lower.spr",       // 4 TerrainLower
-		"content\\qed\\TerrainEditIcon_Flatten.spr",     // 5 TerrainFlatten
-		"content\\qed\\TerrainEditIcon_FlattenLine.spr", // 6 TerrainFlattenLine
-		"content\\qed\\TerrainEditIcon_Drop.spr",        // 7 TerrainDrop
-		"content\\qed\\TerrainEditIcon_Soften.spr",      // 8 TerrainSoften
-		"content\\qed\\inactivetool.spr",                // 9 Inactive
-		"content\\qed\\editor_camera.spr",               // 10 Camera (ALT held)
-		"content\\qed\\editor_move.spr",                 // 11 Move (ALT held + moving)
+		"editor\\qed\\TerrainEditIcon_Pointer.spr",     // 0 Default
+		"editor\\qed\\highlighttool.spr",               // 1 Hover
+		"editor\\qed\\activetool.spr",                  // 2 Selected
+		"editor\\qed\\TerrainEditIcon_Lift.spr",        // 3 TerrainLift
+		"editor\\qed\\TerrainEditIcon_Lower.spr",       // 4 TerrainLower
+		"editor\\qed\\TerrainEditIcon_Flatten.spr",     // 5 TerrainFlatten
+		"editor\\qed\\TerrainEditIcon_FlattenLine.spr", // 6 TerrainFlattenLine
+		"editor\\qed\\TerrainEditIcon_Drop.spr",        // 7 TerrainDrop
+		"editor\\qed\\TerrainEditIcon_Soften.spr",      // 8 TerrainSoften
+		"editor\\qed\\inactivetool.spr",                // 9 Inactive
+		"editor\\qed\\editor_camera.spr",               // 10 Camera (ALT held)
+		"editor\\qed\\editor_move.spr",                 // 11 Move (ALT held + moving)
 	};
 	cursor_loaded_count_ = 0;
 	for (int i = 0; i < NUM_CURSORS; ++i) {
@@ -330,7 +330,7 @@ void App::LoadAllCursors() {
 	// Cache AITYPE_ model IDs from IGIModels.json
 	ai_model_ids_.clear();
 	{
-		std::string jsonPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModels.json";
+		std::string jsonPath = Utils::GetExeDirectory() + "\\editor\\tools\\IGIModels.json";
 		std::ifstream jf(jsonPath);
 		if (jf) {
 			std::string content((std::istreambuf_iterator<char>(jf)), {});
@@ -353,11 +353,11 @@ void App::LoadAllCursors() {
 void App::LoadHelpEntries() {
 	help_entries_.clear();
 	std::vector<std::string> paths = {
-		Utils::GetExeDirectory() + "\\content\\qed\\qedkeybindings.qsc",
+		Utils::GetExeDirectory() + "\\editor\\qed\\qedkeybindings.qsc",
 		Utils::GetExeDirectory() + "\\qed\\qedkeybindings.qsc",
-		Utils::GetIGIRootPath() + "\\content\\qed\\qedkeybindings.qsc",
+		Utils::GetIGIRootPath() + "\\editor\\qed\\qedkeybindings.qsc",
 		Utils::GetIGIRootPath() + "\\qed\\qedkeybindings.qsc",
-		"content\\qed\\qedkeybindings.qsc",
+		"editor\\qed\\qedkeybindings.qsc",
 		"qed\\qedkeybindings.qsc"
 	};
 	std::ifstream f;
@@ -411,14 +411,14 @@ void App::LoadHelpEntries() {
 
 void App::LoadAutoCompleteKeywords() {
 	autocomplete_keywords_.clear();
-	std::string path = Utils::GetExeDirectory() + "\\content\\tools\\AutoCompleteKeywords.txt";
+	std::string path = Utils::GetExeDirectory() + "\\editor\\tools\\IGIAutoComplete.txt";
 	std::ifstream f(path);
 	if (!f.is_open()) {
 		// try IGI root fallback
-		path = Utils::GetIGIRootPath() + "\\content\\tools\\AutoCompleteKeywords.txt";
+		path = Utils::GetIGIRootPath() + "\\editor\\tools\\IGIAutoComplete.txt";
 		f.open(path);
 	}
-	if (!f.is_open()) { Logger::Get().Log(LogLevel::WARNING, "[App] AutoCompleteKeywords.txt not found"); return; }
+	if (!f.is_open()) { Logger::Get().Log(LogLevel::WARNING, "[App] IGIAutoComplete.txt not found"); return; }
 	std::string line;
 	while (std::getline(f, line)) {
 		if (!line.empty() && line.back() == '\r') line.pop_back();
@@ -469,7 +469,7 @@ void App::ConfirmFileDialog() {
 		// Flush current live objects to the temp QSC, append the loaded task block as a
 		// new top-level task, then reparse the whole level from the merged QSC. Using the
 		// real parser keeps nested subtrees intact.
-		std::string tempQsc = Utils::GetExeDirectory() + "\\content\\qed\\temp\\objects.qsc";
+		std::string tempQsc = Utils::GetExeDirectory() + "\\editor\\qed\\temp\\objects.qsc";
 		level_.GetLevelObjects().SaveToQSC(tempQsc);
 		{
 			std::ofstream out(tempQsc, std::ios::app);
@@ -650,7 +650,7 @@ void App::LoadLevel(int level_no) {
 		}
 		if (Config::Get().enableBackup) {
 			std::string gameLevelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" + std::to_string(level_no);
-			std::string backupLevelDir = Utils::GetExeDirectory() + "\\content\\backup\\level" + std::to_string(level_no);
+			std::string backupLevelDir = Utils::GetExeDirectory() + "\\editor\\backup\\level" + std::to_string(level_no);
 			if (!std::filesystem::exists(backupLevelDir) && std::filesystem::exists(gameLevelDir)) {
 				try {
 					std::filesystem::create_directories(backupLevelDir);
@@ -2075,7 +2075,7 @@ bool App::InlineAutocomplete() {
 		return false;
 	}
 	if (autocomplete_keywords_.empty()) {
-		status_message_ = "Autocomplete: no keywords loaded (content/tools/AutoCompleteKeywords.txt)";
+		status_message_ = "Autocomplete: no keywords loaded (editor/tools/IGIAutoComplete.txt)";
 		return false;
 	}
 	if (prop_text_caret_ < 0) prop_text_caret_ = 0;
@@ -3219,7 +3219,7 @@ void App::DispatchEventBindings() {
 	if (Check("TaskMakeTemplate")) {
 		if (selected_object_index_ >= 0) {
 			const auto& obj = level_.GetLevelObjects().GetObjects()[selected_object_index_];
-			std::string dir = Utils::GetExeDirectory() + "\\content\\qed\\templates";
+			std::string dir = Utils::GetExeDirectory() + "\\editor\\qed\\templates";
 			std::filesystem::create_directories(dir);
 			std::string path = dir + "\\" + obj.type + ".qsc";
 			SaveTaskSubtreeToFile(selected_object_index_, path);
@@ -3335,7 +3335,7 @@ void App::DispatchEventBindings() {
 		if (selected_object_index_ >= 0) {
 			file_dialog_mode_ = FileDialogMode::SaveSubTask;
 			file_dialog_path_ = Config::Get().taskFileName.empty() ?
-			    "content\\qed\\temp\\task.qsc" : Config::Get().taskFileName;
+			    "editor\\qed\\temp\\task.qsc" : Config::Get().taskFileName;
 			file_dialog_caret_ = (int)file_dialog_path_.size();
 		} else {
 			status_message_ = "SaveSubTask: no task selected";
@@ -3349,7 +3349,7 @@ void App::DispatchEventBindings() {
 			if (par >= 0) {
 				file_dialog_mode_ = FileDialogMode::SaveSubTaskParent;
 				file_dialog_path_ = Config::Get().taskFileName.empty() ?
-				    "content\\qed\\temp\\task.qsc" : Config::Get().taskFileName;
+				    "editor\\qed\\temp\\task.qsc" : Config::Get().taskFileName;
 				file_dialog_caret_ = (int)file_dialog_path_.size();
 			} else {
 				status_message_ = "SaveSubTaskParent: selected task has no parent";
@@ -3362,7 +3362,7 @@ void App::DispatchEventBindings() {
 	if (Check("LoadSubTaskObjectFile")) {
 		file_dialog_mode_ = FileDialogMode::LoadSubTask;
 		file_dialog_path_ = Config::Get().taskFileName.empty() ?
-		    "content\\qed\\temp\\task.qsc" : Config::Get().taskFileName;
+		    "editor\\qed\\temp\\task.qsc" : Config::Get().taskFileName;
 		file_dialog_caret_ = (int)file_dialog_path_.size();
 		return;
 	}
@@ -3534,7 +3534,7 @@ void App::ResetLevel() {
 
 	if (Config::Get().enableBackup) {
 		std::string gameLevelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" + std::to_string(levelNo);
-		std::string backupLevelDir = Utils::GetExeDirectory() + "\\content\\backup\\level" + std::to_string(levelNo);
+		std::string backupLevelDir = Utils::GetExeDirectory() + "\\editor\\backup\\level" + std::to_string(levelNo);
 		
 		Logger::Get().Log(LogLevel::INFO, "[App] Restoring level from backup: " + backupLevelDir + " to " + gameLevelDir);
 		
@@ -3554,7 +3554,7 @@ void App::ResetLevel() {
 
 	// Remove local objects.qsc so it recompiles fresh from QVM
 	std::string exeDir = Utils::GetExeDirectory();
-	std::string dstQsc = exeDir + "\\content\\qed\\temp\\objects.qsc";
+	std::string dstQsc = exeDir + "\\editor\\qed\\temp\\objects.qsc";
 	try {
 		if (std::filesystem::exists(dstQsc)) {
 			std::filesystem::remove(dstQsc);
@@ -3571,11 +3571,11 @@ void App::ResetLevel() {
 void App::ResetScript() {
 	int levelNo = level_.GetLevelNo();
 
-	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Script for Level " + std::to_string(levelNo) + " - restore objects.qvm from content/tools/restore to IGIPath");
+	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Script for Level " + std::to_string(levelNo) + " - restore objects.qvm from editor/tools/restore to IGIPath");
 
-	std::string toolsDir = Utils::GetExeDirectory() + "\\content\\tools";
+	std::string toolsDir = Utils::GetExeDirectory() + "\\editor\\tools";
 
-	// Copy objects.qvm from content/tools/restore to IGIPath
+	// Copy objects.qvm from editor/tools/restore to IGIPath
 	char srcQvm[1024];
 	Str_SPrintf(srcQvm, 1024, "%s\\restore\\missions\\location0\\level%d\\objects.qvm", toolsDir.c_str(), levelNo);
 
@@ -3607,7 +3607,7 @@ void App::ResetScript() {
 
 	// Remove local objects.qsc so it recompiles fresh from QVM
 	std::string exeDir = Utils::GetExeDirectory();
-	std::string dstQsc = exeDir + "\\content\\qed\\temp\\objects.qsc";
+	std::string dstQsc = exeDir + "\\editor\\qed\\temp\\objects.qsc";
 	try {
 		if (std::filesystem::exists(dstQsc)) {
 			std::filesystem::remove(dstQsc);
@@ -5068,10 +5068,24 @@ void App::CommitPropTextEdit() {
 	// overwrite the new model with the stale obj.modelId.
 	bool is_model_field = is_str && (fd.name == "Model" ||
 	                                 fd.name.find("Model") != std::string::npos);
+
 	if (is_model_field) {
 		obj.modelId = StripQuotes(prop_text_buf_);
-		if (!level_res_models_.Empty() && !obj.modelId.empty() &&
-		    !level_res_models_.Contains(obj.modelId)) {
+	}
+
+	// GunPickup/AmmoPickup: the edited field is the weapon/ammo enum string, but
+	// obj.modelId must hold the RESOLVED render model. Re-resolve so the viewport
+	// mesh updates immediately instead of only after a reload (issue 1).
+	if (obj.type == "GunPickup" || obj.type == "AmmoPickup") {
+		std::string enumStr = StripQuotes(prop_text_buf_);
+		if (enumStr.rfind("WEAPON_ID_", 0) == 0 || enumStr.rfind("AMMO_ID_", 0) == 0) {
+			obj.modelId = level_.GetLevelObjects().ResolvePickupModelId(enumStr);
+			is_model_field = true; // treat it as a model field to trigger packing and preload
+		}
+	}
+
+	if (is_model_field && !obj.modelId.empty()) {
+		if (!level_res_models_.Empty() && !level_res_models_.Contains(obj.modelId)) {
 			obj.modelMissingInRes = true;
 			// Auto-add the foreign model immediately — no extra keypress needed.
 			std::string addId = obj.modelId;
@@ -5091,20 +5105,10 @@ void App::CommitPropTextEdit() {
 		} else {
 			obj.modelMissingInRes = false;
 		}
-	}
-	// GunPickup/AmmoPickup: the edited field is the weapon/ammo enum string, but
-	// obj.modelId must hold the RESOLVED render model. Re-resolve so the viewport
-	// mesh updates immediately instead of only after a reload (issue 1).
-	if (obj.type == "GunPickup" || obj.type == "AmmoPickup") {
-		std::string enumStr = StripQuotes(prop_text_buf_);
-		if (enumStr.rfind("WEAPON_ID_", 0) == 0 || enumStr.rfind("AMMO_ID_", 0) == 0) {
-			obj.modelId = level_.GetLevelObjects().ResolvePickupModelId(enumStr);
-		}
-	}
-	// Eagerly load the (possibly new) model now, with a progress overlay, so a heavy
-	// model with many textures doesn't appear to freeze the editor on the next frame
-	// (the load is otherwise lazy in Draw → looks like a hang). (user feedback)
-	if (is_model_field && !obj.modelId.empty()) {
+
+		// Eagerly load the (possibly new) model now, with a progress overlay, so a heavy
+		// model with many textures doesn't appear to freeze the editor on the next frame
+		// (the load is otherwise lazy in Draw → looks like a hang). (user feedback)
 		DrawProgressOverlay(("Loading model '" + obj.modelId + "'").c_str(), 40, "mesh & textures");
 		renderer_.PreloadModel(obj.modelId, obj.isBuilding);
 	}
@@ -5266,7 +5270,7 @@ void App::LoadQSCForLevel(int level_no) {
 	try {
 		namespace fs = std::filesystem;
 
-		std::string qsc_dest = Utils::GetExeDirectory() + "\\content\\qed\\temp\\objects.qsc";
+		std::string qsc_dest = Utils::GetExeDirectory() + "\\editor\\qed\\temp\\objects.qsc";
 		std::string qvm_source = Utils::GetLevelQVMPath(level_no);
 		
 		Logger::Get().Log(LogLevel::INFO, "[App] [LoadQSCForLevel] Always reading level objects.qvm directly: " + qvm_source);
@@ -5293,7 +5297,7 @@ void App::DecompileFromGame(int level_no) {
 		namespace fs = std::filesystem;
 
 		std::string qvm_source = Utils::GetLevelQVMPath(level_no);
-		std::string qsc_dest = Utils::GetExeDirectory() + "\\content\\qed\\temp\\objects.qsc";
+		std::string qsc_dest = Utils::GetExeDirectory() + "\\editor\\qed\\temp\\objects.qsc";
 
 		if (!fs::exists(qvm_source)) {
 			std::string errorMsg = "Game QVM not found at:\n" + qvm_source + "\n\nPlease check your IGI game path in qedconfig.txt";
@@ -5444,7 +5448,7 @@ void App::SaveAndCompile() {
 
 	Logger::Get().Log(LogLevel::INFO, "[App] SaveAndCompile() starting");
 
-	std::string qsc_source = Utils::GetExeDirectory() + "\\content\\qed\\temp\\objects.qsc";
+	std::string qsc_source = Utils::GetExeDirectory() + "\\editor\\qed\\temp\\objects.qsc";
 	std::string qvm_dest = Utils::GetLevelQVMPath(level_.GetLevelNo());
 
 	Logger::Get().Log(LogLevel::INFO, "[App] Full QSC path: " + qsc_source);
@@ -6034,7 +6038,7 @@ struct ModelEntry {
 
 static std::vector<ModelEntry> LoadAllModelsFromJson() {
 	std::vector<ModelEntry> entries;
-	std::string jsonPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModels.json";
+	std::string jsonPath = Utils::GetExeDirectory() + "\\editor\\tools\\IGIModels.json";
 
 	if (!std::filesystem::exists(jsonPath)) {
 		Logger::Get().Log(LogLevel::ERR, "[App] IGIModels.json not found in executable directory: " + jsonPath);

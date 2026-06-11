@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include "dat_parser.h"
 
 struct MTPModelTexture {
     std::string modelName;
@@ -15,8 +16,10 @@ struct MTPModelTexture {
 
 struct MTPFile {
     std::vector<std::string> animations;    // BANM
+    std::vector<std::string> sounds;        // SNDS
     std::vector<std::string> shadows;       // SVOL
     std::vector<std::string> models;        // MODS
+    std::vector<std::string> vnam_models;   // VNAM (virtual models mapping to models)
     std::vector<std::string> textures;      // TEXF
     std::vector<MTPModelTexture> mappings;  // INST resolved
     bool valid = false;
@@ -40,4 +43,8 @@ bool MTP_AddModel(const std::string& mtpPath, const std::string& outPath,
 bool MTP_Generate(const std::string& outPath,
                   const std::vector<MTPModelTexture>& mappings,
                   std::string& err,
-                  const std::vector<std::string>& extraTextures = {});
+                  const std::vector<std::string>& extraTextures = {},
+                  const std::vector<std::string>& animations = {},
+                  const std::vector<std::string>& sounds = {},
+                  const std::vector<std::string>& shadows = {},
+                  const std::vector<DATVnamEntry>& vnam_models = {});

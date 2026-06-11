@@ -183,6 +183,9 @@ MTPFile MTP_Parse(const std::string& filepath) {
         if (MatchFourCC(reinterpret_cast<const uint8_t*>(fourcc), "BANM")) {
             result.animations = ParseStringArray(chunkData, chunkSize);
         }
+        else if (MatchFourCC(reinterpret_cast<const uint8_t*>(fourcc), "SNDS")) {
+            result.sounds = ParseStringArray(chunkData, chunkSize);
+        }
         else if (MatchFourCC(reinterpret_cast<const uint8_t*>(fourcc), "SVOL")) {
             result.shadows = ParseStringArray(chunkData, chunkSize);
         }
@@ -191,6 +194,20 @@ MTPFile MTP_Parse(const std::string& filepath) {
         }
         else if (MatchFourCC(reinterpret_cast<const uint8_t*>(fourcc), "TEXF")) {
             result.textures = ParseStringArray(chunkData, chunkSize);
+        }
+        else if (MatchFourCC(reinterpret_cast<const uint8_t*>(fourcc), "VNAM")) {
+            if (chunkSize >= 4) {
+                uint32_t count = ReadU32LE(chunkData);
+                size_t offset = 4 + count * 4;
+                for (uint32_t i = 0; i < count && offset < chunkSize; ++i) {
+                    const char* str = reinterpret_cast<const char*>(chunkData + offset);
+                    size_t maxLen = chunkSize - offset;
+                    size_t len = 0;
+                    while (len < maxLen && str[len] != '\0') len++;
+                    result.vnam_models.emplace_back(str, len);
+                    offset += len + 1;
+                }
+            }
         }
         else if (MatchFourCC(reinterpret_cast<const uint8_t*>(fourcc), "INST")) {
             instData = chunkData;
@@ -243,6 +260,9 @@ static std::vector<uint8_t> EncodeStringArray(const std::vector<std::string>& st
         data.insert(data.end(), s.begin(), s.end());
         data.push_back(0);
     }
+    while (data.size() % 4 != 0) {
+        data.push_back(0);
+    }
     return data;
 }
 
@@ -263,6 +283,9 @@ static std::vector<uint8_t> BuildVNAM(const std::vector<std::string>& models,
     }
     for (const auto& m : models) {
         vnam.insert(vnam.end(), m.begin(), m.end());
+        vnam.push_back(0);
+    }
+    while (vnam.size() % 4 != 0) {
         vnam.push_back(0);
     }
     return vnam;
@@ -453,27 +476,60 @@ bool MTP_AddModel(const std::string& mtpPath, const std::string& outPath,
 bool MTP_Generate(const std::string& outPath,
                   const std::vector<MTPModelTexture>& mappings,
                   std::string& err,
-                  const std::vector<std::string>& extraTextures) {
+                  const std::vector<std::string>& extraTextures,
+                  const std::vector<std::string>& animations,
+                  const std::vector<std::string>& sounds,
+                  const std::vector<std::string>& shadows,
+                  const std::vector<DATVnamEntry>& vnam_models) {
     std::vector<std::string> models;
+    std::vector<std::string> vnamStrings;
     std::vector<std::string> textures;
     std::vector<uint8_t> instData;
 
     std::vector<uint32_t> texCountsForVNAM;
-    for (const auto& m : mappings) {
-        uint32_t modelIdx = (uint32_t)models.size();
-        models.push_back(m.modelName);
 
+    // Helper to add textures and get indices
+    auto getTexIndices = [&](const std::vector<std::string>& texNames) {
         std::vector<uint32_t> texIdxs;
-        for (const auto& t : m.textureNames) {
+        for (const auto& t : texNames) {
             int idx = -1;
             for (size_t i = 0; i < textures.size(); ++i)
                 if (textures[i] == t) { idx = (int)i; break; }
             if (idx < 0) { idx = (int)textures.size(); textures.push_back(t); }
             texIdxs.push_back((uint32_t)idx);
         }
+        return texIdxs;
+    };
 
+    // 1. Process primary mappings (main models)
+    for (const auto& m : mappings) {
+        uint32_t modelIdx = (uint32_t)models.size();
+        models.push_back(m.modelName);
+        vnamStrings.push_back(m.modelName);
+
+        auto texIdxs = getTexIndices(m.textureNames);
         texCountsForVNAM.push_back((uint32_t)texIdxs.size());
         WriteU32LE(instData, modelIdx);
+        WriteU32LE(instData, (uint32_t)texIdxs.size());
+        for (uint32_t ti : texIdxs) WriteU32LE(instData, ti);
+    }
+
+    // 2. Process VNAM aliases
+    for (const auto& v : vnam_models) {
+        // Find main model in MODS
+        int modelIdx = -1;
+        for (size_t i = 0; i < models.size(); ++i) {
+            if (models[i] == v.mainModelName) { modelIdx = (int)i; break; }
+        }
+        if (modelIdx < 0) {
+            modelIdx = (int)models.size();
+            models.push_back(v.mainModelName);
+        }
+        vnamStrings.push_back(v.virModelName);
+
+        auto texIdxs = getTexIndices(v.textures);
+        texCountsForVNAM.push_back((uint32_t)texIdxs.size());
+        WriteU32LE(instData, (uint32_t)modelIdx);
         WriteU32LE(instData, (uint32_t)texIdxs.size());
         for (uint32_t ti : texIdxs) WriteU32LE(instData, ti);
     }
@@ -485,12 +541,15 @@ bool MTP_Generate(const std::string& outPath,
         if (!found) textures.push_back(t);
     }
 
+    auto banmData = EncodeStringArray(animations);
+    auto sndsData = EncodeStringArray(sounds);
+    auto svolData = EncodeStringArray(shadows);
     auto modsData = EncodeStringArray(models);
     auto texfData = EncodeStringArray(textures);
 
     // VNAM: count + offset_table + model-name pool.
     // offset[i] = sum_{j<i}(4 + texCount_j * 4) — matches original game-file format.
-    auto vnamData = BuildVNAM(models, texCountsForVNAM);
+    auto vnamData = BuildVNAM(vnamStrings, texCountsForVNAM);
 
     // GTT: u32_LE count + count * 8 bytes: (tex_index_LE, 0xFFFFFFFF).
     std::vector<uint8_t> gttData;
@@ -524,9 +583,9 @@ bool MTP_Generate(const std::string& outPath,
         if (data.size() % 2 != 0) out.push_back(0);
     };
     // Match original chunk order: BANM SNDS SVOL MODS VNAM INST TEXF PALF GTT
-    writeChunk("BANM", emptyStub);
-    writeChunk("SNDS", emptyStub);
-    writeChunk("SVOL", emptyStub);
+    writeChunk("BANM", banmData.size() >= 4 ? banmData : emptyStub);
+    writeChunk("SNDS", sndsData.size() >= 4 ? sndsData : emptyStub);
+    writeChunk("SVOL", svolData.size() >= 4 ? svolData : emptyStub);
     writeChunk("MODS", modsData);
     writeChunk("VNAM", vnamData);
     writeChunk("INST", instData);

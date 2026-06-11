@@ -21,7 +21,7 @@ using namespace TaskSchemaNS;
 
 /*
 ================================================================================
- Editor bitmap font (content/qed/editor.fnt) for HUD text
+ Editor bitmap font (editor/qed/editor.fnt) for HUD text
 ================================================================================
 */
 static FntFont g_editorFont;
@@ -39,7 +39,7 @@ static void EnsureEditorFont() {
   }
   g_editorFontTried = true;
 
-  g_editorFont = FNT_Parse("content\\qed\\editor.fnt");
+  g_editorFont = FNT_Parse("editor\\qed\\editor.fnt");
   if (!g_editorFont.valid) {
     return;
   }
@@ -59,7 +59,7 @@ static void EnsureEditorSmFont() {
   }
   g_editorSmFontTried = true;
 
-  g_editorSmFont = FNT_Parse("content\\qed\\editorsm.fnt");
+  g_editorSmFont = FNT_Parse("editor\\qed\\editorsm.fnt");
   if (!g_editorSmFont.valid) {
     return;
   }

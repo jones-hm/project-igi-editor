@@ -27,12 +27,12 @@ DATFile DAT_Parse(const std::string& filepath) {
         return result;
     }
 
-    // Tokenise: skip blank lines and *** comment lines
+    // Tokenise: skip blank lines, *** comments, and // comments
     std::vector<std::string> tokens;
     std::string line;
     while (std::getline(file, line)) {
         line = Utils::Trim(line);
-        if (line.empty() || line.rfind("***", 0) == 0)
+        if (line.empty() || line.rfind("***", 0) == 0 || line.rfind("//", 0) == 0)
             continue;
         tokens.push_back(line);
     }
@@ -52,72 +52,99 @@ DATFile DAT_Parse(const std::string& filepath) {
         return result;
     }
 
-    // --- Model section ---
     size_t cursor = 1;
-    while (cursor + 1 < tokens.size()) {
+
+    // --- 0. Model section ---
+    for (int m = 0; m < result.declaredModelCount && cursor < tokens.size(); ++m) {
+        if (cursor >= tokens.size()) break;
         const std::string modelName = tokens[cursor++];
-
+        
         int matCount = 0;
-        try {
-            matCount = std::stoi(tokens[cursor++]);
-        } catch (...) {
-            Logger::Get().Log(LogLevel::WARNING,
-                "[DAT] Non-numeric material count after model '" + modelName +
-                "' — stopping model parse");
-            break;
-        }
-
-        // Count > kMaxMaterialsPerModel means we have overshot into the
-        // texture-manifest section (e.g. "393" model → stoi("207_01_1")=207).
-        if (matCount > kMaxMaterialsPerModel) {
-            Logger::Get().Log(LogLevel::INFO,
-                "[DAT] Reached texture-manifest section at model='" + modelName +
-                "' count=" + std::to_string(matCount) + " — stopping model parse");
-            // The texture manifest total count is in tokens[cursor-2] (modelName
-            // before this iteration was actually the count token). Back up and
-            // parse the texture section from here.
-            // modelName here IS the texture manifest count token.
-            try {
-                result.declaredTextureCount = std::stoi(modelName);
-            } catch (...) {}
-            cursor -= 2; // rewind: we haven't consumed any textures yet
-            break;
+        if (cursor < tokens.size()) {
+            try { matCount = std::stoi(tokens[cursor++]); }
+            catch (...) { break; }
         }
 
         DATModelEntry entry;
         entry.modelName = modelName;
-        for (int i = 0; i < matCount && cursor < tokens.size(); ++i)
+        for (int i = 0; i < matCount && cursor < tokens.size(); ++i) {
             entry.textures.push_back(tokens[cursor++]);
-
+        }
         result.models.push_back(std::move(entry));
     }
 
-    // --- Texture manifest section ---
-    // After the model section the DAT has:
-    //   <total_texture_count>
-    //   <tex_1>
-    //   ...
-    // The break above may have left cursor pointing just before the count token
-    // OR the count may already be in result.declaredTextureCount.
-    if (result.declaredTextureCount == 0 && cursor < tokens.size()) {
+    // Backwards-compatibility for older files that might be malformed or lack strict bounds:
+    // If the next token isn't a valid integer count for the texture manifest, we might have to scan.
+    // However, since we now strictly parse by counts like the Python script, we continue sequentially.
+
+    // --- 1. Texture manifest section ---
+    if (cursor < tokens.size()) {
         try {
             result.declaredTextureCount = std::stoi(tokens[cursor++]);
+            // The original compiler ignored declaredTextureCount and read all remaining tokens as textures!
+            // level1.dat actually has 427 tokens but declares 426.
+            while (cursor < tokens.size()) {
+                std::string t = tokens[cursor];
+                // Check if we hit the next section (VNAM/BANM count), which is numeric.
+                // However, textures can be purely numeric (like "0").
+                // In vanilla DAT, texture manifest is the last section before optional sections.
+                // Since this format is completely flat, we just consume everything until we hit
+                // something that looks like an optional section count if needed, but in level1.dat
+                // textures are exactly the rest of the file.
+                result.allTextures.push_back(tokens[cursor++]);
+            }
         } catch (...) {
-            cursor++; // skip malformed token
+            // Recover if needed
         }
-    } else {
-        cursor++; // skip the count token we already identified
     }
 
-    while (cursor < tokens.size())
-        result.allTextures.push_back(tokens[cursor++]);
+    // --- 2. VNAM section (Optional) ---
+    if (cursor < tokens.size()) {
+        try {
+            int vnamCount = std::stoi(tokens[cursor++]);
+            for (int v = 0; v < vnamCount && cursor < tokens.size(); ++v) {
+                DATVnamEntry ve;
+                if (cursor < tokens.size()) ve.mainModelName = tokens[cursor++];
+                if (cursor < tokens.size()) ve.virModelName = tokens[cursor++];
+                
+                int texCount = 0;
+                if (cursor < tokens.size()) texCount = std::stoi(tokens[cursor++]);
+                
+                for (int t = 0; t < texCount && cursor < tokens.size(); ++t) {
+                    ve.textures.push_back(tokens[cursor++]);
+                }
+                result.vnam_models.push_back(std::move(ve));
+            }
+        } catch (...) {}
+    }
+
+    // --- 3. Bone Animations section (Optional) ---
+    if (cursor < tokens.size()) {
+        try {
+            int animCount = std::stoi(tokens[cursor++]);
+            for (int a = 0; a < animCount && cursor < tokens.size(); ++a) {
+                result.animations.push_back(tokens[cursor++]);
+            }
+        } catch (...) {}
+    }
+
+    // --- 4. Shadow Models section (Optional) ---
+    if (cursor < tokens.size()) {
+        try {
+            int shadowCount = std::stoi(tokens[cursor++]);
+            for (int s = 0; s < shadowCount && cursor < tokens.size(); ++s) {
+                result.shadows.push_back(tokens[cursor++]);
+            }
+        } catch (...) {}
+    }
 
     Logger::Get().Log(LogLevel::INFO,
         "[DAT] Parsed " + filepath +
         " | models=" + std::to_string(result.models.size()) +
-        " (declared=" + std::to_string(result.declaredModelCount) + ")" +
         " | textures=" + std::to_string(result.allTextures.size()) +
-        " (declared=" + std::to_string(result.declaredTextureCount) + ")");
+        " | vnam=" + std::to_string(result.vnam_models.size()) +
+        " | anims=" + std::to_string(result.animations.size()) +
+        " | shadows=" + std::to_string(result.shadows.size()));
 
     result.valid = true;
     return result;
@@ -139,12 +166,9 @@ bool DAT_WriteNative(const DATFile& dat, const std::string& outPath, std::string
     emit("*** DO NOT EDIT!");
     emit("");
 
-    // Total model count (DAT_Parse reads this as tokens[0]).
-    emit(std::to_string(dat.declaredModelCount));
+    // Total model count
+    emit(std::to_string(dat.models.size())); // Use actual count
 
-    // Per-model: name, material count, then each texture. The trailing `waypoint`/`0`
-    // entry is stored in dat.models like any other model (0 textures), so emitting
-    // every model reproduces it verbatim.
     for (const auto& m : dat.models) {
         emit(m.modelName);
         emit(std::to_string(m.textures.size()));
@@ -153,7 +177,7 @@ bool DAT_WriteNative(const DATFile& dat, const std::string& outPath, std::string
     }
 
     // Texture manifest: total count, then each texture name.
-    emit(std::to_string(dat.declaredTextureCount));
+    emit(std::to_string(dat.allTextures.size()));
     for (const auto& t : dat.allTextures)
         emit(t);
 

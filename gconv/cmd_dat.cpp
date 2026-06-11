@@ -147,19 +147,9 @@ int cmd_dat(int argc, char** argv)
         for (const auto& m : dat.models)
             mappings.push_back({m.modelName, m.textures});
 
-        // Collect textures present in allTextures but not in any model's texture list
-        // (e.g. the literal "0" manifest entry that some DAT files include).
-        std::set<std::string> modelTexSet;
-        for (const auto& m : dat.models)
-            for (const auto& t : m.textures)
-                modelTexSet.insert(t);
-        std::vector<std::string> extraTextures;
-        for (const auto& t : dat.allTextures)
-            if (modelTexSet.find(t) == modelTexSet.end())
-                extraTextures.push_back(t);
-
+        std::vector<std::string> extraTextures; // Vanilla compiler ignores unreferenced textures
         std::string merr;
-        if (!MTP_Generate(out_mtp, mappings, merr, extraTextures))
+        if (!MTP_Generate(out_mtp, mappings, merr, extraTextures, dat.animations, dat.sounds, dat.shadows, dat.vnam_models))
         {
             std::cerr << "dat to-mtp: " << merr << "\n";
             return 4;

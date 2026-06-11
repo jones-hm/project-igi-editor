@@ -130,7 +130,7 @@ void Renderer_Objects::EnsureWindowModelIdsLoaded() {
     if (window_ids_loaded_) return;
     window_ids_loaded_ = true;
 
-    const std::string jsonPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModels.json";
+    const std::string jsonPath = Utils::GetExeDirectory() + "\\editor\\tools\\IGIModels.json";
     if (!std::filesystem::exists(jsonPath)) {
         Logger::Get().Log(LogLevel::WARNING, "[Renderer_Objects] IGIModels.json not found at: " + jsonPath);
         return;
@@ -191,7 +191,7 @@ void Renderer_Objects::EnsureAiModelIdsLoaded() {
     if (ai_ids_loaded_) return;
     ai_ids_loaded_ = true;
 
-    const std::string jsonPath = Utils::GetExeDirectory() + "\\content\\tools\\IGIModels.json";
+    const std::string jsonPath = Utils::GetExeDirectory() + "\\editor\\tools\\IGIModels.json";
     if (!std::filesystem::exists(jsonPath)) return;
 
     std::ifstream f(jsonPath);
@@ -897,7 +897,7 @@ static bool DisableAttaInMefBytes(std::vector<uint8_t>& mef, const std::string& 
 bool Renderer_Objects::SuppressAttachmentInMef(const std::string& parentModelId, const std::string& attModelId, const glm::vec3& localPos) {
     // Patch the level's model archive IN PLACE: parse it, disable the one ATTA record
     // inside the parent building's .mef entry, and repack ALL entries. This keeps the
-    // archive complete (the old code regenerated from content/models/levelX, which the
+    // archive complete (the old code regenerated from editor/models/levelX, which the
     // editor wipes after loading, producing an empty/broken .res).
     const std::string gameRes = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
                                 std::to_string(current_level_) + "\\models\\level" +
@@ -1059,16 +1059,16 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
     {
         const std::string exeDir = Utils::GetExeDirectory();
         const std::string lvl = std::to_string(current_level_);
-        familyDirs.push_back(exeDir + "\\content\\models\\level" + lvl);
+        familyDirs.push_back(exeDir + "\\editor\\models\\level" + lvl);
         familyDirs.push_back(Utils::GetIGIModelsPath(current_level_));
         for (int l = 1; l <= 14; ++l) {
             if (l == current_level_) continue;
-            familyDirs.push_back(exeDir + "\\content\\models\\level" + std::to_string(l));
+            familyDirs.push_back(exeDir + "\\editor\\models\\level" + std::to_string(l));
             familyDirs.push_back(Utils::GetIGIModelsPath(l));
         }
-        familyDirs.push_back(exeDir + "\\content\\models\\common");
+        familyDirs.push_back(exeDir + "\\editor\\models\\common");
         familyDirs.push_back(Utils::GetIGIRootPath() + "\\missions\\location0\\common\\models");
-        familyDirs.push_back(Utils::GetIGIRootPath() + "\\content\\models");
+        familyDirs.push_back(Utils::GetIGIRootPath() + "\\editor\\models");
     }
 
     // Map base model id -> resolved .mef path (first dir wins; deduped by id).
@@ -2607,13 +2607,13 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
 }
 
 std::string Renderer_Objects::GetLevelTexturesPath() const {
-    return Utils::GetExeDirectory() + "\\content\\textures\\level" + std::to_string(current_level_);
+    return Utils::GetExeDirectory() + "\\editor\\textures\\level" + std::to_string(current_level_);
 }
 
 std::string Renderer_Objects::GetLevelTextureDatPath() const {
     // Try local extracted DAT first
     const std::string localDat = Utils::GetExeDirectory() +
-        "\\content\\textures\\level" + std::to_string(current_level_) +
+        "\\editor\\textures\\level" + std::to_string(current_level_) +
         "\\level" + std::to_string(current_level_) + ".dat";
     if (std::filesystem::exists(localDat)) return localDat;
 
@@ -2658,7 +2658,7 @@ void Renderer_Objects::EnsureGlobalTextureMapLoaded() const {
 
     for (int lvl = 1; lvl <= 14; ++lvl) {
         // Try local extracted DAT first, then game path
-        std::string localDat = exeDir + "\\content\\textures\\level" + std::to_string(lvl) +
+        std::string localDat = exeDir + "\\editor\\textures\\level" + std::to_string(lvl) +
                                "\\level" + std::to_string(lvl) + ".dat";
         std::string gameDat  = igiRoot + "\\missions\\location0\\level" + std::to_string(lvl) +
                                "\\level" + std::to_string(lvl) + ".dat";
@@ -2750,6 +2750,22 @@ std::vector<std::string> Renderer_Objects::GetTextureIdsForModel(const std::stri
         }
     }
 
+    // 5. Fallback to just the prefix (e.g. NNN_XX_X -> NNN)
+    // AI models like "004_02_1" only have "004" mapped in the global DAT.
+    {
+        size_t p1 = modelId.find('_');
+        if (p1 != std::string::npos) {
+            std::string prefix = modelId.substr(0, p1);
+            if (prefix != modelId) {
+                auto it = model_texture_map_cache_.find(prefix);
+                if (it != model_texture_map_cache_.end()) return it->second;
+                
+                auto git = global_texture_map_.find(prefix);
+                if (git != global_texture_map_.end()) return git->second;
+            }
+        }
+    }
+
     Logger::Get().Log(LogLevel::DEBUG, "[TEX Native] DAT miss (all sources) for modelId=" + modelId);
     return {};
 }
@@ -2790,7 +2806,7 @@ std::string Renderer_Objects::FindTextureFile(const std::string& textureId) cons
     }
 
     // 3. Extracted common location0 textures (from location0.res)
-    const std::string commonLocalTexDir = Utils::GetExeDirectory() + "\\content\\textures\\common";
+    const std::string commonLocalTexDir = Utils::GetExeDirectory() + "\\editor\\textures\\common";
     result = searchDir(std::filesystem::path(commonLocalTexDir));
     if (!result.empty()) {
         Logger::Get().Log(LogLevel::DEBUG,
@@ -2836,7 +2852,7 @@ std::string Renderer_Objects::FindTextureFile(const std::string& textureId) cons
     const std::string igiRoot2 = Utils::GetIGIRootPath();
     for (int lvl = 1; lvl <= 14; ++lvl) {
         if (lvl == current_level_) continue;
-        result = searchDir(exeDir2 + "\\content\\textures\\level" + std::to_string(lvl));
+        result = searchDir(exeDir2 + "\\editor\\textures\\level" + std::to_string(lvl));
         if (!result.empty()) return result;
         result = searchDir(igiRoot2 + "\\missions\\location0\\level" + std::to_string(lvl) + "\\textures");
         if (!result.empty()) return result;
@@ -3325,7 +3341,7 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
     // ─── PHASE 1: EXACT MATCHES ───────────────────────────────────────────────
     
     // 1. Search local extracted models for current level
-    const std::string exeModels = Utils::GetExeDirectory() + "\\content\\models\\level" + std::to_string(current_level_);
+    const std::string exeModels = Utils::GetExeDirectory() + "\\editor\\models\\level" + std::to_string(current_level_);
     std::string result = searchOneDirExact(exeModels);
     if (!result.empty()) {
         Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found locally (Exact): " + result);
@@ -3343,7 +3359,7 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
     // 3. Search other levels for exact match (cross-level references)
     for (int lvl = 1; lvl <= 14; ++lvl) {
         if (lvl == current_level_) continue;
-        const std::string lvlLocal = Utils::GetExeDirectory() + "\\content\\models\\level" + std::to_string(lvl);
+        const std::string lvlLocal = Utils::GetExeDirectory() + "\\editor\\models\\level" + std::to_string(lvl);
         result = searchOneDirExact(lvlLocal);
         if (!result.empty()) {
             Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in level" + std::to_string(lvl) + " local (Exact): " + result);
@@ -3358,7 +3374,7 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
     }
 
     // 4. Search common location0 assets
-    const std::string commonLocal = Utils::GetExeDirectory() + "\\content\\models\\common";
+    const std::string commonLocal = Utils::GetExeDirectory() + "\\editor\\models\\common";
     result = searchOneDirExact(commonLocal);
     if (!result.empty()) {
         Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in common local (Exact): " + result);
@@ -3371,13 +3387,13 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
         return result;
     }
 
-    // 5. Search the flat IGI content/models directory produced by --extract-level.
-    //    All levels are extracted to a single flat dir (D:/IGI1/content/models/) alongside
+    // 5. Search the flat IGI editor/models directory produced by --extract-level.
+    //    All levels are extracted to a single flat dir (D:/IGI1/editor/models/) alongside
     //    the common/ and level1/ subdirs, so this covers levels 2-14 model MEFs.
-    const std::string igiContentModels = Utils::GetIGIRootPath() + "\\content\\models";
+    const std::string igiContentModels = Utils::GetIGIRootPath() + "\\editor\\models";
     result = searchOneDirExact(igiContentModels);
     if (!result.empty()) {
-        Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in IGI content/models flat dir (Exact): " + result);
+        Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in IGI editor/models flat dir (Exact): " + result);
         return result;
     }
 
@@ -3413,7 +3429,7 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
     // 3. Other levels fuzzy
     for (int lvl = 1; lvl <= 14; ++lvl) {
         if (lvl == current_level_) continue;
-        const std::string lvlLocal = Utils::GetExeDirectory() + "\\content\\models\\level" + std::to_string(lvl);
+        const std::string lvlLocal = Utils::GetExeDirectory() + "\\editor\\models\\level" + std::to_string(lvl);
         result = searchOneDirFuzzy(lvlLocal);
         if (!result.empty()) {
             Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Model found in level" + std::to_string(lvl) + " local (Fuzzy): " + result);

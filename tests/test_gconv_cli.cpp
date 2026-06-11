@@ -10,14 +10,14 @@
 // ============================================================
 //  gconv CLI integration tests
 //
-//  Spawns gconv.exe (at <exeDir>/content/tools/gconv.exe) with
+//  Spawns gconv.exe (at <exeDir>/editor/tools/gconv.exe) with
 //  real game files from GetIGIRootPath().  Each test asserts
 //  exit code 0; export tests also assert the output file exists
 //  and is non-empty.
 // ============================================================
 
 static std::string GConvExe() {
-    return Utils::GetExeDirectory() + "\\content\\tools\\gconv.exe";
+    return Utils::GetExeDirectory() + "\\editor\\tools\\gconv.exe";
 }
 
 static std::string IGI(const std::string& rel) {
@@ -117,14 +117,14 @@ TEST_F(GConvCli, TexDecode) {
 // ── mef ─────────────────────────────────────────────────────
 
 TEST_F(GConvCli, MefInfo) {
-    std::string f = IGI("content\\models\\common\\005_01_1.mef");
+    std::string f = IGI("editor\\models\\common\\005_01_1.mef");
     ASSERT_TRUE(std::filesystem::exists(f)) << f;
     EXPECT_EQ(RunGConv("mef info \"" + f + "\""), 0);
 }
 
 TEST_F(GConvCli, MefExport) {
     TempDir tmp;
-    std::string f   = IGI("content\\models\\common\\005_01_1.mef");
+    std::string f   = IGI("editor\\models\\common\\005_01_1.mef");
     std::string out = tmp / "model.obj";
     ASSERT_TRUE(std::filesystem::exists(f)) << f;
     EXPECT_EQ(RunGConv("mef export \"" + f + "\" -o \"" + out + "\""), 0);
@@ -230,14 +230,14 @@ TEST_F(GConvCli, FntExport) {
 // ── graph ────────────────────────────────────────────────────
 
 TEST_F(GConvCli, GraphInfo) {
-    std::string f = IGI("content\\backup\\level1\\graphs\\graph1.dat");
+    std::string f = IGI("editor\\backup\\level1\\graphs\\graph1.dat");
     ASSERT_TRUE(std::filesystem::exists(f)) << f;
     EXPECT_EQ(RunGConv("graph info \"" + f + "\""), 0);
 }
 
 TEST_F(GConvCli, GraphExport) {
     TempDir tmp;
-    std::string f   = IGI("content\\backup\\level1\\graphs\\graph1.dat");
+    std::string f   = IGI("editor\\backup\\level1\\graphs\\graph1.dat");
     std::string out = tmp / "graph.json";
     ASSERT_TRUE(std::filesystem::exists(f)) << f;
     EXPECT_EQ(RunGConv("graph export \"" + f + "\" -o \"" + out + "\""), 0);
@@ -248,14 +248,14 @@ TEST_F(GConvCli, GraphExport) {
 // ── terrain ──────────────────────────────────────────────────
 
 TEST_F(GConvCli, TerrainInfo) {
-    std::string f = IGI("content\\backup\\level1\\terrain\\TERRAIN.LMP");
+    std::string f = IGI("editor\\backup\\level1\\terrain\\TERRAIN.LMP");
     ASSERT_TRUE(std::filesystem::exists(f)) << f;
     EXPECT_EQ(RunGConv("terrain info \"" + f + "\""), 0);
 }
 
 TEST_F(GConvCli, TerrainExportLmp) {
     TempDir tmp;
-    std::string f    = IGI("content\\backup\\level1\\terrain\\TERRAIN.LMP");
+    std::string f    = IGI("editor\\backup\\level1\\terrain\\TERRAIN.LMP");
     std::string stem = tmp / "lmp";
     ASSERT_TRUE(std::filesystem::exists(f)) << f;
     EXPECT_EQ(RunGConv("terrain export-lmp \"" + f + "\" -o \"" + stem + "\""), 0);

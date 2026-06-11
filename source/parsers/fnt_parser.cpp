@@ -16,7 +16,7 @@
  * 12) already encodes header(16) + padded content, so advancing by skip lands on
  * the next chunk; skip==0 marks the final chunk.
  *
- * NOTE on the format (verified against content/qed/editor.fnt):
+ * NOTE on the format (verified against editor/qed/editor.fnt):
  *   - The char-code chunk FourCC is "TRAN" (not "TRN2").
  *   - editor.fnt's TEXH format is 2 (RGB565, 16-bit), not ARGB8888. We decode
  *     RGB565 into RGBA with RGB=white and A=luminance so the atlas acts as a

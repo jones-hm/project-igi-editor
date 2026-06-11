@@ -7,7 +7,7 @@
 #pragma once
 #include <string>
 
-// Run content/tools/mtp_decoder.exe on datPath to (re)generate the sibling .mtp.
+// Run editor/tools/mtp_decoder.exe on datPath to (re)generate the sibling .mtp.
 // The tool is an interactive Pascal crt console app; we spawn it in its own console and
 // inject its "Packed MTP" menu choice via the Windows console input buffer (AttachConsole
 // + CONIN$ + a lowercase-'m' KEY_EVENT -- the tool matches the lowercase ascii char and

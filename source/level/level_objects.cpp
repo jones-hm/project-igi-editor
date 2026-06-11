@@ -573,7 +573,7 @@ void LevelObjects::LoadModelNames() {
 
     char jsonPath[1024];
     std::string exeDir = Utils::GetExeDirectory();
-    Str_SPrintf(jsonPath, 1024, "%s\\content\\tools\\IGIModels.json", exeDir.c_str());
+    Str_SPrintf(jsonPath, 1024, "%s\\editor\\tools\\IGIModels.json", exeDir.c_str());
 
     if (!std::filesystem::exists(jsonPath)) {
         Logger::Get().Log(LogLevel::ERR, "[LevelObjects] IGIModels.json not found in executable directory: " + std::string(jsonPath));

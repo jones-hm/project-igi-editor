@@ -204,14 +204,30 @@ int cmd_mtp(int argc, char** argv)
         // Build DAT from MTP mappings (mappings already include "waypoint" if present)
         DATFile dat;
         dat.valid = true;
-        for (const auto& m : mtp.mappings)
+        
+        // The first mtp.models.size() entries correspond to main models
+        for (size_t i = 0; i < mtp.models.size() && i < mtp.mappings.size(); ++i)
         {
             DATModelEntry e;
-            e.modelName = m.modelName;
-            e.textures  = m.textureNames;
+            e.modelName = mtp.mappings[i].modelName;
+            e.textures  = mtp.mappings[i].textureNames;
             dat.models.push_back(e);
         }
+        
+        // The remaining entries correspond to VNAM models
+        for (size_t i = mtp.models.size(); i < mtp.mappings.size() && i < mtp.vnam_models.size(); ++i)
+        {
+            DATVnamEntry ve;
+            ve.mainModelName = mtp.mappings[i].modelName;
+            ve.virModelName = mtp.vnam_models[i];
+            ve.textures = mtp.mappings[i].textureNames;
+            dat.vnam_models.push_back(ve);
+        }
+
         dat.allTextures           = mtp.textures;
+        dat.animations            = mtp.animations;
+        dat.sounds                = mtp.sounds;
+        dat.shadows               = mtp.shadows;
         dat.declaredModelCount    = (int)dat.models.size();
         dat.declaredTextureCount  = (int)dat.allTextures.size();
 
