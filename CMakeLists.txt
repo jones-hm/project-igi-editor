@@ -75,6 +75,7 @@ target_precompile_headers(igi-editor PRIVATE source/pch.h)
 # stable while preserving PCH speed for the rest of the project.
 set_source_files_properties(
   source/app.cpp
+  source/app_input.cpp
   source/renderer/renderer_flat_sky_layers.cpp
   source/renderer/renderer_objects.cpp
   source/renderer/renderer_objects_atta.cpp
