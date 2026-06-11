@@ -3,7 +3,7 @@
 The **IGI Editor** is a hybrid toolkit that operates in two primary modes:
 1. **Graphical User Interface (GUI) Application**: A real-time 3D viewport editor for heightmaps, objects, Splines, AI, and level layouts.
 2. **Editor CLI**: Headless commands for level verification, testing, and resource extraction.
-3. **gconv1.exe**: Standalone asset converter for all parser operations (located in `content/tools/`).
+3. **gconv.exe**: Standalone asset converter, bundled at `editor/tools/gconv.exe` (built from the separate [project-igi-gconv](https://github.com/jones-hm/project-igi-gconv) repo).
 
 ---
 
@@ -81,102 +81,17 @@ Extracts all model, texture, and terrain assets for level N to a directory (defa
 
 ---
 
-## gconv1.exe — Asset Converter (located in `content/tools/`)
+## gconv.exe — Asset Converter
 
-Standalone CLI tool for reading, converting, and inspecting IGI game assets. No OpenGL or editor context required.
+The standalone asset converter has moved to its own repository:
+**[project-igi-gconv](https://github.com/jones-hm/project-igi-gconv)**.
 
-```powershell
-.\bin\Release\content\tools\gconv1.exe --help
-.\bin\Release\content\tools\gconv1.exe <command> --help
-```
-
-### Commands
-
-#### `tex` — Texture Operations
+The editor bundles the prebuilt binary at `editor/tools/gconv.exe`. For the full
+command tree (tex, mef, qsc, qvm, res, mtp, dat, fnt, terrain, graph) see that
+repo's [`docs/COMMANDS.md`](https://github.com/jones-hm/project-igi-gconv/blob/main/docs/COMMANDS.md),
+or run:
 
 ```powershell
-gconv1 tex info   <input.tex|.spr|.pic>
-gconv1 tex decode <input.tex|.spr|.pic> -o <output_dir>
-gconv1 tex decode <folder/> -o <output_dir> --batch
-gconv1 tex to-png <input.tga|.tex> -o <out.png>
-gconv1 tex to-tga <input.png|.tex> -o <out.tga>
+.\bin\Release\editor\tools\gconv.exe --help
+.\bin\Release\editor\tools\gconv.exe <command> --help
 ```
-
-#### `mef` — 3D Mesh Operations
-
-```powershell
-gconv1 mef info   <input.mef>
-gconv1 mef dump   <input.mef> [-o <output.txt>]
-gconv1 mef export <input.mef> -o <output.obj>
-gconv1 mef export <folder/> -o <output_dir> --batch
-gconv1 mef bundle <input.mef> -o <outdir> --dat <file.dat> --texdir <dir>
-```
-
-#### `qsc` — QSC Quest Script
-
-```powershell
-gconv1 qsc validate <file.qsc>
-gconv1 qsc compile  <file.qsc> -o <out.qvm>
-gconv1 qsc lex      <file.qsc>
-gconv1 qsc parse    <file.qsc>
-```
-
-#### `qvm` — QVM Bytecode
-
-```powershell
-gconv1 qvm info       <file.qvm>
-gconv1 qvm decompile  <file.qvm> -o <out.qsc>
-gconv1 qvm disasm     <file.qvm>
-```
-
-#### `res` — RES Archive
-
-```powershell
-gconv1 res list    <input.res>
-gconv1 res extract <input.res> -o <output_dir> [--file <name>]
-gconv1 res compile <file.qsc>
-gconv1 res pack    <dir> <out.res>
-gconv1 res unpack  <file.res> <dir>
-```
-
-#### `mtp` — MTP Terrain Properties
-
-```powershell
-gconv1 mtp info   <input.mtp>
-gconv1 mtp dump   <input.mtp> [-o <output.json>]
-gconv1 mtp to-dat <input.mtp> [-o <out.dat>]
-```
-
-#### `dat` — DAT Model-Texture Data
-
-```powershell
-gconv1 dat info   <file.dat>
-gconv1 dat export <file.dat> [-o <out.json>] [--filter <model>] [--text]
-gconv1 dat to-mtp <file.dat> [-o <out.mtp>]
-```
-
-#### `fnt` — FNT Bitmap Font
-
-```powershell
-gconv1 fnt info   <file.fnt>
-gconv1 fnt export <file.fnt> -o <out.png>
-```
-
-#### `terrain` — Terrain Height/Cube Data
-
-```powershell
-gconv1 terrain info       <file.ctr|.lmp>
-gconv1 terrain export-lmp <file.lmp> -o <outdir>
-gconv1 terrain export-ctr <file.ctr> -o <outdir>
-```
-
-#### `graph` — AI Navigation Graph
-
-```powershell
-gconv1 graph info   <file.dat>
-gconv1 graph export <file.dat> -o <out.json>
-```
-
----
-
-Run `gconv1 --help` for the full command tree, or `gconv1 <command> --help` for per-command usage.

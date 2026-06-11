@@ -184,54 +184,10 @@ else()
   target_link_libraries(igi-editor PRIVATE glut GL GLEW)
 endif()
 
-# ─── gconv: standalone CLI game asset converter ──────────────────────────────
-file(GLOB GCONV_SOURCES "gconv/*.h" "gconv/*.cpp")
-
-if (WIN32)
-  list(APPEND GCONV_SOURCES "assets/gconv1.rc")
-endif()
-
-add_executable(gconv1 ${GCONV_SOURCES} ${SOURCES_PARSERS})
-
-set_target_properties(gconv1 PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}/bin/Release/editor/tools"
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${PROJECT_SOURCE_DIR}/bin/Debug/editor/tools"
-    OUTPUT_NAME "gconv"
-)
-
-# gconv1 has no GL/GLUT — only standard + GLM + parser headers
-target_include_directories(gconv1 PRIVATE
-    ${PROJECT_SOURCE_DIR}/gconv          # gconv/pch.h overrides source/pch.h
-    ${PROJECT_SOURCE_DIR}/source         # common.h, level_common.h, etc.
-    ${PROJECT_SOURCE_DIR}/source/parsers
-    ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1
-    ${PROJECT_SOURCE_DIR}/third_party
-)
-
-# gconv1 uses no PCH — but parsers include "pch.h"; provide gconv/pch.h
-# All gconv1 files and parser files compiled for this target skip the editor PCH
-set_target_properties(gconv1 PROPERTIES
-    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
-)
-
-if (MSVC)
-    # /FI force-includes gconv/pch.h into every TU (parsers rely on pch.h being
-    # available but don't #include it themselves; this replicates the PCH
-    # force-include without dragging in GL/app headers).
-    target_compile_options(gconv1 PRIVATE
-        "/bigobj" "/FS"
-        "/FI${PROJECT_SOURCE_DIR}/gconv/pch.h"
-    )
-endif()
-
-# Parser files compiled for gconv1 must not use the editor PCH.
-# gconv/common_impl.cpp, logger_impl.cpp, utils_impl.cpp are unity wrappers
-# that live in gconv/ (first in include dirs) so their #include "pch.h"
-# resolves to gconv/pch.h (no GL), not source/pch.h.
-set_source_files_properties(
-    ${SOURCES_PARSERS}
-    PROPERTIES SKIP_PRECOMPILE_HEADERS ON
-)
+# ─── gconv: prebuilt standalone asset converter ──────────────────────────────
+# gconv now lives in its own repo (https://github.com/jones-hm/project-igi-gconv).
+# The editor consumes only the committed prebuilt binary, which the POST_BUILD
+# step above copies from assets/editor/tools/ to bin/<cfg>/editor/tools/gconv.exe.
 # ─────────────────────────────────────────────────────────────────────────────
 
 include(FetchContent)
@@ -267,7 +223,6 @@ add_executable(igi_tests
     tests/test_pickup_resolve.cpp
     tests/test_res_model_set.cpp
     tests/test_res_stream_append.cpp
-    tests/test_gconv_cli.cpp
 )
 
 # Explicit runtime so igi_tests always matches igi-editor (/MDd Debug, /MD Release).

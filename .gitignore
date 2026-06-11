@@ -37,7 +37,6 @@
 *.zip
 *.rc
 !assets/igi-editor.rc
-!assets/gconv1.rc
 bin/*/shaders
 scratch/*
 # CMake
@@ -129,3 +128,4 @@ __pycache__/
 *.qsc
 *.qas
 *qvm.worktrees
+!assets/editor/tools/gconv.exe
