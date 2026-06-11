@@ -307,24 +307,16 @@ void App::Input_OnSpecial(int key, int x, int y) {
 
 	// All other F-key/special-key bindings go through DispatchEventBindings (qedkeybindings.qsc only)
 
-	if (key == config.keyMoveForward) {
-		input_.keys_ |= MK_FORWARD;
-		return;
-	}
-
-	if (key == config.keyMoveBackward) {
-		input_.keys_ |= MK_BACKWARD;
-		return;
-	}
-
-	if (key == config.keyMoveLeft) {
-		input_.keys_ |= MK_LEFT;
-		return;
-	}
-
-	if (key == config.keyMoveRight) {
-		input_.keys_ |= MK_RIGHT;
-		return;
+	// Camera movement keys only fire when SHIFT+ALT is held; plain arrow keys must not move camera.
+	{
+		int mods = glutGetModifiers();
+		bool shiftAlt = (mods & GLUT_ACTIVE_SHIFT) && (mods & GLUT_ACTIVE_ALT);
+		if (shiftAlt) {
+			if (key == config.keyMoveForward)  { input_.keys_ |= MK_FORWARD;  return; }
+			if (key == config.keyMoveBackward) { input_.keys_ |= MK_BACKWARD; return; }
+			if (key == config.keyMoveLeft)     { input_.keys_ |= MK_LEFT;     return; }
+			if (key == config.keyMoveRight)    { input_.keys_ |= MK_RIGHT;    return; }
+		}
 	}
 
 	if (key == GLUT_KEY_PAGE_UP) {
@@ -347,16 +339,6 @@ void App::Input_OnSpecial(int key, int x, int y) {
 		}
 	}
 
-	if (key == GLUT_KEY_LEFT) {
-		input_.keys_ |= MK_ROLL_DEC;
-		return;
-	}
-
-	if (key == GLUT_KEY_RIGHT) {
-		input_.keys_ |= MK_ROLL_INC;
-		return;
-	}
-
 	if (key == GLUT_KEY_F11) {
 		if (selected_object_index_ >= 0) {
 			auto& obj = level_.GetLevelObjects().GetObjects()[selected_object_index_];
@@ -373,35 +355,10 @@ void App::Input_OnSpecial(int key, int x, int y) {
 void App::Input_OnSpecialUp(int key, int x, int y) {
 	auto& config = Config::Get();
 
-	if (key == config.keyMoveForward) {
-		input_.keys_ &= ~MK_FORWARD;
-		return;
-	}
-
-	if (key == config.keyMoveBackward) {
-		input_.keys_ &= ~MK_BACKWARD;
-		return;
-	}
-
-	if (key == config.keyMoveLeft) {
-		input_.keys_ &= ~MK_LEFT;
-		return;
-	}
-
-	if (key == config.keyMoveRight) {
-		input_.keys_ &= ~MK_RIGHT;
-		return;
-	}
-
-	if (key == GLUT_KEY_LEFT) {
-		input_.keys_ &= ~MK_ROLL_DEC;
-		return;
-	}
-
-	if (key == GLUT_KEY_RIGHT) {
-		input_.keys_ &= ~MK_ROLL_INC;
-		return;
-	}
+	if (key == config.keyMoveForward)  { input_.keys_ &= ~MK_FORWARD;  return; }
+	if (key == config.keyMoveBackward) { input_.keys_ &= ~MK_BACKWARD; return; }
+	if (key == config.keyMoveLeft)     { input_.keys_ &= ~MK_LEFT;     return; }
+	if (key == config.keyMoveRight)    { input_.keys_ &= ~MK_RIGHT;    return; }
 }
 
 
