@@ -63,6 +63,7 @@ DATFile DAT_Parse(const std::string& filepath) {
         if (cursor < tokens.size()) {
             try { matCount = std::stoi(tokens[cursor++]); }
             catch (...) { break; }
+            if (matCount > kMaxMaterialsPerModel) matCount = kMaxMaterialsPerModel;
         }
 
         DATModelEntry entry;
@@ -177,6 +178,22 @@ bool DAT_WriteNative(const DATFile& dat, const std::string& outPath, std::string
     emit(std::to_string(dat.allTextures.size()));
     for (const auto& t : dat.allTextures)
         emit(t);
+
+    // Optional sections: VNAM, animations, shadows.
+    emit(std::to_string(dat.vnam_models.size()));
+    for (const auto& v : dat.vnam_models) {
+        emit(v.mainModelName);
+        emit(v.virModelName);
+        emit(std::to_string(v.textures.size()));
+        for (const auto& t : v.textures)
+            emit(t);
+    }
+    emit(std::to_string(dat.animations.size()));
+    for (const auto& a : dat.animations)
+        emit(a);
+    emit(std::to_string(dat.shadows.size()));
+    for (const auto& s : dat.shadows)
+        emit(s);
 
     if (!f.good()) {
         err = "Write error to: " + outPath;

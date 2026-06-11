@@ -198,14 +198,14 @@ MTPFile MTP_Parse(const std::string& filepath) {
         else if (MatchFourCC(reinterpret_cast<const uint8_t*>(fourcc), "VNAM")) {
             if (chunkSize >= 4) {
                 uint32_t count = ReadU32LE(chunkData);
-                size_t offset = 4 + count * 4;
-                for (uint32_t i = 0; i < count && offset < chunkSize; ++i) {
-                    const char* str = reinterpret_cast<const char*>(chunkData + offset);
-                    size_t maxLen = chunkSize - offset;
+                size_t vnamOff = 4 + (size_t)count * 4; // skip count + offset table
+                for (uint32_t i = 0; i < count && vnamOff < chunkSize; ++i) {
+                    const char* str = reinterpret_cast<const char*>(chunkData + vnamOff);
+                    size_t maxLen = chunkSize - vnamOff;
                     size_t len = 0;
                     while (len < maxLen && str[len] != '\0') len++;
                     result.vnam_models.emplace_back(str, len);
-                    offset += len + 1;
+                    vnamOff += len + 1;
                 }
             }
         }

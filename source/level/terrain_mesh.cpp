@@ -198,6 +198,11 @@ void Terrain::GenerateCubeData() {
 			float		v_;
 		} vert_info_buf[64];	// atmost 64 vertices per cube
 
+		if (total_vert_cnt > 64) {
+			Log(log_type_t::LOG_FATAL, __FILE__, __LINE__, "total_vert_cnt exceeds vert_info_buf capacity");
+			return;
+		}
+
 		uint32_t tex_mods = 0;
 
 		for (uint16_t i = 0; i < total_vert_cnt; ++i) {

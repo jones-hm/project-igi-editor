@@ -147,33 +147,33 @@ static std::vector<ModelEntry> LoadAllModelsFromJson() {
 	ss << file.rdbuf();
 	std::string content = ss.str();
 	
+	// Parse by searching for each key directly so values containing '{' or '}' don't break extraction.
+	auto extractNextValue = [&](size_t searchFrom, const std::string& key, std::string& outVal) -> size_t {
+		std::string keyStr = "\"" + key + "\"";
+		size_t kpos = content.find(keyStr, searchFrom);
+		if (kpos == std::string::npos) return std::string::npos;
+		size_t colon = content.find(":", kpos + keyStr.size());
+		if (colon == std::string::npos) return std::string::npos;
+		size_t qStart = content.find("\"", colon + 1);
+		if (qStart == std::string::npos) return std::string::npos;
+		size_t qEnd = content.find("\"", qStart + 1);
+		if (qEnd == std::string::npos) return std::string::npos;
+		outVal = content.substr(qStart + 1, qEnd - qStart - 1);
+		return qEnd + 1;
+	};
+
 	size_t pos = 0;
-	while ((pos = content.find("{", pos)) != std::string::npos) {
-		size_t end = content.find("}", pos);
-		if (end == std::string::npos) break;
-		
-		std::string entry = content.substr(pos, end - pos + 1);
-		pos = end + 1;
-		
-		auto extractValue = [](const std::string& str, const std::string& key) -> std::string {
-			size_t kpos = str.find("\"" + key + "\"");
-			if (kpos == std::string::npos) return "";
-			size_t colon = str.find(":", kpos);
-			if (colon == std::string::npos) return "";
-			size_t qStart = str.find("\"", colon);
-			if (qStart == std::string::npos) return "";
-			size_t qEnd = str.find("\"", qStart + 1);
-			if (qEnd == std::string::npos) return "";
-			return str.substr(qStart + 1, qEnd - qStart - 1);
-		};
-		
-		ModelEntry item;
-		item.modelName = extractValue(entry, "ModelName");
-		item.modelId = extractValue(entry, "ModelId");
-		
-		if (!item.modelId.empty() || !item.modelName.empty()) {
-			entries.push_back(item);
-		}
+	while (pos < content.size()) {
+		std::string modelName, modelId;
+		size_t nPos = extractNextValue(pos, "ModelName", modelName);
+		size_t iPos = extractNextValue(pos, "ModelId",   modelId);
+		if (nPos == std::string::npos && iPos == std::string::npos) break;
+		if (!modelId.empty() || !modelName.empty())
+			entries.push_back({modelName, modelId});
+		// Advance past whichever key came last so we don't re-parse the same entry.
+		pos = (nPos != std::string::npos && iPos != std::string::npos)
+		    ? (nPos > iPos ? nPos : iPos)
+		    : (nPos != std::string::npos ? nPos : iPos);
 	}
 	
 	return entries;

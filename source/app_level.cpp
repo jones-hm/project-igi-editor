@@ -30,10 +30,8 @@ void App::LoadLevel(int level_no) {
 		// Verify level number is valid
 		if (level_no < MIN_LEVEL_NO || level_no > MAX_LEVEL_NO) {
 			std::string errorMsg = "Invalid level number: " + std::to_string(level_no) + " (valid range: " + std::to_string(MIN_LEVEL_NO) + "-" + std::to_string(MAX_LEVEL_NO) + ")";
-			Utils::LogAndShowError(errorMsg, "IGI Editor - Error");
 			Logger::Get().Log(LogLevel::ERR, errorMsg);
-			// Exit the application safely; destructor will be called automatically
-			std::exit(EXIT_FAILURE);
+			throw std::runtime_error(errorMsg);
 		}
 		if (Config::Get().enableBackup) {
 			std::string gameLevelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" + std::to_string(level_no);
