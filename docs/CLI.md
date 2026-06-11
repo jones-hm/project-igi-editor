@@ -81,17 +81,8 @@ Extracts all model, texture, and terrain assets for level N to a directory (defa
 
 ---
 
-## igi1conv.exe — Asset Converter
+## Asset Conversion
 
-The standalone asset converter has moved to its own repository:
-**[project-igi-conv](https://github.com/jones-hm/project-igi-conv)**.
-
-The editor bundles the prebuilt binary at `editor/tools/igi1conv.exe`. For the full
-command tree (tex, mef, qsc, qvm, res, mtp, dat, fnt, terrain, graph) see that
-repo's [`docs/COMMANDS.md`](https://github.com/jones-hm/project-igi-conv/blob/main/docs/COMMANDS.md),
-or run:
-
-```powershell
-.\bin\Release\editor\tools\igi1conv.exe --help
-.\bin\Release\editor\tools\igi1conv.exe <command> --help
-```
+The standalone converter `igi1conv.exe` ships in `editor/tools/` but is developed
+and documented separately at **[project-igi-conv](https://github.com/jones-hm/project-igi-conv)**.
+Run `editor/tools/igi1conv.exe --help` for its commands.
