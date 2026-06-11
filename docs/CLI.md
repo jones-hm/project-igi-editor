@@ -3,7 +3,7 @@
 The **IGI Editor** is a hybrid toolkit that operates in two primary modes:
 1. **Graphical User Interface (GUI) Application**: A real-time 3D viewport editor for heightmaps, objects, Splines, AI, and level layouts.
 2. **Editor CLI**: Headless commands for level verification, testing, and resource extraction.
-3. **gconv.exe**: Standalone asset converter, bundled at `editor/tools/gconv.exe` (built from the separate [project-igi-gconv](https://github.com/jones-hm/project-igi-gconv) repo).
+3. **igi1conv.exe**: Standalone asset converter, bundled at `editor/tools/igi1conv.exe` (built from the separate [project-igi-conv](https://github.com/jones-hm/project-igi-conv) repo).
 
 ---
 
@@ -81,17 +81,17 @@ Extracts all model, texture, and terrain assets for level N to a directory (defa
 
 ---
 
-## gconv.exe — Asset Converter
+## igi1conv.exe — Asset Converter
 
 The standalone asset converter has moved to its own repository:
-**[project-igi-gconv](https://github.com/jones-hm/project-igi-gconv)**.
+**[project-igi-conv](https://github.com/jones-hm/project-igi-conv)**.
 
-The editor bundles the prebuilt binary at `editor/tools/gconv.exe`. For the full
+The editor bundles the prebuilt binary at `editor/tools/igi1conv.exe`. For the full
 command tree (tex, mef, qsc, qvm, res, mtp, dat, fnt, terrain, graph) see that
-repo's [`docs/COMMANDS.md`](https://github.com/jones-hm/project-igi-gconv/blob/main/docs/COMMANDS.md),
+repo's [`docs/COMMANDS.md`](https://github.com/jones-hm/project-igi-conv/blob/main/docs/COMMANDS.md),
 or run:
 
 ```powershell
-.\bin\Release\editor\tools\gconv.exe --help
-.\bin\Release\editor\tools\gconv.exe <command> --help
+.\bin\Release\editor\tools\igi1conv.exe --help
+.\bin\Release\editor\tools\igi1conv.exe <command> --help
 ```
