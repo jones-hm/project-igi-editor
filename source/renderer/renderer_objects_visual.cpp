@@ -384,8 +384,8 @@ void Renderer_Objects::AddCharacterVertices(std::vector<float>& vertices, char c
             addLineQuad(1, 0, 0.7, 0);
             break;
         case ':':
-            addLineQuad(0, 0.3, 0, 0.3);
-            addLineQuad(0, -0.3, 0, -0.3);
+            addLineQuad(-0.1f, 0.3f, 0.1f, 0.3f);
+            addLineQuad(-0.1f, -0.3f, 0.1f, -0.3f);
             break;
         case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
             // Simple box for numbers with slash
@@ -427,7 +427,7 @@ Mesh Renderer_Objects::CreateCubeMesh() {
     glGenVertexArrays(1, &m.VAO); glGenBuffers(1, &m.VBO);
     glBindVertexArray(m.VAO);
     glBindBuffer(GL_ARRAY_BUFFER, m.VBO);
-    glBufferData(GL_ARRAY_BUFFER, v.size()*4, v.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, v.size() * sizeof(float), v.data(), GL_STATIC_DRAW);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 32, (void*)0); glEnableVertexAttribArray(0);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 32, (void*)12); glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 32, (void*)24); glEnableVertexAttribArray(2);
@@ -436,44 +436,41 @@ Mesh Renderer_Objects::CreateCubeMesh() {
 }
 
 void Renderer_Objects::InitSelectionBox() {
-    // Create a simple cube wireframe
-    float boxSize = WORLD_UNITS_PER_METER * 2.0f; // 2m box
-    float halfSize = boxSize * 0.5f;
-    
-    float vertices[] = {
-        // Front face
-        -halfSize, -halfSize,  halfSize,
-         halfSize, -halfSize,  halfSize,
-         halfSize,  halfSize,  halfSize,
-        -halfSize,  halfSize,  halfSize,
-        // Back face
-        -halfSize, -halfSize, -halfSize,
-         halfSize, -halfSize, -halfSize,
-         halfSize,  halfSize, -halfSize,
-        -halfSize,  halfSize, -halfSize
+    float h = WORLD_UNITS_PER_METER; // half-size of 2m box
+    // 8 corners
+    float c[8][3] = {
+        {-h,-h, h},{h,-h, h},{h, h, h},{-h, h, h}, // front 0-3
+        {-h,-h,-h},{h,-h,-h},{h, h,-h},{-h, h,-h}  // back  4-7
     };
-    
+    // 12 edges pre-expanded as 24 line endpoints for glDrawArrays(GL_LINES)
+    int edges[12][2] = {
+        {0,1},{1,2},{2,3},{3,0}, // front face
+        {4,5},{5,6},{6,7},{7,4}, // back face
+        {0,4},{1,5},{2,6},{3,7}  // connecting edges
+    };
+    float verts[24 * 3];
+    for (int i = 0; i < 12; ++i) {
+        float* a = c[edges[i][0]]; float* b = c[edges[i][1]];
+        verts[i*6+0]=a[0]; verts[i*6+1]=a[1]; verts[i*6+2]=a[2];
+        verts[i*6+3]=b[0]; verts[i*6+4]=b[1]; verts[i*6+5]=b[2];
+    }
     glGenVertexArrays(1, &selection_vao_);
     glGenBuffers(1, &selection_vbo_);
-    
     glBindVertexArray(selection_vao_);
     glBindBuffer(GL_ARRAY_BUFFER, selection_vbo_);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    
     glBindVertexArray(0);
 }
 
 // ─── DrawSelectionBox ─────────────────────────────────────────────────────────
 void Renderer_Objects::DrawSelectionBox(const LevelObject& obj, GLuint ubo_mats, const glm::vec4& color) {
-    if (selection_vao_ == 0) {
+    if (selection_vao_ == 0)
         InitSelectionBox();
-    }
-    
-    // Simple shader for solid color
-    static const char* simple_vert = R"(
+
+    if (selection_shader_ == 0) {
+        static const char* simple_vert = R"(
 #version 330 core
 layout(std140) uniform Matrices {
     mat4 u_unused1;
@@ -486,8 +483,7 @@ void main() {
     gl_Position = u_mvp * u_model * vec4(a_pos, 1.0);
 }
 )";
-
-    static const char* simple_frag = R"(
+        static const char* simple_frag = R"(
 #version 330 core
 uniform vec4 u_color;
 out vec4 fragColor;
@@ -495,69 +491,50 @@ void main() {
     fragColor = u_color;
 }
 )";
-    
-    static GLuint simple_shader = 0;
-    if (simple_shader == 0) {
+        GLint ok;
         GLuint vert = glCreateShader(GL_VERTEX_SHADER);
         glShaderSource(vert, 1, &simple_vert, nullptr);
         glCompileShader(vert);
-        
+        glGetShaderiv(vert, GL_COMPILE_STATUS, &ok);
+        if (!ok) { glDeleteShader(vert); return; }
+
         GLuint frag = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(frag, 1, &simple_frag, nullptr);
         glCompileShader(frag);
-        
-        simple_shader = glCreateProgram();
-        glAttachShader(simple_shader, vert);
-        glAttachShader(simple_shader, frag);
-        glLinkProgram(simple_shader);
-        
+        glGetShaderiv(frag, GL_COMPILE_STATUS, &ok);
+        if (!ok) { glDeleteShader(vert); glDeleteShader(frag); return; }
+
+        selection_shader_ = glCreateProgram();
+        glAttachShader(selection_shader_, vert);
+        glAttachShader(selection_shader_, frag);
+        glLinkProgram(selection_shader_);
         glDeleteShader(vert);
         glDeleteShader(frag);
+        glGetProgramiv(selection_shader_, GL_LINK_STATUS, &ok);
+        if (!ok) { glDeleteProgram(selection_shader_); selection_shader_ = 0; return; }
     }
-    
-    glUseProgram(simple_shader);
+
+    glUseProgram(selection_shader_);
     glBindBufferBase(GL_UNIFORM_BUFFER, ubo_binding_point_, ubo_mats);
-    
-    // Build model matrix for selection box (slightly larger than object)
-    // Cast dvec3 to vec3 for rendering
+
     glm::mat4 model = glm::mat4(1.0f);
     model = glm::translate(model, glm::vec3(obj.pos));
     model = glm::rotate(model, static_cast<float>(obj.rot.z), glm::vec3(0.0f, 0.0f, 1.0f));
     model = glm::rotate(model, static_cast<float>(obj.rot.x), glm::vec3(1.0f, 0.0f, 0.0f));
     model = glm::rotate(model, static_cast<float>(obj.rot.y), glm::vec3(0.0f, 1.0f, 0.0f));
 
-    // Weapon/ammo pickups are authored with barrel along model +Y (standing upright).
-    // Rotate 90° around world Z so barrel maps to world +X — weapon lies flat on ground.
     bool isWeapon = IsWeaponModel(obj.modelId) || obj.type == "GunPickup" || obj.type == "AmmoPickup" || obj.type == "GenericPickup";
-    if (isWeapon) {
+    if (isWeapon)
         model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    }
 
-    model = glm::scale(model, glm::vec3(obj.scale * 1.2f)); // 20% larger
-    
-    GLint loc_model = glGetUniformLocation(simple_shader, "u_model");
-    glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(model));
-    
-    GLint loc_color = glGetUniformLocation(simple_shader, "u_color");
-    glUniform4fv(loc_color, 1, glm::value_ptr(color));
-    
-    // Draw wireframe
+    model = glm::scale(model, glm::vec3(obj.scale * 1.2f));
+
+    glUniformMatrix4fv(glGetUniformLocation(selection_shader_, "u_model"), 1, GL_FALSE, glm::value_ptr(model));
+    glUniform4fv(glGetUniformLocation(selection_shader_, "u_color"), 1, glm::value_ptr(color));
+
     glBindVertexArray(selection_vao_);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glDisable(GL_CULL_FACE);
-    
-    // Draw edges
-    GLuint indices[] = {
-        0,1, 1,2, 2,3, 3,0, // Front face
-        4,5, 5,6, 6,7, 7,4, // Back face
-        0,4, 1,5, 2,6, 3,7  // Connecting edges
-    };
-    
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // Unbind any existing EBO
-    glDrawElements(GL_LINES, 24, GL_UNSIGNED_INT, indices);
-    
-    // Reset state
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glDrawArrays(GL_LINES, 0, 24);
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
     glUseProgram(0);

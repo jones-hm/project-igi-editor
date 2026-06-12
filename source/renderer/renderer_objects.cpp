@@ -305,6 +305,10 @@ void Renderer_Objects::Shutdown() {
         glDeleteBuffers(1, &selection_vbo_);
         selection_vbo_ = 0;
     }
+    if (selection_shader_) {
+        glDeleteProgram(selection_shader_);
+        selection_shader_ = 0;
+    }
     if (sphere_vao_) {
         glDeleteVertexArrays(1, &sphere_vao_);
         sphere_vao_ = 0;

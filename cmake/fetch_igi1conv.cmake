@@ -19,7 +19,7 @@ if(DEFINED ENV{IGI1CONV_NO_FETCH})
     return()
 endif()
 
-message(STATUS "igi1conv: checking latest release at ${_igi1conv_url}")
+message(STATUS "igi1conv: downloading pinned ${_igi1conv_version} release from ${_igi1conv_url}")
 file(DOWNLOAD "${_igi1conv_url}" "${_igi1conv_tmp}"
      TIMEOUT 30
      INACTIVITY_TIMEOUT 15

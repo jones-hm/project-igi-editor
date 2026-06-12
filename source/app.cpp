@@ -362,7 +362,7 @@ void App::Frame(float delta_seconds) {
 		float ground_z = 0.0f;
 		level_.GetTerrainZ(viewer_.pos_.x, viewer_.pos_.y, ground_z);
 		Renderer::task_tree_view_params_s task_tree_view = {
-			.show_hud_ = true,
+			.show_hud_ = show_hud_,
 			.status_msg_ = status_message_,
 			.pause_mode_ = true,
 			.pause_active_input_ = pause_active_input_,

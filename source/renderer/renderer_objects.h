@@ -125,6 +125,7 @@ private:
     GLint  loc_glass_min_ = -1;  // u_glassMin location (glass sheen floor), set in Draw
     GLuint ubo_binding_point_;
     GLuint selection_vao_, selection_vbo_;
+    GLuint selection_shader_ = 0;
     std::unordered_set<std::string> logged_draw_buildings_;
     std::set<std::string> window_model_ids_;
     bool window_ids_loaded_ = false;
