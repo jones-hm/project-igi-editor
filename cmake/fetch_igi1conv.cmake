@@ -10,7 +10,7 @@
 
 set(_igi1conv_dst "${CMAKE_CURRENT_SOURCE_DIR}/assets/editor/tools/igi1conv.exe")
 set(_igi1conv_version "v1.6.0")
-set(_igi1conv_sha256 "a714ad1e911b3495b9ab0b1c4cec42452bdefd026c8137b8338e94fae955a3f3")
+set(_igi1conv_sha256 "c79da40b239291e46be488e21012f80f423515b8db72d838a036e29e0269198f")
 set(_igi1conv_url "https://github.com/jones-hm/project-igi-conv/releases/download/${_igi1conv_version}/igi1conv.exe")
 set(_igi1conv_tmp "${CMAKE_CURRENT_BINARY_DIR}/igi1conv_latest.exe")
 
