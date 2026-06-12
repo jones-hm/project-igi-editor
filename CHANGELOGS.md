@@ -1,5 +1,42 @@
 # Changelogs
 
+## 3.0.0 — igi1conv Integration, Qt Bundling, Module Refactor & Bug Fixes
+
+This release is a major milestone: the standalone asset converter is now a first-class Qt application (`igi1conv`) living in its own repository, the editor codebase has been split into clearly separated modules, and a batch of code-review bugs has been resolved.
+
+### 🔧 igi1conv — Standalone Asset Converter (Qt)
+- **Dedicated repo**: `igi1conv` is developed at [project-igi-conv](https://github.com/jones-hm/project-igi-conv) and bundled prebuilt with each editor release.
+- **Qt application**: Ships with a full graphical GUI mode and a headless CLI mode. The editor invokes only the CLI internally (`dat to-mtp`, etc.).
+- **Full Qt package**: The entire runtime (exe + Qt5Core/Qt5Gui/Qt5Widgets/Qt5Svg DLLs, platform plugins, image formats) is bundled at `editor/tools/igi1conv/` — no separate Qt installation required.
+- **v1.6.0**: Updated to `igi1conv` v1.6.0 with improved asset conversion accuracy.
+- **Native MTP generation**: The editor delegates all `.mtp` generation to `igi1conv dat to-mtp`, which reproduces the original game `.mtp` byte-for-byte and fixes transparent/wrong-texture in-game issues.
+
+### 🗂️ Module Refactor
+- **renderer_objects** split into picking, mesh, visual, metadata, texture, and ATTA attachment subsystems.
+- **app** split into `app_input` (mouse + keyboard + dispatch), `app_editor`, `app_view`, `app_lookup`, `app_level`, and `app_ui` modules.
+- **terrain** implementation split into terrain_io, terrain_lod, terrain_mesh, and terrain_query.
+- **LevelObjects** QSC serialization extracted into its own module.
+
+### 🖥️ UI Improvements
+- **Level Spinner**: Level number selector added to the pause menu for quick level switching.
+- **Texture Panel Removed**: Texture list removed from the pause menu for a cleaner layout.
+- **Editor File Verification on Launch**: Missing `editor/` directory files are detected and reported with a clear error dialog before the editor reaches the render loop.
+
+### 🐛 Bug Fixes
+- **Arrow Keys**: Arrow keys no longer move the camera unless `SHIFT+ALT` is held — fixes accidental camera drift during text input.
+- **Weapon Orientation**: Corrected weapon/ammo model orientation so pickups display at the right angle in-game.
+- **ESC Menu Re-open**: Fixed regression where pressing ESC a second time failed to reopen the pause menu.
+- **Terrain Rings on Right-Click**: 3D brush rings now appear immediately when terrain is selected via right-click.
+- **DAT Round-Trip Loss**: Fixed data loss when a DAT file was written back after read.
+- **matCount Guard**: Added bounds check to prevent out-of-range material slot access.
+- **`std::exit` replaced**: Replaced bare `std::exit` calls with proper cleanup paths.
+- **VNAM Shadow**: Fixed variable shadowing bug in VNAM chunk parsing.
+- **vert_info Overflow**: Corrected vertex info buffer overflow on large meshes.
+- **JSON Parser**: Fixed edge-case crash in the embedded JSON parser on malformed input.
+- **Boundary-Aware Texture Matching**: `009_01_1` can no longer accidentally grab `1009_01_1.tex`.
+
+---
+
 ## 2.9.0 — New Terrain Editor, Foreign Models Support & UI Fixes
 This release introduces a new Terrain editor, support for loading and adding foreign models from other levels, and critical bug fixes to the pause menu layout and viewport interaction.
 

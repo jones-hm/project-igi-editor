@@ -83,6 +83,8 @@ Extracts all model, texture, and terrain assets for level N to a directory (defa
 
 ## Asset Conversion
 
-The standalone converter `igi1conv.exe` ships in `editor/tools/` but is developed
-and documented separately at **[project-igi-conv](https://github.com/jones-hm/project-igi-conv)**.
-Run `editor/tools/igi1conv.exe --help` for its commands.
+The standalone converter `igi1conv.exe` ships in `editor/tools/igi1conv/` (full Qt package with runtime DLLs) but is developed and documented separately at **[project-igi-conv](https://github.com/jones-hm/project-igi-conv)**.
+
+`igi1conv` is a **Qt application** — it has a graphical GUI mode and a headless CLI mode. The editor uses only the CLI mode internally.
+
+Run `editor/tools/igi1conv/igi1conv.exe --help` for its commands.
