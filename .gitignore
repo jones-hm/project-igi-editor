@@ -36,6 +36,7 @@
 *.ps1
 *.zip
 *.rc
+!assets/igi-editor.rc
 bin/*/shaders
 scratch/*
 # CMake
@@ -127,3 +128,4 @@ __pycache__/
 *.qsc
 *.qas
 *qvm.worktrees
+!assets/editor/tools/igi1conv/**

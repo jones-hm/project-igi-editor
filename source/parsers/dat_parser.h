@@ -27,9 +27,22 @@ struct DATModelEntry {
     std::vector<std::string> textures;  // material/texture names in order
 };
 
+struct DATVnamEntry {
+    std::string mainModelName;
+    std::string virModelName;
+    std::vector<std::string> textures;
+};
+
 struct DATFile {
     std::vector<DATModelEntry> models;  // all model entries from model section
     std::vector<std::string>   allTextures;  // texture manifest section
+    
+    // Extended DAT format sections
+    std::vector<DATVnamEntry>  vnam_models;
+    std::vector<std::string>   animations;
+    std::vector<std::string>   sounds;
+    std::vector<std::string>   shadows;
+
     int  declaredModelCount   = 0;
     int  declaredTextureCount = 0;
     bool valid = false;

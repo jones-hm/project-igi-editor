@@ -142,7 +142,7 @@ private:
   bool pause_mode_;
   std::string pause_level_input_ = "";
   std::string pause_search_input_ = "";
-  int pause_active_input_ = -1; // -1: none, 0: level, 1: search
+  int pause_active_input_ = -1; // -1: none, 1: search
   bool pause_terrain_expanded_ = false;
   int edit_brush_;
   double edit_brush_radius_ = 5000.0;

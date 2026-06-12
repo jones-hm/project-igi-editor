@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 # target_precompile_headers
 #   Added in version 3.16
 
-project (igi_editor 
-  VERSION 1.5
+project (igi_editor
+  VERSION 3.0
   LANGUAGES C CXX)
 
 # Designated initializers, introduced in C++20
@@ -75,8 +75,22 @@ target_precompile_headers(igi-editor PRIVATE source/pch.h)
 # stable while preserving PCH speed for the rest of the project.
 set_source_files_properties(
   source/app.cpp
+  source/app_input.cpp
+  source/app_input_mouse.cpp
+  source/app_input_keyboard.cpp
+  source/app_view.cpp
+  source/app_lookup.cpp
+  source/app_editor.cpp
+  source/app_ui.cpp
+  source/app_level.cpp
   source/renderer/renderer_flat_sky_layers.cpp
   source/renderer/renderer_objects.cpp
+  source/renderer/renderer_objects_atta.cpp
+  source/renderer/renderer_objects_mesh.cpp
+  source/renderer/renderer_objects_metadata.cpp
+  source/renderer/renderer_objects_picking.cpp
+  source/renderer/renderer_objects_texture.cpp
+  source/renderer/renderer_objects_visual.cpp
   source/renderer/renderer_skydome.cpp
   source/renderer/renderer_splines.cpp
   source/renderer/renderer_terrain.cpp
@@ -92,6 +106,10 @@ set_source_files_properties(
   source/parsers/graph_parser.cpp
   source/cli/asset_extractor.cpp
   source/level/terrain.cpp
+  source/level/terrain_io.cpp
+  source/level/terrain_lod.cpp
+  source/level/terrain_mesh.cpp
+  source/level/terrain_query.cpp
   source/parsers/qvm_decompiler.cpp
   source/parsers/qsc_lexer.cpp
   source/parsers/qsc_parser.cpp
@@ -166,10 +184,10 @@ if (WIN32)
   endif()
 
   add_custom_command(TARGET igi-editor POST_BUILD
-    # Copy assets/content structure directly
+    # Copy assets/editor structure directly
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-      "${PROJECT_SOURCE_DIR}/assets/content"
-      "$<TARGET_FILE_DIR:igi-editor>/content"
+      "${PROJECT_SOURCE_DIR}/assets/editor"
+      "$<TARGET_FILE_DIR:igi-editor>/editor"
 
     # Copy files to root (DLLs and version)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -178,11 +196,20 @@ if (WIN32)
       "${PROJECT_SOURCE_DIR}/version"
       "$<TARGET_FILE_DIR:igi-editor>"
 
-    COMMENT "Copying runtime files to content/ structure"
+    COMMENT "Copying runtime files to editor/ structure"
   )
 else()
   target_link_libraries(igi-editor PRIVATE glut GL GLEW)
 endif()
+
+# ─── igi1conv: prebuilt standalone asset converter ───────────────────────────
+# The converter now lives in its own repo (https://github.com/jones-hm/project-igi-conv).
+# The editor consumes only the committed prebuilt binary, which the POST_BUILD
+# step above copies from assets/editor/tools/ to bin/<cfg>/editor/tools/igi1conv.exe.
+# Before building, fetch_igi1conv.cmake pulls the latest released igi1conv.exe
+# from GitHub (falling back to the committed copy when offline/unavailable).
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fetch_igi1conv.cmake)
+# ─────────────────────────────────────────────────────────────────────────────
 
 include(FetchContent)
 FetchContent_Declare(
@@ -246,6 +273,7 @@ target_sources(igi_tests PRIVATE
     source/logger.cpp
     source/level/task_schema.cpp
     source/level/level_objects.cpp
+    source/level/level_objects_serialize.cpp
     source/cli/verify_level_core.cpp
     source/parsers/dat_parser.cpp
     source/parsers/graph_parser.cpp

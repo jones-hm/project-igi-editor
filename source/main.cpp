@@ -553,16 +553,35 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  std::string contentPath = exeDir + "\\content";
+  std::string contentPath = exeDir + "\\editor";
   if (!std::filesystem::exists(contentPath) || !std::filesystem::is_directory(contentPath)) {
-    std::string errorMsg = "Fatal Error: 'content' directory not found in:\n" + exeDir +
-                           "\n\nPlease make sure the 'content' directory is present next to the editor executable.";
+    std::string errorMsg = "Fatal Error: 'editor' directory not found in:\n" + exeDir +
+                           "\n\nPlease make sure the 'editor' directory is present next to the editor executable.";
 #if defined(_WIN32)
     Utils::LogAndShowError(errorMsg, "IGI Editor - Launch Error");
 #else
     fprintf(stderr, "%s\n", errorMsg.c_str());
 #endif
     return 1;
+  }
+  {
+    const std::vector<std::string> requiredEditorPaths = {
+      "\\editor\\shaders",
+      "\\editor\\qed",
+      "\\editor\\tools\\igi1conv\\igi1conv.exe",
+    };
+    for (const auto& rel : requiredEditorPaths) {
+      if (!std::filesystem::exists(exeDir + rel)) {
+        std::string errorMsg = "Fatal Error: Required editor file missing:\n" + exeDir + rel +
+                               "\n\nPlease reinstall or restore the 'editor' directory.";
+#if defined(_WIN32)
+        Utils::LogAndShowError(errorMsg, "IGI Editor - Launch Error");
+#else
+        fprintf(stderr, "%s\n", errorMsg.c_str());
+#endif
+        return 1;
+      }
+    }
   }
 
   // setup path of res and shaders folders (GUI mode only)
