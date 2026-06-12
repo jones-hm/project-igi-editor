@@ -693,7 +693,7 @@ void Terrain::LoadHeightMapInfo(ILevelDynCube* level_dyn_cube, const QSC* qsc_ob
 		const QSC::arg_s* a = func->args_;
 
 		if (num_height_map_ >= MAX_HMP) {
-			Log(log_type_t::LOG_ERROR, __FILE__, __LINE__, "Too many texturemodfiers");
+			Log(log_type_t::LOG_ERROR, __FILE__, __LINE__, "Too many heightmaps");
 			return;
 		}
 

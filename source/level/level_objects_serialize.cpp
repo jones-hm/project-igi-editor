@@ -336,7 +336,7 @@ void LevelObjects::UpdateCoordinatesInLine(LevelObject& obj) {
             setToken(6, FormatQscDouble(obj.rot.x));
             setToken(7, FormatQscDouble(obj.rot.y));
             setToken(8, FormatQscDouble(obj.rot.z));
-            if (!obj.modelId.empty() || obj.argTokens.size() > 11) setStringToken(11, obj.modelId);
+            if (!obj.modelId.empty() || obj.argTokens.size() > 17) setStringToken(17, obj.modelId);
         } else if (obj.type == "AlarmControl" || obj.type == "SCameraControl" || obj.type == "ExplodeObject") {
             setToken(3, FormatQscDouble(obj.pos.x));
             setToken(4, FormatQscDouble(obj.pos.y));

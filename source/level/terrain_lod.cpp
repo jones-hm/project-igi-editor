@@ -165,7 +165,7 @@ void Terrain::GenerateRenderCube(const dyn_cube_s* root_dyn_cube,
 
 	auto PopFromStack = [this, &stack, &stack_size]()
 		{
-			if (stack_size < 0) {
+			if (stack_size <= 0) {
 				Log(log_type_t::LOG_FATAL, __FILE__, __LINE__, "stack underflow\n");
 				return;
 			}
