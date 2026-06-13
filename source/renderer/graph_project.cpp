@@ -11,3 +11,25 @@ bool GraphWorldToScreen(const glm::mat4& viewProj, const glm::vec3& world,
     outScreen.y = (-ndc.y * 0.5f + 0.5f) * viewportH;  // y flipped: screen origin top-left
     return true;
 }
+
+int GRAPH_PickNode(const GraphFile& graph, const glm::mat4& viewProj,
+                   float mouseX, float mouseY, float viewportW, float viewportH,
+                   float thresholdPx) {
+    int   bestId   = -1;
+    float bestDist = thresholdPx * thresholdPx;  // compare squared distances
+    for (const GraphNode& n : graph.nodes) {
+        glm::vec2 s;
+        if (!GraphWorldToScreen(viewProj,
+                                glm::vec3((float)n.x, (float)n.y, (float)n.z),
+                                viewportW, viewportH, s))
+            continue;
+        const float dx = s.x - mouseX;
+        const float dy = s.y - mouseY;
+        const float d2 = dx * dx + dy * dy;
+        if (d2 < bestDist) {
+            bestDist = d2;
+            bestId   = n.id;
+        }
+    }
+    return bestId;
+}
