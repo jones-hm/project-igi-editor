@@ -1,5 +1,15 @@
 # Changelogs
 
+## 3.1.0-pre — Visual 3D Graph Editor
+
+- Added: Visual 3D Graph Editor (interactive 3D nodes, material color coding, and path/edge rendering via F3 overlay).
+- Added: Binary parser, patch saver, and full writer serialization for AI navigation graph `.dat` files.
+- Added: Config option `QGraphNodeSize` to control node box sizing.
+- Fixed: Terrain sculpting vs object selection click conflicts, right-click triggers.
+- Fixed: Syncing of level graph subdirectories to backup folders.
+
+---
+
 ## 3.0.0 — igi1conv Integration, Qt Bundling, Module Refactor & Bug Fixes
 
 This release is a major milestone: the standalone asset converter is now a first-class Qt application (`igi1conv`) living in its own repository, the editor codebase has been split into clearly separated modules, and a batch of code-review bugs has been resolved.
