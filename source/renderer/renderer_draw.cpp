@@ -950,9 +950,10 @@ void Renderer::Draw(const draw_params_s &params,
       draw_text_sm(tooltip_x, tooltip_y + 16, kBrushNames[b], 1.0f, 0.7f, 0.2f);
     }
 
-    // Navigation-graph overlay (toggle with F3): nodes/edges/labels over the 3D view.
+    // Navigation-graph overlay (ShowGraphNodes): nodes/edges/labels + hover tooltip.
     if (graph_overlay_visible_) {
-      DrawGraphOverlayInternal(params, draw_text_sm);
+      DrawGraphOverlayInternal(params, draw_text_sm,
+                               task_tree_view.mouse_x_, task_tree_view.mouse_y_);
     }
 
     // On-screen terrain editor panel (bottom-right): 5 brush buttons + a 2x2 grid
@@ -2568,9 +2569,38 @@ int Renderer::PickGraphNodeAtScreen(int mx, int my, int vpW, int vpH) {
                         (float)mx, (float)my, (float)vpW, (float)vpH, 14.0f);
 }
 
+// Build the hover/selection info text for a node: id, criteria, world position,
+// gamma/radius, and each link with its length (IGI units).
+static std::string BuildGraphNodeInfo(const GraphFile& g, const glm::dvec3& offset, int id) {
+  const GraphNode* n = GRAPH_FindNode(g, id);
+  if (!n) return "";
+  const glm::dvec3 w = offset + glm::dvec3(n->x, n->y, n->z);
+  char buf[256];
+  std::string s;
+  snprintf(buf, sizeof(buf), "Node %d", id);                       s  = buf;
+  s += "\nCriteria: " + (n->criteria.empty() ? std::string("(none)") : n->criteria);
+  snprintf(buf, sizeof(buf), "\nH: %.1f  V: %.1f  Z: %.1f", w.x, w.y, w.z); s += buf;
+  snprintf(buf, sizeof(buf), "\nGamma: %.3f  Radius: %.3f", n->gamma, n->radius); s += buf;
+
+  std::string links; int cnt = 0;
+  for (const GraphEdge& e : g.edges) {
+    int other = (e.node1 == id) ? e.node2 : (e.node2 == id) ? e.node1 : -1;
+    if (other < 0) continue;
+    const GraphNode* o = GRAPH_FindNode(g, other);
+    if (!o) continue;
+    const double dx = o->x - n->x, dy = o->y - n->y, dz = o->z - n->z;
+    snprintf(buf, sizeof(buf), "\n  -> %d  (len %.0f)", other, std::sqrt(dx*dx + dy*dy + dz*dz));
+    links += buf; ++cnt;
+  }
+  snprintf(buf, sizeof(buf), "\nLinks: %d", cnt); s += buf;
+  s += links;
+  return s;
+}
+
 void Renderer::DrawGraphOverlayInternal(
     const draw_params_s& params,
-    const std::function<void(int,int,const char*,float,float,float)>& draw_text_sm) {
+    const std::function<void(int,int,const char*,float,float,float)>& draw_text_sm,
+    int mouseX, int mouseY) {
   if (!graph_overlay_.valid || graph_overlay_.nodes.empty()) return;
 
   const int vpW = params.view_define_->viewport_width_;
@@ -2592,53 +2622,122 @@ void Renderer::DrawGraphOverlayInternal(
     return true;
   };
 
+  const float HS = 7.0f;  // node half-size in pixels (box = 14px)
+
+  // --- Hover detection: nearest node to the cursor (top-left coords). ---
+  int hoveredId = -1;
+  {
+    float bestD2 = (HS + 6.0f) * (HS + 6.0f);
+    for (const GraphNode& n : graph_overlay_.nodes) {
+      float sx, sy;
+      if (!project(n.x, n.y, n.z, sx, sy)) continue;
+      const float dx = sx - (float)mouseX;
+      const float dy = (vpH - sy) - (float)mouseY;  // node top-left y
+      const float d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) { bestD2 = d2; hoveredId = n.id; }
+    }
+  }
+  const int activeId = (hoveredId >= 0) ? hoveredId : graph_overlay_selected_;
+
   glEnable(GL_BLEND);
 
-  // Edges first (so node markers sit on top).
+  // --- Edges: grey, but links of the active node highlighted orange. ---
   glLineWidth(1.5f);
-  glColor4f(0.70f, 0.70f, 0.70f, 0.55f);
   glBegin(GL_LINES);
   for (const GraphEdge& e : graph_overlay_.edges) {
     const GraphNode* a = GRAPH_FindNode(graph_overlay_, e.node1);
     const GraphNode* b = GRAPH_FindNode(graph_overlay_, e.node2);
     if (!a || !b) continue;
     float ax, ay, bx, by;
-    if (project(a->x, a->y, a->z, ax, ay) && project(b->x, b->y, b->z, bx, by)) {
-      glVertex2f(ax, ay);
-      glVertex2f(bx, by);
-    }
+    if (!project(a->x, a->y, a->z, ax, ay) || !project(b->x, b->y, b->z, bx, by)) continue;
+    if (activeId >= 0 && (e.node1 == activeId || e.node2 == activeId))
+      glColor4f(1.0f, 0.6f, 0.0f, 0.95f);
+    else
+      glColor4f(0.72f, 0.72f, 0.72f, 0.45f);
+    glVertex2f(ax, ay); glVertex2f(bx, by);
   }
   glEnd();
 
-  // Node markers, colored by criteria (selected node = orange).
-  glPointSize(8.0f);
-  glBegin(GL_POINTS);
+  // --- Node boxes: black border quad then a colored fill quad. ---
+  auto emitQuad = [](float cx, float cy, float h) {
+    glVertex2f(cx - h, cy - h); glVertex2f(cx + h, cy - h);
+    glVertex2f(cx + h, cy + h); glVertex2f(cx - h, cy + h);
+  };
+
+  glColor4f(0.0f, 0.0f, 0.0f, 0.85f);  // border
+  glBegin(GL_QUADS);
   for (const GraphNode& n : graph_overlay_.nodes) {
-    float sx, sy;
-    if (!project(n.x, n.y, n.z, sx, sy)) continue;
-    if (n.id == graph_overlay_selected_) {
-      glColor3f(1.0f, 0.6f, 0.0f);
-    } else {
-      switch (GRAPH_NodeKind(n)) {
-        case GraphNodeKind::Door:  glColor3f(1.0f, 1.0f, 0.0f); break;
-        case GraphNodeKind::Stair: glColor3f(1.0f, 0.0f, 1.0f); break;
-        case GraphNodeKind::View:  glColor3f(0.0f, 1.0f, 1.0f); break;
-        default:                   glColor3f(0.25f, 0.85f, 0.25f); break;
-      }
-    }
-    glVertex2f(sx, sy);
+    float sx, sy; if (!project(n.x, n.y, n.z, sx, sy)) continue;
+    emitQuad(sx, sy, HS + 1.5f);
   }
   glEnd();
-  glPointSize(1.0f);
 
-  // Node id labels. draw_text_sm takes a top-down y, so convert from GL bottom-up.
+  glBegin(GL_QUADS);  // colored fill
   for (const GraphNode& n : graph_overlay_.nodes) {
-    float sx, sy;
-    if (!project(n.x, n.y, n.z, sx, sy)) continue;
-    char lbl[16];
-    snprintf(lbl, sizeof(lbl), "%d", n.id);
-    const int y_topdown = vpH - (int)sy;
-    draw_text_sm((int)sx + 7, y_topdown - 6, lbl, 1.0f, 1.0f, 1.0f);
+    float sx, sy; if (!project(n.x, n.y, n.z, sx, sy)) continue;
+    if (n.id == graph_overlay_selected_)      glColor4f(1.0f, 0.6f, 0.0f, 1.0f);
+    else switch (GRAPH_NodeKind(n)) {
+      case GraphNodeKind::Door:  glColor4f(1.0f, 1.0f, 0.0f, 1.0f); break;
+      case GraphNodeKind::Stair: glColor4f(1.0f, 0.0f, 1.0f, 1.0f); break;
+      case GraphNodeKind::View:  glColor4f(0.0f, 1.0f, 1.0f, 1.0f); break;
+      default:                   glColor4f(0.25f, 0.85f, 0.25f, 1.0f); break;
+    }
+    emitQuad(sx, sy, HS);
+  }
+  glEnd();
+
+  // Highlight rings for selected (orange) and hovered (white).
+  auto ring = [&](int id, float h, float r, float g, float b) {
+    const GraphNode* n = GRAPH_FindNode(graph_overlay_, id);
+    if (!n) return;
+    float sx, sy; if (!project(n->x, n->y, n->z, sx, sy)) return;
+    glColor4f(r, g, b, 1.0f);
+    glLineWidth(2.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(sx - h, sy - h); glVertex2f(sx + h, sy - h);
+    glVertex2f(sx + h, sy + h); glVertex2f(sx - h, sy + h);
+    glEnd();
+  };
+  if (graph_overlay_selected_ >= 0) ring(graph_overlay_selected_, HS + 4.0f, 1.0f, 0.6f, 0.0f);
+  if (hoveredId >= 0)               ring(hoveredId,               HS + 3.0f, 1.0f, 1.0f, 1.0f);
+
+  // --- Node id labels (top-down y). ---
+  for (const GraphNode& n : graph_overlay_.nodes) {
+    float sx, sy; if (!project(n.x, n.y, n.z, sx, sy)) continue;
+    char lbl[16]; snprintf(lbl, sizeof(lbl), "%d", n.id);
+    draw_text_sm((int)sx + (int)HS + 2, vpH - (int)sy - 6, lbl, 1.0f, 1.0f, 1.0f);
+  }
+
+  // --- Info tooltip for the hovered node (or, if none, the selected node). ---
+  if (activeId >= 0) {
+    const std::string info = BuildGraphNodeInfo(graph_overlay_, graph_overlay_offset_, activeId);
+    int lines = 1; for (char c : info) if (c == '\n') ++lines;
+
+    int tx, ty;
+    if (hoveredId >= 0) { tx = mouseX + 16; ty = mouseY + 16; }
+    else {
+      float sx, sy; const GraphNode* n = GRAPH_FindNode(graph_overlay_, activeId);
+      if (n && project(n->x, n->y, n->z, sx, sy)) { tx = (int)sx + 12; ty = vpH - (int)sy + 8; }
+      else { tx = 360; ty = 80; }
+    }
+    const int boxW = 230, boxH = lines * 14 + 8;
+    if (tx + boxW > vpW) tx = vpW - boxW - 4;
+    if (ty + boxH > vpH) ty = vpH - boxH - 4;
+
+    // Dark background panel (top-down rect -> GL bottom-up quad).
+    const float gx0 = (float)(tx - 6),       gx1 = (float)(tx + boxW);
+    const float gy0 = (float)(vpH - (ty - 6)), gy1 = (float)(vpH - (ty + boxH));
+    glColor4f(0.05f, 0.05f, 0.07f, 0.85f);
+    glBegin(GL_QUADS);
+    glVertex2f(gx0, gy1); glVertex2f(gx1, gy1); glVertex2f(gx1, gy0); glVertex2f(gx0, gy0);
+    glEnd();
+    glColor4f(1.0f, 0.6f, 0.0f, 0.9f);
+    glLineWidth(1.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(gx0, gy1); glVertex2f(gx1, gy1); glVertex2f(gx1, gy0); glVertex2f(gx0, gy0);
+    glEnd();
+
+    draw_text_sm(tx, ty, info.c_str(), 1.0f, 1.0f, 1.0f);
   }
 }
 

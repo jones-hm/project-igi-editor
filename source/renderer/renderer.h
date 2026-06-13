@@ -544,9 +544,11 @@ private:
 	bool					graph_overlay_visible_ = false;
 	bool					graph_overlay_dirty_ = false;
 	int						graph_overlay_selected_ = -1;
-	// Draw the graph overlay (nodes/edges/labels) using the active screen-space
-	// GL state; `draw_text_sm` is the caller's label-drawing lambda.
+	// Draw the graph overlay (nodes/edges/labels + hover/selection tooltip) using
+	// the active screen-space GL state; `draw_text_sm` is the caller's label lambda
+	// and (mouseX,mouseY) are GLUT top-left cursor coords for hover detection.
 	void					DrawGraphOverlayInternal(const draw_params_s& params,
-								const std::function<void(int,int,const char*,float,float,float)>& draw_text_sm);
+								const std::function<void(int,int,const char*,float,float,float)>& draw_text_sm,
+								int mouseX, int mouseY);
 
 };
