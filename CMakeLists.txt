@@ -236,6 +236,7 @@ add_executable(igi_tests
     tests/test_dat_parser.cpp
     tests/test_dat_writer.cpp
     tests/test_graph_parser.cpp
+    tests/test_graph_overlay.cpp
     tests/test_res_parser.cpp
     tests/test_tex_parser.cpp
     tests/test_mtp_parser.cpp
@@ -277,6 +278,7 @@ target_sources(igi_tests PRIVATE
     source/cli/verify_level_core.cpp
     source/parsers/dat_parser.cpp
     source/parsers/graph_parser.cpp
+    source/renderer/graph_project.cpp
     source/parsers/res_parser.cpp
     source/parsers/res_compiler.cpp
     source/level/res_model_set.cpp
