@@ -379,11 +379,14 @@ void App::DispatchEventBindings() {
 	if (Check("ManipulateOrientationReset")) { Logger::Get().Log(LogLevel::INFO, "[Keybind] ManipulateOrientationReset not implemented"); }
 
 	// ---- GraphNode ----
-	if (Check("ScaleGraphNode")) { Logger::Get().Log(LogLevel::INFO, "[Keybind] ScaleGraphNode not implemented"); }
-	if (Check("ScaleGraphNodeHalfe")) { Logger::Get().Log(LogLevel::INFO, "[Keybind] ScaleGraphNodeHalfe not implemented"); }
-	if (Check("ScaleGraphNodeDouble")) { Logger::Get().Log(LogLevel::INFO, "[Keybind] ScaleGraphNodeDouble not implemented"); }
-	if (Check("CreateGraphNode")) { Logger::Get().Log(LogLevel::INFO, "[Keybind] CreateGraphNode not implemented"); }
-	if (Check("DeleteGraphNode")) { Logger::Get().Log(LogLevel::INFO, "[Keybind] DeleteGraphNode not implemented"); }
+	// Graph node edit controls (only while the overlay is shown).
+	if (renderer_.IsGraphOverlayVisible()) {
+		if (Check("ScaleGraphNode"))       { renderer_.ScaleSelectedGraphNode(0.0f); return; }  // reset radius
+		if (Check("ScaleGraphNodeHalfe"))  { renderer_.ScaleSelectedGraphNode(0.5f); return; }
+		if (Check("ScaleGraphNodeDouble")) { renderer_.ScaleSelectedGraphNode(2.0f); return; }
+		if (Check("CreateGraphNode"))      { renderer_.CreateGraphNode();           return; }
+		if (Check("DeleteGraphNode"))      { renderer_.DeleteSelectedGraphNode();    return; }
+	}
 	if (Check("ShowGraphNodes")) {
 		// Show/hide the navigation graph of the selected AIGraph task. The graph
 		// file is graph<taskId>.dat in the current level's graphs/ folder.

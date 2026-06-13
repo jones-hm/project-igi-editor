@@ -2548,13 +2548,55 @@ void Renderer::SetGraphNodePos(int id, const glm::dvec3& worldPos) {
 
 bool Renderer::SaveGraphOverlay() {
   if (!graph_overlay_.valid || graph_overlay_path_.empty()) return false;
-  if (!GRAPH_Save(graph_overlay_path_, graph_overlay_path_, graph_overlay_)) {
+  // Full serialize so node moves, scales, creates and deletes all persist.
+  if (!GRAPH_Write(graph_overlay_path_, graph_overlay_path_, graph_overlay_)) {
     Logger::Get().Log(LogLevel::ERR, "[GRAPH] Save failed: " + graph_overlay_path_);
     return false;
   }
   graph_overlay_dirty_ = false;
   Logger::Get().Log(LogLevel::INFO, "[GRAPH] Saved graph to: " + graph_overlay_path_);
   return true;
+}
+
+void Renderer::ScaleSelectedGraphNode(float factor) {
+  GraphNode* n = GRAPH_FindNode(graph_overlay_, graph_overlay_selected_);
+  if (!n) return;
+  n->radius = (factor <= 0.0f) ? 1.0f : n->radius * factor;
+  if (n->radius < 0.05f)  n->radius = 0.05f;
+  if (n->radius > 100.0f) n->radius = 100.0f;
+  graph_overlay_dirty_ = true;
+}
+
+int Renderer::CreateGraphNode() {
+  if (!graph_overlay_.valid) return -1;
+  int maxId = 0;
+  for (const GraphNode& n : graph_overlay_.nodes) maxId = std::max(maxId, n.id);
+  GraphNode nn;
+  nn.id = maxId + 1;
+  nn.radius = 1.0f;
+  // Place near the current selection (offset a little), else near the first node.
+  const GraphNode* anchor = GRAPH_FindNode(graph_overlay_, graph_overlay_selected_);
+  if (!anchor && !graph_overlay_.nodes.empty()) anchor = &graph_overlay_.nodes.front();
+  if (anchor) { nn.x = anchor->x + 500.0; nn.y = anchor->y + 500.0; nn.z = anchor->z; }
+  graph_overlay_.nodes.push_back(nn);
+  graph_overlay_selected_ = nn.id;
+  graph_overlay_dirty_ = true;
+  Logger::Get().Log(LogLevel::INFO, "[GRAPH] Created node " + std::to_string(nn.id));
+  return nn.id;
+}
+
+void Renderer::DeleteSelectedGraphNode() {
+  const int id = graph_overlay_selected_;
+  if (id < 0) return;
+  auto& ns = graph_overlay_.nodes;
+  ns.erase(std::remove_if(ns.begin(), ns.end(),
+           [id](const GraphNode& n) { return n.id == id; }), ns.end());
+  auto& es = graph_overlay_.edges;
+  es.erase(std::remove_if(es.begin(), es.end(),
+           [id](const GraphEdge& e) { return e.node1 == id || e.node2 == id; }), es.end());
+  graph_overlay_selected_ = -1;
+  graph_overlay_dirty_ = true;
+  Logger::Get().Log(LogLevel::INFO, "[GRAPH] Deleted node " + std::to_string(id));
 }
 
 int Renderer::PickGraphNodeAtScreen(int mx, int my, int vpW, int vpH) {
@@ -2635,19 +2677,26 @@ void Renderer::DrawGraphOverlayInternal(
     return true;
   };
 
-  const float HS = 7.0f;  // node half-size in pixels (box = 14px)
+  // Node half-size in pixels, driven by the node radius but clamped so it stays
+  // a fixed on-screen size (independent of camera distance). Default radius 0.5
+  // gives the original 7px; the scale controls change radius -> visible size.
+  auto hsFor = [](float radius) -> float {
+    float h = (radius > 0.01f ? radius : 0.5f) * 14.0f;
+    return h < 5.0f ? 5.0f : (h > 30.0f ? 30.0f : h);
+  };
 
   // --- Hover detection: nearest node to the cursor (top-left coords). ---
   int hoveredId = -1;
   {
-    float bestD2 = (HS + 6.0f) * (HS + 6.0f);
+    float bestD2 = 1e30f;
     for (const GraphNode& n : graph_overlay_.nodes) {
       float sx, sy;
       if (!project(n.x, n.y, n.z, sx, sy)) continue;
       const float dx = sx - (float)mouseX;
       const float dy = (vpH - sy) - (float)mouseY;  // node top-left y
       const float d2 = dx * dx + dy * dy;
-      if (d2 < bestD2) { bestD2 = d2; hoveredId = n.id; }
+      const float thr = hsFor(n.radius) + 6.0f;
+      if (d2 < thr * thr && d2 < bestD2) { bestD2 = d2; hoveredId = n.id; }
     }
   }
   const int activeId = (hoveredId >= 0) ? hoveredId : graph_overlay_selected_;
@@ -2681,7 +2730,7 @@ void Renderer::DrawGraphOverlayInternal(
   glBegin(GL_QUADS);
   for (const GraphNode& n : graph_overlay_.nodes) {
     float sx, sy; if (!project(n.x, n.y, n.z, sx, sy)) continue;
-    emitQuad(sx, sy, HS + 1.5f);
+    emitQuad(sx, sy, hsFor(n.radius) + 1.5f);
   }
   glEnd();
 
@@ -2695,7 +2744,7 @@ void Renderer::DrawGraphOverlayInternal(
       case GraphNodeKind::View:  glColor4f(0.0f, 1.0f, 1.0f, 1.0f); break;
       default:                   glColor4f(0.25f, 0.85f, 0.25f, 1.0f); break;
     }
-    emitQuad(sx, sy, HS);
+    emitQuad(sx, sy, hsFor(n.radius));
   }
   glEnd();
 
@@ -2711,14 +2760,20 @@ void Renderer::DrawGraphOverlayInternal(
     glVertex2f(sx + h, sy + h); glVertex2f(sx - h, sy + h);
     glEnd();
   };
-  if (graph_overlay_selected_ >= 0) ring(graph_overlay_selected_, HS + 4.0f, 1.0f, 0.6f, 0.0f);
-  if (hoveredId >= 0)               ring(hoveredId,               HS + 3.0f, 1.0f, 1.0f, 1.0f);
+  if (graph_overlay_selected_ >= 0) {
+    const GraphNode* s = GRAPH_FindNode(graph_overlay_, graph_overlay_selected_);
+    if (s) ring(graph_overlay_selected_, hsFor(s->radius) + 4.0f, 1.0f, 0.6f, 0.0f);
+  }
+  if (hoveredId >= 0) {
+    const GraphNode* h = GRAPH_FindNode(graph_overlay_, hoveredId);
+    if (h) ring(hoveredId, hsFor(h->radius) + 3.0f, 1.0f, 1.0f, 1.0f);
+  }
 
   // --- Node id labels (top-down y). ---
   for (const GraphNode& n : graph_overlay_.nodes) {
     float sx, sy; if (!project(n.x, n.y, n.z, sx, sy)) continue;
     char lbl[16]; snprintf(lbl, sizeof(lbl), "%d", n.id);
-    draw_text_sm((int)sx + (int)HS + 2, vpH - (int)sy - 6, lbl, 1.0f, 1.0f, 1.0f);
+    draw_text_sm((int)sx + (int)hsFor(n.radius) + 2, vpH - (int)sy - 6, lbl, 1.0f, 1.0f, 1.0f);
   }
 
   // --- Title banner: graph id + Area (from graph_level<N>.json) + counts. ---

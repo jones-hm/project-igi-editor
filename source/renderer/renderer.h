@@ -474,8 +474,12 @@ public:
 	bool					GetGraphNodePos(int id, glm::dvec3& out) const;
 	void					SetGraphNodePos(int id, const glm::dvec3& p);
 	bool					GraphOverlayDirty() const { return graph_overlay_dirty_; }
-	// Save edited node positions back to the loaded graph<taskId>.dat.
+	// Save the full edited graph back to the loaded graph<taskId>.dat.
 	bool					SaveGraphOverlay();
+	// Edit controls (operate on the selected node), marking the overlay dirty:
+	void					ScaleSelectedGraphNode(float factor);  // radius *= factor; factor<=0 resets to 1
+	int						CreateGraphNode();                     // adds a node near the selection; returns new id
+	void					DeleteSelectedGraphNode();             // removes the selected node and its edges
     void                    SetSplineTerrainQuery(std::function<bool(double, double, float&)> fn) { splines_.SetTerrainQuery(std::move(fn)); }
 	glm::vec3				GetMeshExtents(const std::string& modelId, bool isBuilding) { return objects_.GetMeshExtents(modelId, isBuilding); }
 	float					GetMeshZOffset(const std::string& modelId, bool isBuilding) { return objects_.GetMeshZOffset(modelId, isBuilding); }
