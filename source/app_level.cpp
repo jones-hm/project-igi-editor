@@ -243,6 +243,14 @@ void App::SaveCurrentLevel() {
 		FlushAttaProxiesToMef();
 		level_.SaveChanges();
 
+		// Persist edited navigation-graph nodes back to graph<taskId>.dat.
+		if (renderer_.GraphOverlayDirty()) {
+			if (renderer_.SaveGraphOverlay())
+				Logger::Get().Log(LogLevel::INFO, "[App] Graph overlay saved with level");
+			else
+				Logger::Get().Log(LogLevel::ERR, "[App] Graph overlay save FAILED");
+		}
+
 		// Compile edited AI script (.qsc text -> .qvm file) before saving the level QVM.
 		if (ai_script_dirty_ && !ai_script_path_.empty()) {
 			Logger::Get().Log(LogLevel::INFO, "[App] Compiling modified AI script to: " + ai_script_path_);
