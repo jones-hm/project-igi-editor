@@ -105,6 +105,92 @@ struct Buffer {
 // GRAPH_Parse
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// GRAPH_Save — overwrite node positions in-place, preserving everything else.
+// Walks the tagged node records the same way GRAPH_Parse does and patches the
+// 3 position doubles of any node whose id appears in `graph.nodes`.
+// ---------------------------------------------------------------------------
+bool GRAPH_Save(const std::string& srcPath, const std::string& outPath,
+                const GraphFile& graph) {
+    std::ifstream file(srcPath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        Logger::Get().Log(LogLevel::ERR, "[GRAPH] Save: cannot open source: " + srcPath);
+        return false;
+    }
+    const size_t fileSize = static_cast<size_t>(file.tellg());
+    file.seekg(0);
+
+    constexpr size_t HEADER_SIZE = 30;
+    if (fileSize < HEADER_SIZE) return false;
+
+    std::vector<uint8_t> buf(fileSize);
+    if (!file.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(fileSize)))
+        return false;
+    file.close();
+
+    Buffer b{ buf.data(), fileSize };
+
+    if (b.read<uint32_t>(0) != GRAPH_MAGIC)   return false;
+    if (b.sig(4) != SIG_MAX_NODES)            return false;
+    const int maxNodes = b.payload<int32_t>(4);
+    if (maxNodes <= 0 || maxNodes > 4096)     return false;
+
+    const size_t adjTableBytes  = static_cast<size_t>(maxNodes) * maxNodes * 8;
+    const size_t nodeDataStart  = HEADER_SIZE + adjTableBytes;
+    if (nodeDataStart >= fileSize)            return false;
+
+    // Fast lookup of edited positions by node id.
+    auto findEdited = [&graph](int id) -> const GraphNode* {
+        for (const GraphNode& n : graph.nodes)
+            if (n.id == id) return &n;
+        return nullptr;
+    };
+
+    auto writeDoubleLE = [&buf](size_t off, double v) {
+        std::memcpy(buf.data() + off, &v, sizeof(double));
+    };
+
+    // Walk node records exactly like GRAPH_Parse, patching positions.
+    size_t offset = nodeDataStart;
+    while (offset + 2 <= fileSize && b.sig(offset) == SIG_NODE_ID) {
+        if (!b.check(offset, 12)) break;
+        const int id = b.payload<int32_t>(offset);
+        offset += 12;
+
+        if (!b.check(offset, 32) || b.sig(offset) != SIG_NODE_POS) break;
+        if (const GraphNode* edited = findEdited(id)) {
+            writeDoubleLE(offset + 8,  edited->x);
+            writeDoubleLE(offset + 16, edited->y);
+            writeDoubleLE(offset + 24, edited->z);
+        }
+        offset += 32;
+
+        if (!b.check(offset, 12) || b.sig(offset) != SIG_NODE_GAMMA)  break;
+        offset += 12;
+        if (!b.check(offset, 12) || b.sig(offset) != SIG_NODE_RADIUS) break;
+        offset += 12;
+        if (!b.check(offset, 12) || b.sig(offset) != SIG_NODE_MAT)    break;
+        offset += 12;
+        if (!b.check(offset, 9)  || b.sig(offset) != SIG_NODE_CRIT)   break;
+        const uint8_t strLen = buf[offset + 8];
+        const size_t totalCrit = 8 + 1 + static_cast<size_t>(strLen);
+        if (!b.check(offset, totalCrit)) break;
+        offset += totalCrit;
+    }
+
+    std::ofstream out(outPath, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) {
+        Logger::Get().Log(LogLevel::ERR, "[GRAPH] Save: cannot open output: " + outPath);
+        return false;
+    }
+    out.write(reinterpret_cast<const char*>(buf.data()), static_cast<std::streamsize>(fileSize));
+    if (!out) return false;
+
+    Logger::Get().Log(LogLevel::INFO,
+        "[GRAPH] Saved " + std::to_string(graph.nodes.size()) + " node positions to: " + outPath);
+    return true;
+}
+
 GraphFile GRAPH_Parse(const std::string& filepath) {
     GraphFile result;
 

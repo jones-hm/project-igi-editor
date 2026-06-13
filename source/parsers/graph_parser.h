@@ -46,3 +46,11 @@ struct GraphFile {
 // Parse a navigation graph .dat file.
 // Filepath example: missions/location0/level1/graphs/graph1.dat
 GraphFile GRAPH_Parse(const std::string& filepath);
+
+// Save edited node positions back to disk.
+// Re-reads the original bytes from `srcPath`, overwrites the X/Y/Z position of
+// every node record whose id matches an entry in `graph.nodes`, then writes the
+// result to `outPath` (may equal srcPath). All other bytes (criteria, gamma,
+// radius, material, edges, adjacency table) are preserved verbatim, so the file
+// size never changes. Returns false on error.
+bool GRAPH_Save(const std::string& srcPath, const std::string& outPath, const GraphFile& graph);

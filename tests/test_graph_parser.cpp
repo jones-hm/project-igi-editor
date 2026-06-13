@@ -3,6 +3,7 @@
 #include "utils.h"
 #include <string>
 #include <cmath>
+#include <filesystem>
 
 // ============================================================
 //  Graph Parser — graph1.dat structural tests
@@ -47,4 +48,72 @@ TEST_F(GraphParserTest, AllMaterialValuesInRange) {
     for (const auto& n : graph.nodes)
         EXPECT_TRUE(n.material >= 0 && n.material <= 23)
             << "Material " << n.material << " out of 0-23 range for node " << n.id;
+}
+
+// ------------------------------------------------------------
+//  GRAPH_Save round-trip tests
+// ------------------------------------------------------------
+
+static std::string TempOut(const char* name) {
+    return (std::filesystem::temp_directory_path() / name).string();
+}
+
+// graph1.dat is a sparse 1-node graph; the save round-trip tests need a graph
+// with several nodes so "other nodes unchanged" is meaningful. graph7.dat in the
+// same folder has 11 node records.
+static std::string GraphPathMulti() {
+    return Utils::GetIGIRootPath() + "\\missions\\location0\\level1\\graphs\\graph7.dat";
+}
+
+TEST_F(GraphParserTest, SaveRoundTripPersistsModifiedPosition) {
+    GraphFile graph = GRAPH_Parse(GraphPathMulti());
+    ASSERT_TRUE(graph.valid);
+    ASSERT_GT(graph.nodes.size(), 1u);
+
+    GraphFile edited = graph;
+    const int targetId = edited.nodes[0].id;
+    edited.nodes[0].x += 123.0;
+    edited.nodes[0].y += 45.0;
+    edited.nodes[0].z += 6.0;
+
+    const std::string out = TempOut("igi_graph_roundtrip.dat");
+    ASSERT_TRUE(GRAPH_Save(GraphPathMulti(), out, edited));
+
+    GraphFile reloaded = GRAPH_Parse(out);
+    ASSERT_TRUE(reloaded.valid);
+    ASSERT_EQ(reloaded.nodes.size(), graph.nodes.size());
+
+    const GraphNode* rn = nullptr;
+    for (const auto& n : reloaded.nodes)
+        if (n.id == targetId) { rn = &n; break; }
+    ASSERT_NE(rn, nullptr);
+
+    EXPECT_DOUBLE_EQ(rn->x, graph.nodes[0].x + 123.0);
+    EXPECT_DOUBLE_EQ(rn->y, graph.nodes[0].y + 45.0);
+    EXPECT_DOUBLE_EQ(rn->z, graph.nodes[0].z + 6.0);
+
+    std::filesystem::remove(out);
+}
+
+TEST_F(GraphParserTest, SaveLeavesOtherNodesUnchanged) {
+    GraphFile graph = GRAPH_Parse(GraphPathMulti());
+    ASSERT_TRUE(graph.valid);
+    ASSERT_GT(graph.nodes.size(), 1u);
+
+    GraphFile edited = graph;
+    edited.nodes[0].x += 999.0;
+
+    const std::string out = TempOut("igi_graph_unchanged.dat");
+    ASSERT_TRUE(GRAPH_Save(GraphPathMulti(), out, edited));
+
+    GraphFile reloaded = GRAPH_Parse(out);
+    ASSERT_TRUE(reloaded.valid);
+    ASSERT_EQ(reloaded.nodes.size(), graph.nodes.size());
+
+    // Node at index 1 (untouched) must be byte-identical in position.
+    EXPECT_DOUBLE_EQ(reloaded.nodes[1].x, graph.nodes[1].x);
+    EXPECT_DOUBLE_EQ(reloaded.nodes[1].y, graph.nodes[1].y);
+    EXPECT_DOUBLE_EQ(reloaded.nodes[1].z, graph.nodes[1].z);
+
+    std::filesystem::remove(out);
 }
