@@ -66,3 +66,10 @@ GraphFile GRAPH_Parse(const std::string& filepath);
 // radius, material, edges, adjacency table) are preserved verbatim, so the file
 // size never changes. Returns false on error.
 bool GRAPH_Save(const std::string& srcPath, const std::string& outPath, const GraphFile& graph);
+
+// Full serializer: preserves the original header + adjacency table from srcPath,
+// then regenerates ALL node and edge tagged records from `graph`. Unlike
+// GRAPH_Save (which only patches positions in place), this supports adding,
+// removing, and editing nodes/edges (position, criteria, gamma, radius,
+// material, links). Returns false on error.
+bool GRAPH_Write(const std::string& srcPath, const std::string& outPath, const GraphFile& graph);

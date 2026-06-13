@@ -125,6 +125,104 @@ const GraphNode* GRAPH_FindNode(const GraphFile& graph, int id) {
     return nullptr;
 }
 
+// Record codeids (uint32 LE) and typeids, matching the bytes GRAPH_Parse reads.
+namespace {
+    constexpr uint32_t CODE_NODE_ID    = 0x0735CE04;
+    constexpr uint32_t CODE_NODE_POS   = 0x1D429504;
+    constexpr uint32_t CODE_NODE_GAMMA = 0x0F7E9C04;
+    constexpr uint32_t CODE_NODE_RAD   = 0x14302304;
+    constexpr uint32_t CODE_NODE_MAT   = 0x1BB62904;
+    constexpr uint32_t CODE_NODE_CRIT  = 0x1BD3E504;
+    constexpr uint32_t CODE_LINK_A     = 0x09104A04;
+    constexpr uint32_t CODE_LINK_B     = 0x0918F604;
+    constexpr uint32_t CODE_LINK_TYPE  = 0x0DA92304;
+    constexpr uint32_t TYPE_U32 = 0x05050000;
+    constexpr uint32_t TYPE_F32 = 0x06060000;
+    constexpr uint32_t TYPE_F6  = 0x08080000;
+    constexpr uint32_t TYPE_BSTR = 0x09090000;
+
+    void PutU32(std::vector<uint8_t>& b, uint32_t v) {
+        b.push_back((uint8_t)v); b.push_back((uint8_t)(v >> 8));
+        b.push_back((uint8_t)(v >> 16)); b.push_back((uint8_t)(v >> 24));
+    }
+    void PutF32(std::vector<uint8_t>& b, float f) {
+        uint32_t v; std::memcpy(&v, &f, 4); PutU32(b, v);
+    }
+    void PutF64(std::vector<uint8_t>& b, double d) {
+        uint64_t v; std::memcpy(&v, &d, 8);
+        for (int i = 0; i < 8; ++i) b.push_back((uint8_t)(v >> (i * 8)));
+    }
+    // codeid + typeid(UInt32) + int32 value (12 bytes).
+    void PutU32Rec(std::vector<uint8_t>& b, uint32_t code, int32_t val) {
+        PutU32(b, code); PutU32(b, TYPE_U32); PutU32(b, (uint32_t)val);
+    }
+    void PutF32Rec(std::vector<uint8_t>& b, uint32_t code, float val) {
+        PutU32(b, code); PutU32(b, TYPE_F32); PutF32(b, val);
+    }
+}
+
+bool GRAPH_Write(const std::string& srcPath, const std::string& outPath,
+                 const GraphFile& graph) {
+    std::ifstream file(srcPath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        Logger::Get().Log(LogLevel::ERR, "[GRAPH] Write: cannot open source: " + srcPath);
+        return false;
+    }
+    const size_t fileSize = static_cast<size_t>(file.tellg());
+    file.seekg(0);
+    constexpr size_t HEADER_SIZE = 30;
+    if (fileSize < HEADER_SIZE) return false;
+    std::vector<uint8_t> src(fileSize);
+    if (!file.read(reinterpret_cast<char*>(src.data()), static_cast<std::streamsize>(fileSize)))
+        return false;
+    file.close();
+
+    Buffer b{ src.data(), fileSize };
+    if (b.read<uint32_t>(0) != GRAPH_MAGIC) return false;
+    if (b.sig(4) != SIG_MAX_NODES)          return false;
+    const int maxNodes = b.payload<int32_t>(4);
+    if (maxNodes <= 0 || maxNodes > 4096)   return false;
+
+    const size_t nodeDataStart = HEADER_SIZE + static_cast<size_t>(maxNodes) * maxNodes * 8;
+    if (nodeDataStart > fileSize) return false;
+
+    // Preserve header + adjacency table verbatim, then regenerate tagged records.
+    std::vector<uint8_t> out(src.begin(), src.begin() + nodeDataStart);
+
+    for (const GraphNode& n : graph.nodes) {
+        PutU32Rec(out, CODE_NODE_ID, n.id);
+        PutU32(out, CODE_NODE_POS); PutU32(out, TYPE_F6);
+        PutF64(out, n.x); PutF64(out, n.y); PutF64(out, n.z);
+        PutF32Rec(out, CODE_NODE_GAMMA, n.gamma);
+        PutF32Rec(out, CODE_NODE_RAD,   n.radius);
+        PutU32Rec(out, CODE_NODE_MAT,   n.material);
+        // Criteria: codeid + typeid(BSTR) + length byte + chars + null.
+        PutU32(out, CODE_NODE_CRIT); PutU32(out, TYPE_BSTR);
+        std::string crit = n.criteria;
+        if (crit.size() > 254) crit.resize(254);
+        out.push_back((uint8_t)(crit.size() + 1));   // length includes the null
+        out.insert(out.end(), crit.begin(), crit.end());
+        out.push_back(0);
+    }
+
+    for (const GraphEdge& e : graph.edges) {
+        PutU32Rec(out, CODE_LINK_A,    e.node1);
+        PutU32Rec(out, CODE_LINK_B,    e.node2);
+        PutU32Rec(out, CODE_LINK_TYPE, e.link_type);
+    }
+
+    std::ofstream f(outPath, std::ios::binary | std::ios::trunc);
+    if (!f.is_open()) {
+        Logger::Get().Log(LogLevel::ERR, "[GRAPH] Write: cannot open output: " + outPath);
+        return false;
+    }
+    f.write(reinterpret_cast<const char*>(out.data()), static_cast<std::streamsize>(out.size()));
+    if (!f) return false;
+    Logger::Get().Log(LogLevel::INFO, "[GRAPH] Wrote " + std::to_string(graph.nodes.size()) +
+        " nodes, " + std::to_string(graph.edges.size()) + " edges to: " + outPath);
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // GRAPH_Save — overwrite node positions in-place, preserving everything else.
 // Walks the tagged node records the same way GRAPH_Parse does and patches the

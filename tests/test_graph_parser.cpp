@@ -96,6 +96,57 @@ TEST_F(GraphParserTest, SaveRoundTripPersistsModifiedPosition) {
 }
 
 // ------------------------------------------------------------
+//  GRAPH_Write full-serializer round-trip
+// ------------------------------------------------------------
+
+TEST_F(GraphParserTest, WriteRoundTripPreservesNodesAndEdges) {
+    GraphFile g = GRAPH_Parse(GraphPathMulti());
+    ASSERT_TRUE(g.valid);
+    ASSERT_GT(g.nodes.size(), 1u);
+
+    const std::string out = TempOut("igi_graph_write.dat");
+    ASSERT_TRUE(GRAPH_Write(GraphPathMulti(), out, g));
+
+    GraphFile r = GRAPH_Parse(out);
+    ASSERT_TRUE(r.valid);
+    ASSERT_EQ(r.nodes.size(), g.nodes.size());
+    ASSERT_EQ(r.edges.size(), g.edges.size());
+    for (size_t i = 0; i < g.nodes.size(); ++i) {
+        EXPECT_EQ(r.nodes[i].id, g.nodes[i].id);
+        EXPECT_DOUBLE_EQ(r.nodes[i].x, g.nodes[i].x);
+        EXPECT_DOUBLE_EQ(r.nodes[i].y, g.nodes[i].y);
+        EXPECT_DOUBLE_EQ(r.nodes[i].z, g.nodes[i].z);
+        EXPECT_EQ(r.nodes[i].material, g.nodes[i].material);
+        EXPECT_EQ(r.nodes[i].criteria, g.nodes[i].criteria);
+    }
+    std::filesystem::remove(out);
+}
+
+TEST_F(GraphParserTest, WriteSupportsAddingAndRemovingNodes) {
+    GraphFile g = GRAPH_Parse(GraphPathMulti());
+    ASSERT_TRUE(g.valid);
+    const size_t origCount = g.nodes.size();
+
+    // Remove the first node and add a brand-new one.
+    const int removedId = g.nodes.front().id;
+    g.nodes.erase(g.nodes.begin());
+    GraphNode added; added.id = 999; added.x = 1.0; added.y = 2.0; added.z = 3.0;
+    g.nodes.push_back(added);
+
+    const std::string out = TempOut("igi_graph_addrem.dat");
+    ASSERT_TRUE(GRAPH_Write(GraphPathMulti(), out, g));
+
+    GraphFile r = GRAPH_Parse(out);
+    ASSERT_TRUE(r.valid);
+    EXPECT_EQ(r.nodes.size(), origCount);  // -1 +1
+    EXPECT_EQ(GRAPH_FindNode(r, removedId), nullptr);
+    const GraphNode* a = GRAPH_FindNode(r, 999);
+    ASSERT_NE(a, nullptr);
+    EXPECT_DOUBLE_EQ(a->x, 1.0);
+    std::filesystem::remove(out);
+}
+
+// ------------------------------------------------------------
 //  GRAPH_NodeKind classification (pure, no game file)
 // ------------------------------------------------------------
 
