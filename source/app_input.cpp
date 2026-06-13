@@ -354,6 +354,25 @@ void App::DispatchEventBindings() {
 	if (Check("ScaleGraphNodeDouble")) { Logger::Get().Log(LogLevel::INFO, "[Keybind] ScaleGraphNodeDouble not implemented"); }
 	if (Check("CreateGraphNode")) { Logger::Get().Log(LogLevel::INFO, "[Keybind] CreateGraphNode not implemented"); }
 	if (Check("DeleteGraphNode")) { Logger::Get().Log(LogLevel::INFO, "[Keybind] DeleteGraphNode not implemented"); }
+	if (Check("ShowGraphNodes")) {
+		// Show/hide the navigation graph of the selected AIGraph task. The graph
+		// file is graph<taskId>.dat in the current level's graphs/ folder.
+		const auto& objs = level_.GetLevelObjects().GetObjects();
+		if (selected_object_index_ >= 0 && selected_object_index_ < (int)objs.size() &&
+		    objs[selected_object_index_].type == "AIGraph") {
+			if (renderer_.IsGraphOverlayVisible()) {
+				renderer_.ToggleGraphOverlay();  // hide
+			} else {
+				const std::string path = Utils::GetIGIRootPath() +
+					"\\missions\\location0\\level" + std::to_string(last_loaded_level_) +
+					"\\graphs\\graph" + objs[selected_object_index_].taskId + ".dat";
+				if (renderer_.LoadGraphOverlayFile(path)) renderer_.ToggleGraphOverlay();  // show
+			}
+		} else {
+			Logger::Get().Log(LogLevel::INFO, "[App] ShowGraphNodes: select an AIGraph task first");
+		}
+		return;
+	}
 
 	// ---- Other ----
 	if (Check("ToggleDisplay")) { noclip_mode_ = !noclip_mode_; }

@@ -452,9 +452,10 @@ public:
 
 	void					Draw(const draw_params_s& params, const task_tree_view_params_s& task_tree_view);
 
-	// Navigation-graph overlay: load the richest graph*.dat found in `graphsDir`
-	// for display over the 3D view, toggle its visibility, and query state.
-	void					LoadGraphOverlay(const std::string& graphsDir);
+	// Navigation-graph overlay: load a specific graph .dat (graph<taskId>.dat for
+	// the selected AIGraph task) for display over the 3D view, toggle visibility,
+	// and query state. Returns true if the graph loaded with at least one node.
+	bool					LoadGraphOverlayFile(const std::string& graphFilePath);
 	void					ToggleGraphOverlay() { graph_overlay_visible_ = !graph_overlay_visible_; }
 	bool					IsGraphOverlayVisible() const { return graph_overlay_visible_; }
 	void					SetGraphSelected(int id) { graph_overlay_selected_ = id; }

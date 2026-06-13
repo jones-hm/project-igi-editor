@@ -5,7 +5,6 @@
  *****************************************************************************/
 #include "renderer_internal.h"
 #include "graph_overlay.h"
-#include <filesystem>
 
 static FntFont g_editorFont;
 static GLuint  g_editorFontTex = 0;
@@ -2508,36 +2507,21 @@ void Renderer::Draw(const draw_params_s &params,
 // Navigation-graph overlay
 // ---------------------------------------------------------------------------
 
-// Load the richest graph*.dat in `graphsDir` (a level may contain several; the
-// one with the most nodes is the most useful to visualize). Read-only display.
-void Renderer::LoadGraphOverlay(const std::string& graphsDir) {
-  graph_overlay_ = GraphFile{};
+// Load a single navigation graph for display. The caller maps the selected
+// AIGraph task to graph<taskId>.dat. Read-only display.
+bool Renderer::LoadGraphOverlayFile(const std::string& graphFilePath) {
+  graph_overlay_ = GRAPH_Parse(graphFilePath);
   graph_overlay_selected_ = -1;
 
-  std::error_code ec;
-  if (!std::filesystem::exists(graphsDir, ec)) {
-    Logger::Get().Log(LogLevel::INFO, "[GRAPH] Overlay: no graphs dir: " + graphsDir);
-    return;
-  }
-
-  std::string bestPath;
-  for (const auto& entry : std::filesystem::directory_iterator(graphsDir, ec)) {
-    if (entry.path().extension() != ".dat") continue;
-    GraphFile g = GRAPH_Parse(entry.path().string());
-    if (g.valid && g.nodes.size() > graph_overlay_.nodes.size()) {
-      graph_overlay_ = std::move(g);
-      bestPath = entry.path().string();
-    }
-  }
-
-  if (!graph_overlay_.nodes.empty()) {
+  if (graph_overlay_.valid && !graph_overlay_.nodes.empty()) {
     Logger::Get().Log(LogLevel::INFO,
         "[GRAPH] Overlay loaded " + std::to_string(graph_overlay_.nodes.size()) +
         " nodes, " + std::to_string(graph_overlay_.edges.size()) +
-        " edges from: " + bestPath);
-  } else {
-    Logger::Get().Log(LogLevel::INFO, "[GRAPH] Overlay: no usable graph in " + graphsDir);
+        " edges from: " + graphFilePath);
+    return true;
   }
+  Logger::Get().Log(LogLevel::INFO, "[GRAPH] Overlay: no usable graph at " + graphFilePath);
+  return false;
 }
 
 int Renderer::PickGraphNodeAtScreen(int mx, int my, int vpW, int vpH) {
