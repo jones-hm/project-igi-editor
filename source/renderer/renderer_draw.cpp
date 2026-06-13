@@ -2559,14 +2559,24 @@ bool Renderer::SaveGraphOverlay() {
 
 int Renderer::PickGraphNodeAtScreen(int mx, int my, int vpW, int vpH) {
   if (!graph_overlay_.valid || graph_overlay_.nodes.empty()) return -1;
-  // Fold the task offset into the matrix so node LOCAL coords project to world:
-  // clip = proj*view*scale*translate(offset) * local.
+  // Same world-coord projection as the overlay draw (proj*view*scale on
+  // offset+local), so picking lines up exactly with the rendered boxes.
   const glm::mat4 worldToClip =
       mat_proj_ * mat_view_ *
-      glm::scale(glm::mat4(1.0f), glm::vec3(RENDERER_MODEL_SCALE_DOWN)) *
-      glm::translate(glm::mat4(1.0f), glm::vec3(graph_overlay_offset_));
-  return GRAPH_PickNode(graph_overlay_, worldToClip,
-                        (float)mx, (float)my, (float)vpW, (float)vpH, 14.0f);
+      glm::scale(glm::mat4(1.0f), glm::vec3(RENDERER_MODEL_SCALE_DOWN));
+  int   bestId = -1;
+  float bestD2 = 14.0f * 14.0f;
+  for (const GraphNode& n : graph_overlay_.nodes) {
+    const glm::dvec3 w = graph_overlay_offset_ + glm::dvec3(n.x, n.y, n.z);
+    const glm::vec4 clip = worldToClip * glm::vec4((float)w.x, (float)w.y, (float)w.z, 1.0f);
+    if (clip.w <= 0.0f) continue;
+    const float sx = (clip.x / clip.w * 0.5f + 0.5f) * vpW;
+    const float sy = (-clip.y / clip.w * 0.5f + 0.5f) * vpH;  // top-left (matches GLUT mouse)
+    const float dx = sx - (float)mx, dy = sy - (float)my;
+    const float d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) { bestD2 = d2; bestId = n.id; }
+  }
+  return bestId;
 }
 
 // Build the hover/selection info text for a node: id, criteria, world position,
@@ -2606,16 +2616,19 @@ void Renderer::DrawGraphOverlayInternal(
   const int vpW = params.view_define_->viewport_width_;
   const int vpH = params.view_define_->viewport_height_;
 
-  // Same world->clip transform the 3D scene uses (proj * view * scale_down),
-  // plus translate(offset) so node LOCAL coords land at task world position.
+  // EXACT same transform the 3D scene/terrain uses (renderer.cpp mvp_objects_):
+  // proj * view * scale applied to full WORLD coordinates. Node coords are local
+  // to the task graph origin, so add the offset in double precision and project
+  // the world point - this keeps the overlay locked to the world like real
+  // geometry (no swimming/jitter relative to the terrain as the camera moves).
   const glm::mat4 worldToClip =
       mat_proj_ * mat_view_ *
-      glm::scale(glm::mat4(1.0f), glm::vec3(RENDERER_MODEL_SCALE_DOWN)) *
-      glm::translate(glm::mat4(1.0f), glm::vec3(graph_overlay_offset_));
+      glm::scale(glm::mat4(1.0f), glm::vec3(RENDERER_MODEL_SCALE_DOWN));
 
   // Project a node LOCAL point to GL screen pixels (bottom-up origin); false if behind.
-  auto project = [&](double x, double y, double z, float& sx, float& sy) -> bool {
-    const glm::vec4 clip = worldToClip * glm::vec4((float)x, (float)y, (float)z, 1.0f);
+  auto project = [&](double lx, double ly, double lz, float& sx, float& sy) -> bool {
+    const glm::dvec3 w = graph_overlay_offset_ + glm::dvec3(lx, ly, lz);
+    const glm::vec4 clip = worldToClip * glm::vec4((float)w.x, (float)w.y, (float)w.z, 1.0f);
     if (clip.w <= 0.0f) return false;
     sx = (clip.x / clip.w * 0.5f + 0.5f) * vpW;
     sy = (clip.y / clip.w * 0.5f + 0.5f) * vpH;
