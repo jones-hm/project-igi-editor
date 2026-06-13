@@ -40,7 +40,17 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 	if (button == GLUT_LEFT_BUTTON) {
 		if (GLUT_DOWN == state) {
 			mouse_state_.left_button_down_ = true;
-			
+
+			// Graph overlay: Ctrl+left-click selects the nearest navigation node.
+			if (renderer_.IsGraphOverlayVisible() && (glutGetModifiers() & GLUT_ACTIVE_CTRL)) {
+				int picked = renderer_.PickGraphNodeAtScreen(
+					x, y, window_state_.viewport_width_, window_state_.viewport_height_);
+				renderer_.SetGraphSelected(picked);
+				Logger::Get().Log(LogLevel::INFO,
+					"[App] Graph node selected: " + std::to_string(picked));
+				return;
+			}
+
 			if (enableCameraMode) {
 				int cx = window_state_.viewport_width_ >> 1;
 				int cy = window_state_.viewport_height_ >> 1;

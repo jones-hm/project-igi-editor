@@ -4,6 +4,7 @@
  *          font/text helpers + cursor unproject. Split from renderer.cpp.
  *****************************************************************************/
 #include "renderer_internal.h"
+#include "graph_overlay.h"
 #include <filesystem>
 
 static FntFont g_editorFont;
@@ -2537,6 +2538,15 @@ void Renderer::LoadGraphOverlay(const std::string& graphsDir) {
   } else {
     Logger::Get().Log(LogLevel::INFO, "[GRAPH] Overlay: no usable graph in " + graphsDir);
   }
+}
+
+int Renderer::PickGraphNodeAtScreen(int mx, int my, int vpW, int vpH) {
+  if (!graph_overlay_.valid || graph_overlay_.nodes.empty()) return -1;
+  const glm::mat4 worldToClip =
+      mat_proj_ * mat_view_ *
+      glm::scale(glm::mat4(1.0f), glm::vec3(RENDERER_MODEL_SCALE_DOWN));
+  return GRAPH_PickNode(graph_overlay_, worldToClip,
+                        (float)mx, (float)my, (float)vpW, (float)vpH, 14.0f);
 }
 
 void Renderer::DrawGraphOverlayInternal(

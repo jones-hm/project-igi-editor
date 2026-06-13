@@ -457,6 +457,11 @@ public:
 	void					LoadGraphOverlay(const std::string& graphsDir);
 	void					ToggleGraphOverlay() { graph_overlay_visible_ = !graph_overlay_visible_; }
 	bool					IsGraphOverlayVisible() const { return graph_overlay_visible_; }
+	void					SetGraphSelected(int id) { graph_overlay_selected_ = id; }
+	int						GraphSelected() const { return graph_overlay_selected_; }
+	// Pick the nearest graph node to screen (mx,my) using the last frame's
+	// matrices; returns the node id or -1. (mx,my) are GLUT top-left coords.
+	int						PickGraphNodeAtScreen(int mx, int my, int vpW, int vpH);
     void                    SetSplineTerrainQuery(std::function<bool(double, double, float&)> fn) { splines_.SetTerrainQuery(std::move(fn)); }
 	glm::vec3				GetMeshExtents(const std::string& modelId, bool isBuilding) { return objects_.GetMeshExtents(modelId, isBuilding); }
 	float					GetMeshZOffset(const std::string& modelId, bool isBuilding) { return objects_.GetMeshZOffset(modelId, isBuilding); }
