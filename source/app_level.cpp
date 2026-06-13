@@ -240,6 +240,27 @@ void App::FlushAttaProxiesToMef() {
 void App::SaveCurrentLevel() {
 	try {
 		Logger::Get().Log(LogLevel::INFO, "[App] SaveCurrentLevel() called");
+
+		// Before serializing objects.qsc, sync the AIGraph task's declared
+		// Graphdata counts (node_count = argTokens[7], edge_count = argTokens[9])
+		// to the edited graph. The game reads the graph using these counts, so a
+		// mismatch (e.g. after deleting nodes) crashes it on load.
+		if (renderer_.GraphOverlayDirty() && !renderer_.GraphOverlayTaskId().empty()) {
+			auto& objs = level_.GetLevelObjects().GetObjects();
+			for (auto& o : objs) {
+				if (o.type == "AIGraph" && o.taskId == renderer_.GraphOverlayTaskId() &&
+				    o.argTokens.size() > 9) {
+					o.argTokens[7] = std::to_string(renderer_.GraphOverlayNodeCount());
+					o.argTokens[9] = std::to_string(renderer_.GraphOverlayEdgeCount());
+					o.modified = true;
+					Logger::Get().Log(LogLevel::INFO,
+						"[App] AIGraph " + o.taskId + " counts synced: nodes=" +
+						o.argTokens[7] + " edges=" + o.argTokens[9]);
+					break;
+				}
+			}
+		}
+
 		FlushAttaProxiesToMef();
 		level_.SaveChanges();
 

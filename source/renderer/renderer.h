@@ -474,6 +474,9 @@ public:
 	bool					GetGraphNodePos(int id, glm::dvec3& out) const;
 	void					SetGraphNodePos(int id, const glm::dvec3& p);
 	bool					GraphOverlayDirty() const { return graph_overlay_dirty_; }
+	const std::string&		GraphOverlayTaskId() const { return graph_overlay_taskid_; }
+	size_t					GraphOverlayNodeCount() const { return graph_overlay_.nodes.size(); }
+	size_t					GraphOverlayEdgeCount() const { return graph_overlay_.edges.size(); }
 	// Save the full edited graph back to the loaded graph<taskId>.dat.
 	bool					SaveGraphOverlay();
 	// Edit controls (operate on the selected node), marking the overlay dirty:
