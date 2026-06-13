@@ -305,6 +305,14 @@ void App::Input_OnSpecial(int key, int x, int y) {
 		return;
 	}
 
+	// F3 always toggles the navigation-graph overlay
+	if (key == GLUT_KEY_F3) {
+		renderer_.ToggleGraphOverlay();
+		Logger::Get().Log(LogLevel::INFO, std::string("[App] Graph overlay ") +
+			(renderer_.IsGraphOverlayVisible() ? "shown" : "hidden"));
+		return;
+	}
+
 	// All other F-key/special-key bindings go through DispatchEventBindings (qedkeybindings.qsc only)
 
 	// Camera movement keys only fire when SHIFT+ALT is held; plain arrow keys must not move camera.

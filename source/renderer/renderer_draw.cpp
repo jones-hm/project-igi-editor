@@ -4,6 +4,7 @@
  *          font/text helpers + cursor unproject. Split from renderer.cpp.
  *****************************************************************************/
 #include "renderer_internal.h"
+#include <filesystem>
 
 static FntFont g_editorFont;
 static GLuint  g_editorFontTex = 0;
@@ -947,6 +948,11 @@ void Renderer::Draw(const draw_params_s &params,
       int b = task_tree_view.terrain_brush_;
       if (b < 0) b = 0; if (b > 3) b = 3;
       draw_text_sm(tooltip_x, tooltip_y + 16, kBrushNames[b], 1.0f, 0.7f, 0.2f);
+    }
+
+    // Navigation-graph overlay (toggle with F3): nodes/edges/labels over the 3D view.
+    if (graph_overlay_visible_) {
+      DrawGraphOverlayInternal(params, draw_text_sm);
     }
 
     // On-screen terrain editor panel (bottom-right): 5 brush buttons + a 2x2 grid
@@ -2495,5 +2501,113 @@ void Renderer::Draw(const draw_params_s &params,
   GL_CHECK_ERROR;
 
   glFlush();
+}
+
+// ---------------------------------------------------------------------------
+// Navigation-graph overlay
+// ---------------------------------------------------------------------------
+
+// Load the richest graph*.dat in `graphsDir` (a level may contain several; the
+// one with the most nodes is the most useful to visualize). Read-only display.
+void Renderer::LoadGraphOverlay(const std::string& graphsDir) {
+  graph_overlay_ = GraphFile{};
+  graph_overlay_selected_ = -1;
+
+  std::error_code ec;
+  if (!std::filesystem::exists(graphsDir, ec)) {
+    Logger::Get().Log(LogLevel::INFO, "[GRAPH] Overlay: no graphs dir: " + graphsDir);
+    return;
+  }
+
+  std::string bestPath;
+  for (const auto& entry : std::filesystem::directory_iterator(graphsDir, ec)) {
+    if (entry.path().extension() != ".dat") continue;
+    GraphFile g = GRAPH_Parse(entry.path().string());
+    if (g.valid && g.nodes.size() > graph_overlay_.nodes.size()) {
+      graph_overlay_ = std::move(g);
+      bestPath = entry.path().string();
+    }
+  }
+
+  if (!graph_overlay_.nodes.empty()) {
+    Logger::Get().Log(LogLevel::INFO,
+        "[GRAPH] Overlay loaded " + std::to_string(graph_overlay_.nodes.size()) +
+        " nodes, " + std::to_string(graph_overlay_.edges.size()) +
+        " edges from: " + bestPath);
+  } else {
+    Logger::Get().Log(LogLevel::INFO, "[GRAPH] Overlay: no usable graph in " + graphsDir);
+  }
+}
+
+void Renderer::DrawGraphOverlayInternal(
+    const draw_params_s& params,
+    const std::function<void(int,int,const char*,float,float,float)>& draw_text_sm) {
+  if (!graph_overlay_.valid || graph_overlay_.nodes.empty()) return;
+
+  const int vpW = params.view_define_->viewport_width_;
+  const int vpH = params.view_define_->viewport_height_;
+
+  // Same world->clip transform the 3D scene uses (proj * view * scale_down).
+  const glm::mat4 worldToClip =
+      mat_proj_ * mat_view_ *
+      glm::scale(glm::mat4(1.0f), glm::vec3(RENDERER_MODEL_SCALE_DOWN));
+
+  // Project a world point to GL screen pixels (bottom-up origin); false if behind.
+  auto project = [&](double x, double y, double z, float& sx, float& sy) -> bool {
+    const glm::vec4 clip = worldToClip * glm::vec4((float)x, (float)y, (float)z, 1.0f);
+    if (clip.w <= 0.0f) return false;
+    sx = (clip.x / clip.w * 0.5f + 0.5f) * vpW;
+    sy = (clip.y / clip.w * 0.5f + 0.5f) * vpH;
+    return true;
+  };
+
+  glEnable(GL_BLEND);
+
+  // Edges first (so node markers sit on top).
+  glLineWidth(1.5f);
+  glColor4f(0.70f, 0.70f, 0.70f, 0.55f);
+  glBegin(GL_LINES);
+  for (const GraphEdge& e : graph_overlay_.edges) {
+    const GraphNode* a = GRAPH_FindNode(graph_overlay_, e.node1);
+    const GraphNode* b = GRAPH_FindNode(graph_overlay_, e.node2);
+    if (!a || !b) continue;
+    float ax, ay, bx, by;
+    if (project(a->x, a->y, a->z, ax, ay) && project(b->x, b->y, b->z, bx, by)) {
+      glVertex2f(ax, ay);
+      glVertex2f(bx, by);
+    }
+  }
+  glEnd();
+
+  // Node markers, colored by criteria (selected node = orange).
+  glPointSize(8.0f);
+  glBegin(GL_POINTS);
+  for (const GraphNode& n : graph_overlay_.nodes) {
+    float sx, sy;
+    if (!project(n.x, n.y, n.z, sx, sy)) continue;
+    if (n.id == graph_overlay_selected_) {
+      glColor3f(1.0f, 0.6f, 0.0f);
+    } else {
+      switch (GRAPH_NodeKind(n)) {
+        case GraphNodeKind::Door:  glColor3f(1.0f, 1.0f, 0.0f); break;
+        case GraphNodeKind::Stair: glColor3f(1.0f, 0.0f, 1.0f); break;
+        case GraphNodeKind::View:  glColor3f(0.0f, 1.0f, 1.0f); break;
+        default:                   glColor3f(0.25f, 0.85f, 0.25f); break;
+      }
+    }
+    glVertex2f(sx, sy);
+  }
+  glEnd();
+  glPointSize(1.0f);
+
+  // Node id labels. draw_text_sm takes a top-down y, so convert from GL bottom-up.
+  for (const GraphNode& n : graph_overlay_.nodes) {
+    float sx, sy;
+    if (!project(n.x, n.y, n.z, sx, sy)) continue;
+    char lbl[16];
+    snprintf(lbl, sizeof(lbl), "%d", n.id);
+    const int y_topdown = vpH - (int)sy;
+    draw_text_sm((int)sx + 7, y_topdown - 6, lbl, 1.0f, 1.0f, 1.0f);
+  }
 }
 

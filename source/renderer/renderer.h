@@ -13,6 +13,7 @@
 #include "renderer_objects.h"
 #include "renderer_splines.h"
 #include "../level/task_schema.h"
+#include "../parsers/graph_parser.h"
 #include <functional>
 
 /*
@@ -450,6 +451,12 @@ public:
 	render_chunk_s*			GetTerrainRenderChunckBuffer();
 
 	void					Draw(const draw_params_s& params, const task_tree_view_params_s& task_tree_view);
+
+	// Navigation-graph overlay: load the richest graph*.dat found in `graphsDir`
+	// for display over the 3D view, toggle its visibility, and query state.
+	void					LoadGraphOverlay(const std::string& graphsDir);
+	void					ToggleGraphOverlay() { graph_overlay_visible_ = !graph_overlay_visible_; }
+	bool					IsGraphOverlayVisible() const { return graph_overlay_visible_; }
     void                    SetSplineTerrainQuery(std::function<bool(double, double, float&)> fn) { splines_.SetTerrainQuery(std::move(fn)); }
 	glm::vec3				GetMeshExtents(const std::string& modelId, bool isBuilding) { return objects_.GetMeshExtents(modelId, isBuilding); }
 	float					GetMeshZOffset(const std::string& modelId, bool isBuilding) { return objects_.GetMeshZOffset(modelId, isBuilding); }
@@ -513,5 +520,14 @@ private:
 	glm::mat4				mat_proj_;
 	glm::mat4				mat_view_;
 	void					SetupUBOMats(const view_define_s& vd);
+
+	// Navigation-graph overlay state.
+	GraphFile				graph_overlay_;
+	bool					graph_overlay_visible_ = false;
+	int						graph_overlay_selected_ = -1;
+	// Draw the graph overlay (nodes/edges/labels) using the active screen-space
+	// GL state; `draw_text_sm` is the caller's label-drawing lambda.
+	void					DrawGraphOverlayInternal(const draw_params_s& params,
+								const std::function<void(int,int,const char*,float,float,float)>& draw_text_sm);
 
 };
