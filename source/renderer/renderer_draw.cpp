@@ -5,6 +5,8 @@
  *****************************************************************************/
 #include "renderer_internal.h"
 #include "graph_overlay.h"
+#include <vector>
+#include <unordered_map>
 
 static FntFont g_editorFont;
 static GLuint  g_editorFontTex = 0;
@@ -2667,33 +2669,60 @@ void Renderer::DrawGraphOverlayInternal(
       mat_proj_ * mat_view_ *
       glm::scale(glm::mat4(1.0f), glm::vec3(RENDERER_MODEL_SCALE_DOWN));
 
-  // Project a node LOCAL point to GL screen pixels (bottom-up origin); false if behind.
-  auto project = [&](double lx, double ly, double lz, float& sx, float& sy) -> bool {
+  // Project a node LOCAL point to GL screen pixels (bottom-up) + window depth.
+  auto project = [&](double lx, double ly, double lz, float& sx, float& sy, float& sz) -> bool {
     const glm::dvec3 w = graph_overlay_offset_ + glm::dvec3(lx, ly, lz);
     const glm::vec4 clip = worldToClip * glm::vec4((float)w.x, (float)w.y, (float)w.z, 1.0f);
     if (clip.w <= 0.0f) return false;
     sx = (clip.x / clip.w * 0.5f + 0.5f) * vpW;
     sy = (clip.y / clip.w * 0.5f + 0.5f) * vpH;
+    sz = (clip.z / clip.w * 0.5f + 0.5f);  // window-space depth [0,1]
     return true;
   };
 
   // Node half-size in pixels, driven by the node radius but clamped so it stays
-  // a fixed on-screen size (independent of camera distance). Default radius 0.5
-  // gives the original 7px; the scale controls change radius -> visible size.
+  // a fixed on-screen size (independent of camera distance).
   auto hsFor = [](float radius) -> float {
     float h = (radius > 0.01f ? radius : 0.5f) * 14.0f;
     return h < 5.0f ? 5.0f : (h > 30.0f ? 30.0f : h);
   };
 
-  // --- Hover detection: nearest node to the cursor (top-left coords). ---
+  // Read the scene depth buffer once so nodes BEHIND geometry (buildings, the
+  // water tower, etc.) are hidden, like solid objects. The 2D pass disables the
+  // depth TEST but the buffer still holds the 3D scene's depth.
+  std::vector<float> depthBuf(static_cast<size_t>(vpW) * vpH);
+  glReadPixels(0, 0, vpW, vpH, GL_DEPTH_COMPONENT, GL_FLOAT, depthBuf.data());
+
+  // Precompute screen pos + visibility (on-screen AND not occluded) per node.
+  struct NodeScreen { float sx, sy; bool vis; };
+  const size_t NN = graph_overlay_.nodes.size();
+  std::vector<NodeScreen> nsv(NN);
+  std::unordered_map<int, int> idIdx;
+  for (size_t i = 0; i < NN; ++i) {
+    const GraphNode& n = graph_overlay_.nodes[i];
+    idIdx[n.id] = static_cast<int>(i);
+    float sx = 0, sy = 0, sz = 0;
+    bool vis = project(n.x, n.y, n.z, sx, sy, sz);
+    if (vis) {
+      const int ix = (int)sx, iy = (int)sy;
+      if (ix < 0 || iy < 0 || ix >= vpW || iy >= vpH) vis = false;
+      else if (sz > depthBuf[static_cast<size_t>(iy) * vpW + ix] + 0.001f) vis = false;  // behind geometry
+    }
+    nsv[i] = { sx, sy, vis };
+  }
+  auto nsById = [&](int id) -> const NodeScreen* {
+    auto it = idIdx.find(id); return it == idIdx.end() ? nullptr : &nsv[it->second];
+  };
+
+  // --- Hover detection (visible, non-occluded nodes only). ---
   int hoveredId = -1;
   {
     float bestD2 = 1e30f;
-    for (const GraphNode& n : graph_overlay_.nodes) {
-      float sx, sy;
-      if (!project(n.x, n.y, n.z, sx, sy)) continue;
-      const float dx = sx - (float)mouseX;
-      const float dy = (vpH - sy) - (float)mouseY;  // node top-left y
+    for (size_t i = 0; i < NN; ++i) {
+      if (!nsv[i].vis) continue;
+      const GraphNode& n = graph_overlay_.nodes[i];
+      const float dx = nsv[i].sx - (float)mouseX;
+      const float dy = (vpH - nsv[i].sy) - (float)mouseY;
       const float d2 = dx * dx + dy * dy;
       const float thr = hsFor(n.radius) + 6.0f;
       if (d2 < thr * thr && d2 < bestD2) { bestD2 = d2; hoveredId = n.id; }
@@ -2703,61 +2732,58 @@ void Renderer::DrawGraphOverlayInternal(
 
   glEnable(GL_BLEND);
 
-  // --- Edges: grey, but links of the active node highlighted orange. ---
+  // --- Edges: drawn when both endpoints are visible; active node's = orange. ---
   glLineWidth(1.5f);
   glBegin(GL_LINES);
   for (const GraphEdge& e : graph_overlay_.edges) {
-    const GraphNode* a = GRAPH_FindNode(graph_overlay_, e.node1);
-    const GraphNode* b = GRAPH_FindNode(graph_overlay_, e.node2);
-    if (!a || !b) continue;
-    float ax, ay, bx, by;
-    if (!project(a->x, a->y, a->z, ax, ay) || !project(b->x, b->y, b->z, bx, by)) continue;
+    const NodeScreen* a = nsById(e.node1);
+    const NodeScreen* b = nsById(e.node2);
+    if (!a || !b || !a->vis || !b->vis) continue;
     if (activeId >= 0 && (e.node1 == activeId || e.node2 == activeId))
       glColor4f(1.0f, 0.6f, 0.0f, 0.95f);
     else
       glColor4f(0.72f, 0.72f, 0.72f, 0.45f);
-    glVertex2f(ax, ay); glVertex2f(bx, by);
+    glVertex2f(a->sx, a->sy); glVertex2f(b->sx, b->sy);
   }
   glEnd();
 
-  // --- Node boxes: black border quad then a colored fill quad. ---
   auto emitQuad = [](float cx, float cy, float h) {
     glVertex2f(cx - h, cy - h); glVertex2f(cx + h, cy - h);
     glVertex2f(cx + h, cy + h); glVertex2f(cx - h, cy + h);
   };
 
-  glColor4f(0.0f, 0.0f, 0.0f, 0.85f);  // border
+  glColor4f(0.0f, 0.0f, 0.0f, 1.0f);  // solid black border
   glBegin(GL_QUADS);
-  for (const GraphNode& n : graph_overlay_.nodes) {
-    float sx, sy; if (!project(n.x, n.y, n.z, sx, sy)) continue;
-    emitQuad(sx, sy, hsFor(n.radius) + 1.5f);
+  for (size_t i = 0; i < NN; ++i) {
+    if (!nsv[i].vis) continue;
+    emitQuad(nsv[i].sx, nsv[i].sy, hsFor(graph_overlay_.nodes[i].radius) + 1.5f);
   }
   glEnd();
 
-  glBegin(GL_QUADS);  // colored fill
-  for (const GraphNode& n : graph_overlay_.nodes) {
-    float sx, sy; if (!project(n.x, n.y, n.z, sx, sy)) continue;
+  glBegin(GL_QUADS);  // solid fill (default RED)
+  for (size_t i = 0; i < NN; ++i) {
+    if (!nsv[i].vis) continue;
+    const GraphNode& n = graph_overlay_.nodes[i];
     if (n.id == graph_overlay_selected_)      glColor4f(1.0f, 0.6f, 0.0f, 1.0f);
     else switch (GRAPH_NodeKind(n)) {
       case GraphNodeKind::Door:  glColor4f(1.0f, 1.0f, 0.0f, 1.0f); break;
       case GraphNodeKind::Stair: glColor4f(1.0f, 0.0f, 1.0f, 1.0f); break;
       case GraphNodeKind::View:  glColor4f(0.0f, 1.0f, 1.0f, 1.0f); break;
-      default:                   glColor4f(0.25f, 0.85f, 0.25f, 1.0f); break;
+      default:                   glColor4f(0.85f, 0.12f, 0.12f, 1.0f); break;  // RED
     }
-    emitQuad(sx, sy, hsFor(n.radius));
+    emitQuad(nsv[i].sx, nsv[i].sy, hsFor(n.radius));
   }
   glEnd();
 
-  // Highlight rings for selected (orange) and hovered (white).
+  // Highlight rings for selected (orange) and hovered (white), if visible.
   auto ring = [&](int id, float h, float r, float g, float b) {
-    const GraphNode* n = GRAPH_FindNode(graph_overlay_, id);
-    if (!n) return;
-    float sx, sy; if (!project(n->x, n->y, n->z, sx, sy)) return;
+    const NodeScreen* s = nsById(id);
+    if (!s || !s->vis) return;
     glColor4f(r, g, b, 1.0f);
     glLineWidth(2.0f);
     glBegin(GL_LINE_LOOP);
-    glVertex2f(sx - h, sy - h); glVertex2f(sx + h, sy - h);
-    glVertex2f(sx + h, sy + h); glVertex2f(sx - h, sy + h);
+    glVertex2f(s->sx - h, s->sy - h); glVertex2f(s->sx + h, s->sy - h);
+    glVertex2f(s->sx + h, s->sy + h); glVertex2f(s->sx - h, s->sy + h);
     glEnd();
   };
   if (graph_overlay_selected_ >= 0) {
@@ -2769,11 +2795,12 @@ void Renderer::DrawGraphOverlayInternal(
     if (h) ring(hoveredId, hsFor(h->radius) + 3.0f, 1.0f, 1.0f, 1.0f);
   }
 
-  // --- Node id labels (top-down y). ---
-  for (const GraphNode& n : graph_overlay_.nodes) {
-    float sx, sy; if (!project(n.x, n.y, n.z, sx, sy)) continue;
+  // --- Node id labels (visible nodes only, top-down y). ---
+  for (size_t i = 0; i < NN; ++i) {
+    if (!nsv[i].vis) continue;
+    const GraphNode& n = graph_overlay_.nodes[i];
     char lbl[16]; snprintf(lbl, sizeof(lbl), "%d", n.id);
-    draw_text_sm((int)sx + (int)hsFor(n.radius) + 2, vpH - (int)sy - 6, lbl, 1.0f, 1.0f, 1.0f);
+    draw_text_sm((int)nsv[i].sx + (int)hsFor(n.radius) + 2, vpH - (int)nsv[i].sy - 6, lbl, 1.0f, 1.0f, 1.0f);
   }
 
   // --- Title banner: graph id + Area (from graph_level<N>.json) + counts. ---
@@ -2795,8 +2822,8 @@ void Renderer::DrawGraphOverlayInternal(
     int tx, ty;
     if (hoveredId >= 0) { tx = mouseX + 16; ty = mouseY + 16; }
     else {
-      float sx, sy; const GraphNode* n = GRAPH_FindNode(graph_overlay_, activeId);
-      if (n && project(n->x, n->y, n->z, sx, sy)) { tx = (int)sx + 12; ty = vpH - (int)sy + 8; }
+      const NodeScreen* s = nsById(activeId);
+      if (s) { tx = (int)s->sx + 12; ty = vpH - (int)s->sy + 8; }
       else { tx = 360; ty = 80; }
     }
     const int boxW = 230, boxH = lines * 14 + 8;
