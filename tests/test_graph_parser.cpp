@@ -203,6 +203,33 @@ TEST_F(GraphParserTest, WriteAdjacencyMatchesEdges) {
     std::filesystem::remove(out);
 }
 
+TEST_F(GraphParserTest, WriteUnchangedIsByteIdentical) {
+    const std::string src = Utils::GetIGIRootPath() +
+        "\\editor\\backup\\level1\\graphs\\graph8.dat";
+    GraphFile g = GRAPH_Parse(src);
+    if (!g.valid) GTEST_SKIP() << "no pristine backup graph8";
+
+    const std::string out = TempOut("igi_graph_identical.dat");
+    ASSERT_TRUE(GRAPH_Write(src, out, g));
+
+    auto readAll = [](const std::string& p) {
+        std::ifstream f(p, std::ios::binary);
+        std::vector<char> d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        return d;
+    };
+    std::vector<char> o = readAll(src), w = readAll(out);
+    EXPECT_EQ(o.size(), w.size()) << "size differs orig=" << o.size() << " new=" << w.size();
+    const size_t n = std::min(o.size(), w.size());
+    int firstDiff = -1, diffs = 0;
+    for (size_t i = 0; i < n; ++i)
+        if (o[i] != w[i]) { if (firstDiff < 0) firstDiff = (int)i; ++diffs; }
+    if (firstDiff >= 0) {
+        ADD_FAILURE() << "bytes differ: count=" << diffs << " firstDiffOffset=" << firstDiff
+                      << " (nodeDataStart=" << (30 + 100*100*8) << ")";
+    }
+    std::filesystem::remove(out);
+}
+
 TEST_F(GraphParserTest, WriteReproducesOriginalRoutingTable) {
     // Pristine backup so the adjacency reflects the game's own routing table.
     const std::string src = Utils::GetIGIRootPath() +

@@ -236,6 +236,10 @@ void Renderer::Draw(const draw_params_s &params,
                   objects_.GetShaderProgram());
   }
 
+  // 3D navigation-graph pass: solid boxes + edges, depth-tested, before the HUD.
+  if (graph_overlay_visible_)
+    DrawGraphNodes3D(params);
+
   // 2D HUD overlay — always active so tooltip/pause/debug show even when TreeView is hidden
   {
     glUseProgram(0);      // Disable any active shaders for fixed-function HUD
@@ -2666,9 +2670,9 @@ void Renderer::DrawGraphNodePanel(
   using namespace GraphNodePanel;
   glEnable(GL_BLEND);
 
-  // Panel background + border.
-  quad(PX, PY, PW, PanelHeight(), 0.06f, 0.06f, 0.09f, 0.92f);
-  glColor4f(1.0f, 0.6f, 0.0f, 0.9f); glLineWidth(1.0f);
+  // Panel background + border (yellow theme — matches PropPanel).
+  quad(PX, PY, PW, PanelHeight(), 0.04f, 0.04f, 0.05f, 0.78f);
+  glColor4f(1.0f, 0.9f, 0.2f, 0.9f); glLineWidth(1.0f);
   glBegin(GL_LINE_LOOP);
   glVertex2f((float)PX, (float)(vpH - PY));
   glVertex2f((float)(PX + PW), (float)(vpH - PY));
@@ -2678,13 +2682,13 @@ void Renderer::DrawGraphNodePanel(
 
   char buf[96];
   snprintf(buf, sizeof(buf), "Graph Node  %d", node.id);
-  draw_text_sm(PX + 8, PY + 6, buf, 1.0f, 0.85f, 0.4f);
+  draw_text_sm(PX + 8, PY + 6, buf, 1.0f, 0.9f, 0.2f);
 
-  // A button helper: filled rect + centered-ish label.
+  // A button helper: filled rect + centered-ish label (yellow theme).
   auto button = [&](int idx, const char* label, bool active) {
     int x, y, bw, bh; GetButtonRect(idx, x, y, bw, bh);
-    if (active) quad(x, y, bw, bh, 0.95f, 0.55f, 0.10f, 0.95f);
-    else        quad(x, y, bw, bh, 0.20f, 0.20f, 0.24f, 0.95f);
+    if (active) quad(x, y, bw, bh, 0.85f, 0.72f, 0.08f, 0.95f);
+    else        quad(x, y, bw, bh, 0.14f, 0.14f, 0.16f, 0.95f);
     draw_text_sm(x + 5, y + 4, label, 1.0f, 1.0f, 1.0f);
   };
 
@@ -2695,13 +2699,13 @@ void Renderer::DrawGraphNodePanel(
     int rx, ry, rw, rh; GetButtonRect(kXDn + f * 2, rx, ry, rw, rh);
     if (f < 5) snprintf(buf, sizeof(buf), "%s: %.2f", names[f], vals[f]);
     else       snprintf(buf, sizeof(buf), "%s: %d", names[f], node.material);
-    draw_text_sm(PX + 8, ry + 4, buf, 0.85f, 0.9f, 1.0f);
+    draw_text_sm(PX + 8, ry + 4, buf, 1.0f, 0.9f, 0.2f);
     button(kXDn + f * 2, "-", false);
     button(kXDn + f * 2 + 1, "+", false);
   }
 
   // Criteria toggles.
-  draw_text_sm(PX + 8, GraphNodePanel::PY + HEADER_H + kNumericFields * ROW_H - 18, "Criteria:", 0.85f, 0.9f, 1.0f);
+  draw_text_sm(PX + 8, GraphNodePanel::PY + HEADER_H + kNumericFields * ROW_H - 18, "Criteria:", 1.0f, 0.9f, 0.2f);
   button(kCrDoor,  "DOOR",  node.criteria.find("DOOR")  != std::string::npos);
   button(kCrView,  "VIEW",  node.criteria.find("VIEW")  != std::string::npos);
   button(kCrStair, "STAIR", node.criteria.find("STAIR") != std::string::npos);
@@ -2790,20 +2794,14 @@ void Renderer::DrawGraphOverlayInternal(
     return true;
   };
 
-  // Node half-size in pixels, driven by the node radius but clamped so it stays
-  // a fixed on-screen size (independent of camera distance).
+  // Node screen-space half-size (pixels) — used only for hover threshold and label offset.
   auto hsFor = [](float radius) -> float {
     float h = (radius > 0.01f ? radius : 0.5f) * 14.0f;
     return h < 5.0f ? 5.0f : (h > 30.0f ? 30.0f : h);
   };
 
-  // Read the scene depth buffer once so nodes BEHIND geometry (buildings, the
-  // water tower, etc.) are hidden, like solid objects. The 2D pass disables the
-  // depth TEST but the buffer still holds the 3D scene's depth.
-  std::vector<float> depthBuf(static_cast<size_t>(vpW) * vpH);
-  glReadPixels(0, 0, vpW, vpH, GL_DEPTH_COMPONENT, GL_FLOAT, depthBuf.data());
-
-  // Precompute screen pos + visibility (on-screen AND not occluded) per node.
+  // Precompute screen position per node (in-front-of-camera check only; depth
+  // occlusion is now handled by the GPU in the 3D node pass).
   struct NodeScreen { float sx, sy; bool vis; };
   const size_t NN = graph_overlay_.nodes.size();
   std::vector<NodeScreen> nsv(NN);
@@ -2816,7 +2814,6 @@ void Renderer::DrawGraphOverlayInternal(
     if (vis) {
       const int ix = (int)sx, iy = (int)sy;
       if (ix < 0 || iy < 0 || ix >= vpW || iy >= vpH) vis = false;
-      else if (sz > depthBuf[static_cast<size_t>(iy) * vpW + ix] + 0.001f) vis = false;  // behind geometry
     }
     nsv[i] = { sx, sy, vis };
   }
@@ -2842,50 +2839,10 @@ void Renderer::DrawGraphOverlayInternal(
 
   glEnable(GL_BLEND);
 
-  // --- Edges: drawn when both endpoints are visible; active node's = orange. ---
-  glLineWidth(1.5f);
-  glBegin(GL_LINES);
-  for (const GraphEdge& e : graph_overlay_.edges) {
-    const NodeScreen* a = nsById(e.node1);
-    const NodeScreen* b = nsById(e.node2);
-    if (!a || !b || !a->vis || !b->vis) continue;
-    if (activeId >= 0 && (e.node1 == activeId || e.node2 == activeId))
-      glColor4f(1.0f, 0.6f, 0.0f, 0.95f);
-    else
-      glColor4f(0.72f, 0.72f, 0.72f, 0.45f);
-    glVertex2f(a->sx, a->sy); glVertex2f(b->sx, b->sy);
-  }
-  glEnd();
-
-  auto emitQuad = [](float cx, float cy, float h) {
-    glVertex2f(cx - h, cy - h); glVertex2f(cx + h, cy - h);
-    glVertex2f(cx + h, cy + h); glVertex2f(cx - h, cy + h);
-  };
-
-  glColor4f(0.0f, 0.0f, 0.0f, 1.0f);  // solid black border
-  glBegin(GL_QUADS);
-  for (size_t i = 0; i < NN; ++i) {
-    if (!nsv[i].vis) continue;
-    emitQuad(nsv[i].sx, nsv[i].sy, hsFor(graph_overlay_.nodes[i].radius) + 1.5f);
-  }
-  glEnd();
-
-  glBegin(GL_QUADS);  // solid fill (default RED)
-  for (size_t i = 0; i < NN; ++i) {
-    if (!nsv[i].vis) continue;
-    const GraphNode& n = graph_overlay_.nodes[i];
-    if (n.id == graph_overlay_selected_)      glColor4f(1.0f, 0.6f, 0.0f, 1.0f);
-    else switch (GRAPH_NodeKind(n)) {
-      case GraphNodeKind::Door:  glColor4f(1.0f, 1.0f, 0.0f, 1.0f); break;
-      case GraphNodeKind::Stair: glColor4f(1.0f, 0.0f, 1.0f, 1.0f); break;
-      case GraphNodeKind::View:  glColor4f(0.0f, 1.0f, 1.0f, 1.0f); break;
-      default:                   glColor4f(0.85f, 0.12f, 0.12f, 1.0f); break;  // RED
-    }
-    emitQuad(nsv[i].sx, nsv[i].sy, hsFor(n.radius));
-  }
-  glEnd();
-
-  // Highlight rings for selected (orange) and hovered (white), if visible.
+  // Screen-space rings for selected (yellow) and hovered (white) nodes. The 3D
+  // solid boxes are drawn in DrawGraphNodes3D (before the HUD); the rings are
+  // intentionally in HUD space so they always show on top for quick identification.
+  // Highlight rings for selected (yellow) and hovered (white), if visible.
   auto ring = [&](int id, float h, float r, float g, float b) {
     const NodeScreen* s = nsById(id);
     if (!s || !s->vis) return;
@@ -2898,7 +2855,7 @@ void Renderer::DrawGraphOverlayInternal(
   };
   if (graph_overlay_selected_ >= 0) {
     const GraphNode* s = GRAPH_FindNode(graph_overlay_, graph_overlay_selected_);
-    if (s) ring(graph_overlay_selected_, hsFor(s->radius) + 4.0f, 1.0f, 0.6f, 0.0f);
+    if (s) ring(graph_overlay_selected_, hsFor(s->radius) + 4.0f, 1.0f, 0.9f, 0.2f);
   }
   if (hoveredId >= 0) {
     const GraphNode* h = GRAPH_FindNode(graph_overlay_, hoveredId);
@@ -2947,7 +2904,7 @@ void Renderer::DrawGraphOverlayInternal(
     glBegin(GL_QUADS);
     glVertex2f(gx0, gy1); glVertex2f(gx1, gy1); glVertex2f(gx1, gy0); glVertex2f(gx0, gy0);
     glEnd();
-    glColor4f(1.0f, 0.6f, 0.0f, 0.9f);
+    glColor4f(1.0f, 0.9f, 0.2f, 0.9f);
     glLineWidth(1.0f);
     glBegin(GL_LINE_LOOP);
     glVertex2f(gx0, gy1); glVertex2f(gx1, gy1); glVertex2f(gx1, gy0); glVertex2f(gx0, gy0);
@@ -2955,5 +2912,127 @@ void Renderer::DrawGraphOverlayInternal(
 
     draw_text_sm(tx, ty, info.c_str(), 1.0f, 1.0f, 1.0f);
   }
+}
+
+void Renderer::DrawGraphNodes3D(const draw_params_s& params) {
+  if (!graph_overlay_.valid || graph_overlay_.nodes.empty()) return;
+
+  // Switch from object shader to fixed-function for 3D graph geometry.
+  glUseProgram(0);
+  glBindVertexArray(0);
+  glBindBufferBase(GL_UNIFORM_BUFFER, 0, 0);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glDisable(GL_TEXTURE_2D);
+  glDisable(GL_LIGHTING);
+
+  // Same world→clip transform as the 3D scene: proj * view * scale.
+  glMatrixMode(GL_PROJECTION);
+  glLoadMatrixf(glm::value_ptr(mat_proj_));
+  glMatrixMode(GL_MODELVIEW);
+  const glm::mat4 mv = mat_view_ *
+      glm::scale(glm::mat4(1.0f), glm::vec3(RENDERER_MODEL_SCALE_DOWN));
+  glLoadMatrixf(glm::value_ptr(mv));
+
+  glEnable(GL_DEPTH_TEST);
+  glDepthMask(GL_TRUE);
+  glDepthFunc(GL_LEQUAL);
+  glDisable(GL_CULL_FACE);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  // Box half-extent in IGI world units. 200 units gives a cube that appears
+  // building-sized when close (20-30 px) and shrinks to dots at level scale.
+  const float H = 200.0f;
+
+  // Draw solid cube faces with per-face shading (no GL lighting needed).
+  glBegin(GL_QUADS);
+  for (const GraphNode& n : graph_overlay_.nodes) {
+    const glm::dvec3 w = graph_overlay_offset_ + glm::dvec3(n.x, n.y, n.z);
+    const float cx = (float)w.x, cy = (float)w.y, cz = (float)w.z;
+
+    float r, g, b;
+    if (n.id == graph_overlay_selected_)      { r=1.0f;  g=0.6f;  b=0.0f;  }
+    else switch (GRAPH_NodeKind(n)) {
+      case GraphNodeKind::Door:  r=1.0f;  g=1.0f;  b=0.0f;  break;
+      case GraphNodeKind::Stair: r=1.0f;  g=0.0f;  b=1.0f;  break;
+      case GraphNodeKind::View:  r=0.0f;  g=1.0f;  b=1.0f;  break;
+      default:                   r=0.85f; g=0.12f; b=0.12f; break;
+    }
+
+    // Top face (z+) — brightest
+    glColor4f(r, g, b, 1.0f);
+    glVertex3f(cx-H, cy-H, cz+H); glVertex3f(cx+H, cy-H, cz+H);
+    glVertex3f(cx+H, cy+H, cz+H); glVertex3f(cx-H, cy+H, cz+H);
+
+    // Front/back faces (y±) — medium
+    glColor4f(r*0.72f, g*0.72f, b*0.72f, 1.0f);
+    glVertex3f(cx-H, cy-H, cz-H); glVertex3f(cx+H, cy-H, cz-H);
+    glVertex3f(cx+H, cy-H, cz+H); glVertex3f(cx-H, cy-H, cz+H);
+    glVertex3f(cx+H, cy+H, cz-H); glVertex3f(cx-H, cy+H, cz-H);
+    glVertex3f(cx-H, cy+H, cz+H); glVertex3f(cx+H, cy+H, cz+H);
+
+    // Left/right faces (x±) — slightly darker
+    glColor4f(r*0.58f, g*0.58f, b*0.58f, 1.0f);
+    glVertex3f(cx-H, cy+H, cz-H); glVertex3f(cx-H, cy-H, cz-H);
+    glVertex3f(cx-H, cy-H, cz+H); glVertex3f(cx-H, cy+H, cz+H);
+    glVertex3f(cx+H, cy-H, cz-H); glVertex3f(cx+H, cy+H, cz-H);
+    glVertex3f(cx+H, cy+H, cz+H); glVertex3f(cx+H, cy-H, cz+H);
+
+    // Bottom face (z-) — darkest
+    glColor4f(r*0.38f, g*0.38f, b*0.38f, 1.0f);
+    glVertex3f(cx+H, cy-H, cz-H); glVertex3f(cx-H, cy-H, cz-H);
+    glVertex3f(cx-H, cy+H, cz-H); glVertex3f(cx+H, cy+H, cz-H);
+  }
+  glEnd();
+
+  // Wireframe outline for the selected node (yellow, slightly oversized).
+  if (graph_overlay_selected_ >= 0) {
+    const GraphNode* sn = GRAPH_FindNode(graph_overlay_, graph_overlay_selected_);
+    if (sn) {
+      const glm::dvec3 sw = graph_overlay_offset_ + glm::dvec3(sn->x, sn->y, sn->z);
+      const float cx=(float)sw.x, cy=(float)sw.y, cz=(float)sw.z, OH=H*1.08f;
+      glColor4f(1.0f, 0.9f, 0.2f, 1.0f);
+      glLineWidth(2.5f);
+      glBegin(GL_LINES);
+      // Bottom ring
+      glVertex3f(cx-OH,cy-OH,cz-OH); glVertex3f(cx+OH,cy-OH,cz-OH);
+      glVertex3f(cx+OH,cy-OH,cz-OH); glVertex3f(cx+OH,cy+OH,cz-OH);
+      glVertex3f(cx+OH,cy+OH,cz-OH); glVertex3f(cx-OH,cy+OH,cz-OH);
+      glVertex3f(cx-OH,cy+OH,cz-OH); glVertex3f(cx-OH,cy-OH,cz-OH);
+      // Top ring
+      glVertex3f(cx-OH,cy-OH,cz+OH); glVertex3f(cx+OH,cy-OH,cz+OH);
+      glVertex3f(cx+OH,cy-OH,cz+OH); glVertex3f(cx+OH,cy+OH,cz+OH);
+      glVertex3f(cx+OH,cy+OH,cz+OH); glVertex3f(cx-OH,cy+OH,cz+OH);
+      glVertex3f(cx-OH,cy+OH,cz+OH); glVertex3f(cx-OH,cy-OH,cz+OH);
+      // Verticals
+      glVertex3f(cx-OH,cy-OH,cz-OH); glVertex3f(cx-OH,cy-OH,cz+OH);
+      glVertex3f(cx+OH,cy-OH,cz-OH); glVertex3f(cx+OH,cy-OH,cz+OH);
+      glVertex3f(cx+OH,cy+OH,cz-OH); glVertex3f(cx+OH,cy+OH,cz+OH);
+      glVertex3f(cx-OH,cy+OH,cz-OH); glVertex3f(cx-OH,cy+OH,cz+OH);
+      glEnd();
+    }
+  }
+
+  // Edges as 3D lines between node centres.
+  glLineWidth(1.5f);
+  glBegin(GL_LINES);
+  for (const GraphEdge& e : graph_overlay_.edges) {
+    const GraphNode* na = GRAPH_FindNode(graph_overlay_, e.node1);
+    const GraphNode* nb = GRAPH_FindNode(graph_overlay_, e.node2);
+    if (!na || !nb) continue;
+    const glm::dvec3 wa = graph_overlay_offset_ + glm::dvec3(na->x, na->y, na->z);
+    const glm::dvec3 wb = graph_overlay_offset_ + glm::dvec3(nb->x, nb->y, nb->z);
+    const bool active = graph_overlay_selected_ >= 0 &&
+                        (e.node1 == graph_overlay_selected_ || e.node2 == graph_overlay_selected_);
+    if (active) glColor4f(1.0f, 0.6f, 0.0f, 0.95f);
+    else        glColor4f(0.72f, 0.72f, 0.72f, 0.55f);
+    glVertex3f((float)wa.x, (float)wa.y, (float)wa.z);
+    glVertex3f((float)wb.x, (float)wb.y, (float)wb.z);
+  }
+  glEnd();
+
+  glLineWidth(1.0f);
+  glDepthFunc(GL_LESS);
 }
 

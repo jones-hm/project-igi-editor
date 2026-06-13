@@ -224,6 +224,13 @@ void App::DispatchEventBindings() {
 		return;
 	}
 	if (Check("TaskFindAgain")) {
+		if (find_query_.empty()) {
+			// No previous query — open the search bar so the user can type one.
+			find_open_ = true;
+			find_mode_ = FindMode::TaskNameTypeId;
+			find_result_idx_ = -1;
+			return;
+		}
 		if (!find_query_.empty()) {
 			const auto& objects = level_.GetLevelObjects().GetObjects();
 			std::string q = find_query_;

@@ -622,5 +622,8 @@ private:
 	void					DrawGraphOverlayInternal(const draw_params_s& params,
 								const std::function<void(int,int,const char*,float,float,float)>& draw_text_sm,
 								int mouseX, int mouseY);
+	// Render navigation-graph nodes and edges as true 3D solid geometry (depth-tested,
+	// perspective-scaled). Called in the 3D scene pass, before the 2D HUD.
+	void					DrawGraphNodes3D(const draw_params_s& params);
 
 };

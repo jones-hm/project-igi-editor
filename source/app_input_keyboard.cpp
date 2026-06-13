@@ -762,8 +762,8 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 				}
 			}
 			find_open_ = false;
-			find_query_.clear();
-			find_result_idx_ = -1;
+			// Keep find_query_ + find_result_idx_ so TaskFindAgain (Ctrl+Shift+F)
+			// can cycle through matches without reopening the search bar.
 			return;
 		}
 		if (key == 8) { // Backspace
