@@ -1403,11 +1403,11 @@ void Renderer::Draw(const draw_params_s &params,
       int screen_menu_top = (viewport_h - menu_h) / 2;
       // Title — centered, bright green
       const char* title = "IGI EDITOR";
-      draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(title) * 4),
+      draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(title) * 3),
                  screen_menu_top + 22, title, 0.0f, 1.0f, 0.0f);
       // Subtitle — centered, dim white
       const char* subtitle = "PAUSED";
-      draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(subtitle) * 4),
+      draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(subtitle) * 3),
                  screen_menu_top + 46, subtitle, 0.8f, 0.8f, 0.8f);
 
       // Font row is rendered specially (index 1): a "Font: <type>" toggle on the
@@ -1485,45 +1485,71 @@ void Renderer::Draw(const draw_params_s &params,
                         task_tree_view.mouse_y_ <= screen_btn_y + 15);
 
         if (i == FONT_ROW) {
-          // "Font: <type>  [-] <n> [+]" — layout MUST match click handler
-          const int sz_box_w = 34, btn_w = 22, gap = 6;
-          const int label_w = 96, label_gap = 16;
-          const int group_w = label_w + label_gap + btn_w + gap + sz_box_w + gap + btn_w;
+          // "Font: <type>  [-] <n> [+]" — label left, spinner group right; whole row centered
+          const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
+          const char* lbl = font_btn_label;
+          int label_px = (int)strlen(lbl) * 6;
+          int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
           int gx = menu_x + (menu_w - group_w) / 2;
-          draw_text_sys(gx, screen_btn_y, font_btn_label,
+          draw_text_sys(gx, screen_btn_y, lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
-          int minus_x = gx + label_w + label_gap;
+          int minus_x = gx + label_px + label_gap;
           int box_x   = minus_x + btn_w + gap;
-          int plus_x  = box_x + sz_box_w + gap;
+          int plus_x  = box_x + val_w + gap;
           int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
           char szbuf[8]; snprintf(szbuf, sizeof(szbuf), "%d", Config::Get().systemFontSize);
-          sbox(minus_x, btn_w,    "-",    rt, rb, screen_btn_y);
-          sbox(box_x,   sz_box_w, szbuf,  rt, rb, screen_btn_y);
-          sbox(plus_x,  btn_w,    "+",    rt, rb, screen_btn_y);
+          sbox(minus_x, btn_w, "-",    rt, rb, screen_btn_y);
+          sbox(box_x,   val_w, szbuf,  rt, rb, screen_btn_y);
+          sbox(plus_x,  btn_w, "+",    rt, rb, screen_btn_y);
 
         } else if (i == LEVEL_ROW) {
-          // Level spinner: "Select Level  [-] [N] [+]" — layout MUST match click handler
-          const int num_box_w = 40, btn_w = 22, gap = 6;
-          const int label_w = 96, label_gap = 16;
-          const int group_w = label_w + label_gap + btn_w + gap + num_box_w + gap + btn_w;
+          // Level spinner: "Select Level  [-] [N] [+]" — same width as Font row for visual alignment
+          const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
+          const char* lbl = "Select Level";
+          int label_px = (int)strlen(lbl) * 6;
+          int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
           int gx = menu_x + (menu_w - group_w) / 2;
-          draw_text_sys(gx, screen_btn_y, "Select Level",
+          draw_text_sys(gx, screen_btn_y, lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
-          int minus_x = gx + label_w + label_gap;
+          int minus_x = gx + label_px + label_gap;
           int box_x   = minus_x + btn_w + gap;
-          int plus_x  = box_x + num_box_w + gap;
+          int plus_x  = box_x + val_w + gap;
           int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
-          sbox(minus_x, btn_w,      "-",   rt, rb, screen_btn_y);
-          sbox(box_x,   num_box_w, task_tree_view.pause_level_input_.c_str(), rt, rb, screen_btn_y);
-          sbox(plus_x,  btn_w,      "+",   rt, rb, screen_btn_y);
+          sbox(minus_x, btn_w, "-",   rt, rb, screen_btn_y);
+          sbox(box_x,   val_w, task_tree_view.pause_level_input_.c_str(), rt, rb, screen_btn_y);
+          sbox(plus_x,  btn_w, "+",   rt, rb, screen_btn_y);
+
+        } else if (i == AUTOSAVE_ROW) {
+          // Auto Save: "Save Enable/Disable  [-] [Ns] [+]" — same width as Font/Level for alignment
+          const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
+          const char* lbl = task_tree_view.auto_save_enabled_
+                                 ? "Save Enable" : "Save Disable";
+          int label_px = (int)strlen(lbl) * 6;
+          int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
+          int gx = menu_x + (menu_w - group_w) / 2;
+          draw_text_sys(gx, screen_btn_y, lbl,
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+          int minus_x = gx + label_px + label_gap;
+          int box_x   = minus_x + btn_w + gap;
+          int plus_x  = box_x + val_w + gap;
+          int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
+          char secbuf[16];
+          snprintf(secbuf, sizeof(secbuf), "%ds", task_tree_view.auto_save_interval_seconds_);
+          sbox(minus_x, btn_w, "-",     rt, rb, screen_btn_y);
+          sbox(box_x,   val_w, secbuf,  rt, rb, screen_btn_y);
+          sbox(plus_x,  btn_w, "+",     rt, rb, screen_btn_y);
 
         } else if (i == SEARCH_ROW) {
-          // Model Search text input box
-          const int label_w = 110, box_w = 200, gap = 10;
-          int gx = menu_x + (menu_w - (label_w + gap + box_w)) / 2;
-          draw_text_sys(gx, screen_btn_y, "Model Search",
+          // Model Search text input box — narrower so it fits inside the 460px menu
+          const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
+          const char* lbl = "Model Search";
+          int label_px = (int)strlen(lbl) * 6;
+          int box_w = 200;
+          int group_w = label_px + label_gap + box_w;
+          int gx = menu_x + (menu_w - group_w) / 2;
+          draw_text_sys(gx, screen_btn_y, lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
-          int box_x = gx + label_w + gap;
+          int box_x = gx + label_px + label_gap;
           int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
           bool is_active = (task_tree_view.pause_active_input_ == 1);
           glColor3f(0.0f, is_active ? 1.0f : 0.5f, 0.0f);
@@ -1536,7 +1562,7 @@ void Renderer::Draw(const draw_params_s &params,
           draw_text_sys(box_x + 5, screen_btn_y, buf.c_str(), 1.0f, 1.0f, 1.0f);
 
         } else if (i == TERRAIN_HEADER_ROW) {
-          draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 4),
+          draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 3),
                         screen_btn_y, btn_labels[i], 0.0f, 0.8f, 0.0f);
         } else if (i == TERRAIN_TEX_ROW || i == TERRAIN_HGT_ROW || i == TERRAIN_DSC_ROW) {
           if (hovered) {
@@ -1548,31 +1574,12 @@ void Renderer::Draw(const draw_params_s &params,
             glEnd();
             glDisable(GL_BLEND);
           }
-          draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 4),
+          draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 3),
                         screen_btn_y, btn_labels[i],
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
-        } else if (i == AUTOSAVE_ROW) {
-          const int sz_box_w = 50, btn_w = 22, gap = 6;
-          const int label_w = 130, label_gap = 16;
-          const int group_w = label_w + label_gap + btn_w + gap + sz_box_w + gap + btn_w;
-          int gx = menu_x + (menu_w - group_w) / 2;
-          const char* auto_lbl = task_tree_view.auto_save_enabled_
-                                     ? "Save Enable"
-                                     : "Save Disable";
-          draw_text_sys(gx, screen_btn_y, auto_lbl,
-                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
-          int minus_x = gx + label_w + label_gap;
-          int box_x   = minus_x + btn_w + gap;
-          int plus_x  = box_x + sz_box_w + gap;
-          int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
-          char secbuf[16];
-          snprintf(secbuf, sizeof(secbuf), "%ds", task_tree_view.auto_save_interval_seconds_);
-          sbox(minus_x, btn_w,    "-",     rt, rb, screen_btn_y);
-          sbox(box_x,   sz_box_w, secbuf,  rt, rb, screen_btn_y);
-          sbox(plus_x,  btn_w,    "+",     rt, rb, screen_btn_y);
-
         } else {
+          // Plain centered buttons: Resume, Reset Level, Save Level, Quit
           if (hovered) {
             glEnable(GL_BLEND);
             glColor4f(0.0f, 0.8f, 0.0f, 0.35f);
@@ -1583,10 +1590,10 @@ void Renderer::Draw(const draw_params_s &params,
             glVertex2i(menu_x + 20, gl_btn_y + 12);
             glEnd();
             glDisable(GL_BLEND);
-            draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 4),
+            draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 3),
                       screen_btn_y, btn_labels[i], 1.0f, 1.0f, 1.0f);
           } else {
-            draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 4),
+            draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 3),
                       screen_btn_y, btn_labels[i], 0.0f, 0.85f, 0.0f);
           }
         }

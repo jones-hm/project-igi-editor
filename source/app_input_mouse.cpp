@@ -311,28 +311,35 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 
 					if      (btn_hit2(RESUME_ROW)) { TogglePauseMenu(); }
 					else if (btn_hit2(FONT_ROW)) {
-						const int sz_box_w = 34, btn_w = 22, gap = 6, label_w = 96, label_gap = 16;
-						const int group_w = label_w + label_gap + btn_w + gap + sz_box_w + gap + btn_w;
+						// Layout MUST match renderer: dynamic label width, val_w=44
+						const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
+						char font_lbl[32];
+						snprintf(font_lbl, sizeof(font_lbl), "Font: %s",
+								 Config::Get().useEditorFont ? "Editor" : "System");
+						int label_px = (int)strlen(font_lbl) * 6;
+						int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
 						int gx = menu_x + (menu_w - group_w) / 2;
-						int minus_x = gx + label_w + label_gap;
+						int minus_x = gx + label_px + label_gap;
 						int box_x   = minus_x + btn_w + gap;
-						int plus_x  = box_x + sz_box_w + gap;
+						int plus_x  = box_x + val_w + gap;
 						int& fs = Config::Get().systemFontSize;
-						if (x >= minus_x && x < minus_x + 22) {
+						if (x >= minus_x && x < minus_x + btn_w) {
 							fs = std::max(8, fs - 1); Config::Save();
-						} else if (x >= plus_x && x < plus_x + 22) {
+						} else if (x >= plus_x && x < plus_x + btn_w) {
 							fs = std::min(32, fs + 1); Config::Save();
 						} else if (x < minus_x) {
 							Config::Get().useEditorFont = !Config::Get().useEditorFont; Config::Save();
 						}
 					}
 					else if (btn_hit2(LEVEL_ROW)) {
-						// Level spinner: [-] [N] [+] — layout MUST match renderer
-						const int num_box_w = 40, btn_w = 22, gap = 6, label_w = 96, label_gap = 16;
-						const int group_w = label_w + label_gap + btn_w + gap + num_box_w + gap + btn_w;
+						// Layout MUST match renderer: dynamic label width, val_w=44
+						const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
+						const char* lbl = "Select Level";
+						int label_px = (int)strlen(lbl) * 6;
+						int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
 						int gx = menu_x + (menu_w - group_w) / 2;
-						int minus_x = gx + label_w + label_gap;
-						int plus_x  = minus_x + btn_w + gap + num_box_w + gap;
+						int minus_x = gx + label_px + label_gap;
+						int plus_x  = minus_x + btn_w + gap + val_w + gap;
 						int cur = pause_level_input_.empty() ? 1 : std::atoi(pause_level_input_.c_str());
 						if (x >= minus_x && x < minus_x + btn_w) {
 							cur = (cur > 1) ? cur - 1 : 1;
@@ -343,12 +350,15 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 						}
 					}
 					else if (btn_hit2(AUTOSAVE_ROW)) {
-						const int sz_box_w = 50, btn_w = 22, gap = 6;
-						const int label_w = 130, label_gap = 16;
-						const int group_w = label_w + label_gap + btn_w + gap + sz_box_w + gap + btn_w;
+						// Layout MUST match renderer: dynamic label width, val_w=44
+						const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
+						const char* lbl = Config::Get().auto_save_enabled
+								 ? "Save Enable" : "Save Disable";
+						int label_px = (int)strlen(lbl) * 6;
+						int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
 						int gx = menu_x + (menu_w - group_w) / 2;
-						int minus_x = gx + label_w + label_gap;
-						int plus_x  = minus_x + btn_w + gap + sz_box_w + gap;
+						int minus_x = gx + label_px + label_gap;
+						int plus_x  = minus_x + btn_w + gap + val_w + gap;
 						if      (x >= minus_x && x < minus_x + btn_w) AdjustAutoSaveInterval(-10);
 						else if (x >= plus_x  && x < plus_x  + btn_w) AdjustAutoSaveInterval(10);
 						else if (x >= gx      && x < minus_x)         ToggleAutoSave();

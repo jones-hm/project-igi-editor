@@ -44,6 +44,11 @@
 - Auto Save label shortened from "Auto Save Enable" / "Auto Save Disable" to **"Save Enable"** / **"Save Disable"** for a cleaner row
 - Click hit-zones updated to ±16px to match the new 38px row spacing
 
+### 🎯 Pause Menu Alignment Fixes
+- **Spinner rows now share identical layout**: Font / Select Level / Save Enable all use the same `btn_w=22`, `gap=6`, `val_w=44`, `label_gap=14` and compute label width dynamically from `strlen(lbl) * 6`. The whole label+spinner group is centered in the 460px menu, so the `- [val] +` group sits at the same horizontal position in every spinner row.
+- **Model Search text input box no longer overflows** the menu border — box width is now 200px (was 200px with a wider label) and the whole label+box group is centered.
+- **Centering math corrected**: button-label centering was using `strlen * 4` (only correct for 6-7 char strings like "PAUSED") which shifted longer strings like "Reset Level" and "Save Level" off-center. Changed to `strlen * 3` (half of the 6px font width) so all plain buttons center correctly relative to the menu's vertical axis. Title "IGI EDITOR" and subtitle "PAUSED" use the same correct formula.
+
 ---
 
 ### ✨ New Features
