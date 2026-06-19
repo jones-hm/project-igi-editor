@@ -2526,6 +2526,7 @@ bool Renderer::LoadGraphOverlayFile(const std::string& graphFilePath,
   graph_overlay_path_ = graphFilePath;
   graph_overlay_offset_ = worldOffset;
   graph_overlay_selected_ = -1;
+  graph_link_source_ = -1;
   graph_overlay_dirty_ = false;
 
   if (graph_overlay_.valid && !graph_overlay_.nodes.empty()) {
@@ -2607,6 +2608,61 @@ void Renderer::DeleteSelectedGraphNode() {
   graph_overlay_selected_ = -1;
   graph_overlay_dirty_ = true;
   Logger::Get().Log(LogLevel::INFO, "[GRAPH] Deleted node " + std::to_string(id));
+}
+
+std::string Renderer::AddGraphLinkStep() {
+  if (!graph_overlay_.valid) return "";
+  // First step: mark the selected node as the link source.
+  if (graph_link_source_ < 0) {
+    if (graph_overlay_selected_ < 0) return "Select a node first, then Alt++";
+    graph_link_source_ = graph_overlay_selected_;
+    return "Link source: node " + std::to_string(graph_link_source_) +
+           " — select target, press Alt++ to link";
+  }
+  // Second step: link source to the currently selected node.
+  const int src = graph_link_source_;
+  const int dst = graph_overlay_selected_;
+  graph_link_source_ = -1;
+  if (dst < 0) return "Link cancelled (no target selected)";
+  if (dst == src) return "Link cancelled (same node)";
+  auto exists = std::find_if(graph_overlay_.edges.begin(), graph_overlay_.edges.end(),
+      [&](const GraphEdge& e) {
+        return (e.node1 == src && e.node2 == dst) || (e.node1 == dst && e.node2 == src);
+      });
+  if (exists != graph_overlay_.edges.end())
+    return "Link " + std::to_string(src) + "-" + std::to_string(dst) + " already exists";
+  GraphEdge e; e.node1 = src; e.node2 = dst; e.link_type = 1;
+  graph_overlay_.edges.push_back(e);
+  graph_overlay_dirty_ = true;
+  Logger::Get().Log(LogLevel::INFO, "[GRAPH] Added link " +
+      std::to_string(src) + "-" + std::to_string(dst));
+  return "Link added " + std::to_string(src) + "-" + std::to_string(dst);
+}
+
+std::string Renderer::RemoveGraphLinkStep() {
+  if (!graph_overlay_.valid) return "";
+  if (graph_link_source_ < 0) {
+    if (graph_overlay_selected_ < 0) return "Select a node first, then Alt+-";
+    graph_link_source_ = graph_overlay_selected_;
+    return "Link source: node " + std::to_string(graph_link_source_) +
+           " — select target, press Alt+- to unlink";
+  }
+  const int src = graph_link_source_;
+  const int dst = graph_overlay_selected_;
+  graph_link_source_ = -1;
+  if (dst < 0) return "Unlink cancelled (no target selected)";
+  if (dst == src) return "Unlink cancelled (same node)";
+  auto it = std::find_if(graph_overlay_.edges.begin(), graph_overlay_.edges.end(),
+      [&](const GraphEdge& e) {
+        return (e.node1 == src && e.node2 == dst) || (e.node1 == dst && e.node2 == src);
+      });
+  if (it == graph_overlay_.edges.end())
+    return "No link between " + std::to_string(src) + "-" + std::to_string(dst);
+  graph_overlay_.edges.erase(it);
+  graph_overlay_dirty_ = true;
+  Logger::Get().Log(LogLevel::INFO, "[GRAPH] Removed link " +
+      std::to_string(src) + "-" + std::to_string(dst));
+  return "Link removed " + std::to_string(src) + "-" + std::to_string(dst);
 }
 
 void Renderer::NudgeSelectedGraphNode(double dx, double dy, double dz) {
@@ -2874,23 +2930,34 @@ void Renderer::DrawGraphOverlayInternal(
     const GraphNode* h = GRAPH_FindNode(graph_overlay_, hoveredId);
     if (h) ring(hoveredId, hsFor(h->radius) + 3.0f, 1.0f, 1.0f, 1.0f);
   }
+  // Link source node (two-step link edit) — green dashed-style double ring.
+  if (graph_link_source_ >= 0 && graph_link_source_ != graph_overlay_selected_) {
+    const GraphNode* ls = GRAPH_FindNode(graph_overlay_, graph_link_source_);
+    if (ls) {
+      ring(graph_link_source_, hsFor(ls->radius) + 6.0f, 0.2f, 1.0f, 0.2f);
+      ring(graph_link_source_, hsFor(ls->radius) + 9.0f, 0.2f, 1.0f, 0.2f);
+    }
+  }
 
   // --- Node id labels (visible nodes only, top-down y). ---
-  for (size_t i = 0; i < NN; ++i) {
-    if (!nsv[i].vis) continue;
-    const GraphNode& n = graph_overlay_.nodes[i];
-    char lbl[16]; snprintf(lbl, sizeof(lbl), "%d", n.id);
-    draw_text_sm((int)nsv[i].sx + (int)hsFor(n.radius) + 2, vpH - (int)nsv[i].sy - 6, lbl, 1.0f, 1.0f, 1.0f);
+  if (graph_overlay_show_labels_) {
+    for (size_t i = 0; i < NN; ++i) {
+      if (!nsv[i].vis) continue;
+      const GraphNode& n = graph_overlay_.nodes[i];
+      char lbl[16]; snprintf(lbl, sizeof(lbl), "%d", n.id);
+      draw_text_sm((int)nsv[i].sx + (int)hsFor(n.radius) + 2, vpH - (int)nsv[i].sy - 6, lbl, 1.0f, 1.0f, 1.0f);
+    }
   }
 
   // --- Title banner: graph id + Area (from graph_level<N>.json) + counts. ---
   {
-    char title[160];
-    snprintf(title, sizeof(title), "Graph %s%s%s   (%zu nodes, %zu links)",
+    char title[200];
+    snprintf(title, sizeof(title), "Graph %s%s%s   (%zu nodes, %zu links)%s",
              graph_overlay_taskid_.empty() ? "?" : graph_overlay_taskid_.c_str(),
              graph_overlay_area_.empty() ? "" : " - ",
              graph_overlay_area_.c_str(),
-             graph_overlay_.nodes.size(), graph_overlay_.edges.size());
+             graph_overlay_.nodes.size(), graph_overlay_.edges.size(),
+             graph_overlay_show_labels_ ? "" : "   [labels off]");
     draw_text_sm(360, 22, title, 1.0f, 0.85f, 0.4f);
   }
 
@@ -3043,12 +3110,16 @@ void Renderer::DrawGraphNodes3D(const draw_params_s& params) {
     if (!na || !nb) continue;
     const glm::dvec3 wa = graph_overlay_offset_ + glm::dvec3(na->x, na->y, na->z);
     const glm::dvec3 wb = graph_overlay_offset_ + glm::dvec3(nb->x, nb->y, nb->z);
+    // Draw edges at the vertical centre of the node boxes (z + H) so they sit
+    // above the ground and are clearly visible, not buried at ground level.
+    const float Ha = baseH * std::max(1.0f, (float)na->radius);
+    const float Hb = baseH * std::max(1.0f, (float)nb->radius);
     const bool active = graph_overlay_selected_ >= 0 &&
                         (e.node1 == graph_overlay_selected_ || e.node2 == graph_overlay_selected_);
     if (active) glColor4f(1.0f, 0.6f, 0.0f, 0.95f);
     else        glColor4f(0.72f, 0.72f, 0.72f, 0.55f);
-    glVertex3f((float)wa.x, (float)wa.y, (float)wa.z);
-    glVertex3f((float)wb.x, (float)wb.y, (float)wb.z);
+    glVertex3f((float)wa.x, (float)wa.y, (float)wa.z + Ha);
+    glVertex3f((float)wb.x, (float)wb.y, (float)wb.z + Hb);
   }
   glEnd();
 

@@ -273,8 +273,70 @@ TEST_F(GraphParserTest, WriteReproducesOriginalRoutingTable) {
 }
 
 // ------------------------------------------------------------
-//  GRAPH_NodeKind classification (pure, no game file)
+//  Legacy (alternate tagged) format — level 8 graph1.dat
+//  These files have no magic (first byte 0x05) and use 1-byte tags.
 // ------------------------------------------------------------
+static std::string GraphPathLegacy() {
+    return Utils::GetIGIRootPath() + "\\missions\\location0\\level8\\graphs\\graph1.dat";
+}
+
+TEST_F(GraphParserTest, LegacyFormatParsesValid) {
+    GraphFile g = GRAPH_Parse(GraphPathLegacy());
+    ASSERT_TRUE(g.valid) << "Legacy parse failed: " << g.error;
+    EXPECT_TRUE(g.is_legacy);
+    EXPECT_GT(g.nodes.size(), 0u);
+    EXPECT_GT(g.edges.size(), 0u);
+}
+
+TEST_F(GraphParserTest, LegacyFormatNodeDataIsSane) {
+    GraphFile g = GRAPH_Parse(GraphPathLegacy());
+    ASSERT_TRUE(g.valid);
+    for (const auto& n : g.nodes) {
+        EXPECT_GE(n.id, 0);
+        EXPECT_TRUE(std::isfinite(n.x));
+        EXPECT_TRUE(std::isfinite(n.y));
+        EXPECT_TRUE(std::isfinite(n.z));
+    }
+}
+
+TEST_F(GraphParserTest, LegacyWriteRoundTrip) {
+    GraphFile g = GRAPH_Parse(GraphPathLegacy());
+    ASSERT_TRUE(g.valid);
+    const std::string out = TempOut("igi_graph_legacy_rt.dat");
+    ASSERT_TRUE(GRAPH_Write(GraphPathLegacy(), out, g));
+
+    GraphFile r = GRAPH_Parse(out);
+    ASSERT_TRUE(r.valid);
+    EXPECT_TRUE(r.is_legacy);
+    ASSERT_EQ(r.nodes.size(), g.nodes.size());
+    ASSERT_EQ(r.edges.size(), g.edges.size());
+    for (size_t i = 0; i < g.nodes.size(); ++i) {
+        EXPECT_EQ(r.nodes[i].id, g.nodes[i].id);
+        EXPECT_DOUBLE_EQ(r.nodes[i].x, g.nodes[i].x);
+        EXPECT_DOUBLE_EQ(r.nodes[i].y, g.nodes[i].y);
+        EXPECT_DOUBLE_EQ(r.nodes[i].z, g.nodes[i].z);
+        EXPECT_EQ(r.nodes[i].criteria, g.nodes[i].criteria);
+    }
+    std::filesystem::remove(out);
+}
+
+TEST_F(GraphParserTest, LegacySavePatchesPosition) {
+    GraphFile g = GRAPH_Parse(GraphPathLegacy());
+    ASSERT_TRUE(g.valid);
+    ASSERT_GT(g.nodes.size(), 0u);
+    GraphFile edited = g;
+    edited.nodes[0].x += 500.0;
+
+    const std::string out = TempOut("igi_graph_legacy_save.dat");
+    ASSERT_TRUE(GRAPH_Save(GraphPathLegacy(), out, edited));
+
+    GraphFile r = GRAPH_Parse(out);
+    ASSERT_TRUE(r.valid);
+    const GraphNode* rn = GRAPH_FindNode(r, g.nodes[0].id);
+    ASSERT_NE(rn, nullptr);
+    EXPECT_DOUBLE_EQ(rn->x, g.nodes[0].x + 500.0);
+    std::filesystem::remove(out);
+}
 
 static GraphNode NodeWithCriteria(const std::string& c) {
     GraphNode n; n.id = 1; n.criteria = c; return n;

@@ -393,6 +393,13 @@ void App::DispatchEventBindings() {
 		if (Check("ScaleGraphNodeDouble")) { renderer_.ScaleSelectedGraphNode(2.0f); return; }
 		if (Check("CreateGraphNode"))      { renderer_.CreateGraphNode();           return; }
 		if (Check("DeleteGraphNode"))      { renderer_.DeleteSelectedGraphNode();    return; }
+		if (Check("AddGraphLink"))         { status_message_ = renderer_.AddGraphLinkStep();        return; }
+		if (Check("RemoveGraphLink"))      { status_message_ = renderer_.RemoveGraphLinkStep();     return; }
+		if (Check("ToggleGraphNodeLabels")) {
+			renderer_.ToggleGraphLabels();
+			status_message_ = renderer_.GraphLabelsVisible() ? "Graph labels: ON" : "Graph labels: OFF";
+			return;
+		}
 	}
 	if (Check("ShowGraphNodes")) {
 		// Show/hide the navigation graph of the selected AIGraph task. The graph

@@ -1,5 +1,28 @@
 # Changelogs
 
+## 3.1.1-pre — Graph Link Editing, Legacy Format & Edge Visibility
+
+### ✨ New Features
+- **Add/Remove Links (Two-Step Workflow)**: Navigation edges between graph nodes can now be added and removed interactively. Select node A, press `Alt++` to mark it as the link source (green double-ring indicator), select node B, press `Alt++` again to create the link. Use `Alt+-` to remove a link the same way.
+- **Node Label Toggle**: On-screen node ID labels can now be toggled on/off with `Alt+L`. The title banner shows `[labels off]` when disabled.
+- **Legacy Graph Format Support**: Added a parser, full writer, and position-patch saver for the undocumented alternate tagged graph format (1-byte type tags: `0x05`=int32, `0x06`=float, `0x08`=Vec3d, `0x09`=string, no magic number). This fixes the "bad magic" error that prevented level 8's `graph1.dat` and `graph7.dat` (and other legacy graphs) from loading and displaying.
+
+### 🐛 Bug Fixes
+- **Fixed: "Bad magic" error on level 8 graph1**: Graph files using the legacy tagged format (no `0xFFEEDDCC` magic) are now auto-detected and parsed transparently — both standard and legacy formats produce the same editable `GraphFile` and support full add/remove/edit/save.
+- **Fixed: Links not visible / not above ground**: Edge lines were drawn at node Z (ground level), getting buried under terrain. Edges now render at the vertical centre of the node boxes (`z + H`) so they sit above ground and are clearly visible.
+
+### ⌨️ New Keybindings
+| Event | Binding | Action |
+|-------|---------|--------|
+| `AddGraphLink` | `<Alt><Plus>` | Two-step: mark source node, then link to target node |
+| `RemoveGraphLink` | `<Alt><Minus>` | Two-step: mark source node, then unlink target node |
+| `ToggleGraphNodeLabels` | `<Alt><L>` | Toggle on-screen node ID labels |
+
+### 🧪 Tests
+- Added 4 new tests for the legacy graph format: parse validity, node data sanity, write round-trip, and position-patch save.
+
+---
+
 ## 3.1.0-pre — Visual 3D Graph Editor
 
 - Added: Visual 3D Graph Editor (interactive 3D nodes, material color coding, and path/edge rendering via F3 overlay).

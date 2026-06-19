@@ -116,6 +116,32 @@ After all node records, one group of tagged records per edge:
 2. `SIG_EDGE_LINK2` — int32 (second node ID)
 3. `0x0423` sub-tag variant — int32 link type
 
+### 2.7 Legacy (Alternate Tagged) Format
+
+Some graph files (e.g. level 8 `graph1.dat`, `graph7.dat`) use an older **tagged** format with **no magic number**. The editor auto-detects this format (first byte `0x05`) and parses it transparently — both formats produce the same `GraphFile` struct and support full editing.
+
+**1-byte type tags:**
+
+| Tag  | Type    | Size (incl. tag) |
+|------|---------|-------------------|
+| `0x05` | int32   | 5 bytes |
+| `0x06` | float32 | 5 bytes |
+| `0x08` | vec3d   | 25 bytes (3 × double) |
+| `0x09` | bstring | 2 + len (1 length byte + data, last byte null) |
+
+**Layout:**
+
+```
+header:  nodeCount(i32)  maxNodes(i32)  edgeCount(i32)
+nodes:   ID  pos(v3d)  gamma  radius  f3  material  criteria
+         numLinks  numLinks×targetId  numLinks×linkType
+         hasGraphLink  [graphLinkTarget  graphLinkType]   (last 2 only if hasGraphLink≠0)
+edges:   edgeCount × (link1  link2  linkType)
+adjacency table: maxNodes × maxNodes × 8 bytes   (at END of file)
+```
+
+Key differences from the standard format: no magic, 1-byte tags instead of 8-byte record headers, and the adjacency table is at the **end** of the file rather than the start.
+
 ---
 
 ## 3. Node Fields and Criteria
@@ -243,7 +269,7 @@ The selected node also gets a yellow wireframe outline at `H × 1.08` (8% oversi
 
 ### Edge Lines
 
-Edges are drawn as 3D lines between node centres at `glLineWidth(1.5)`. Edges connected to the selected node are drawn in orange `(1.0, 0.6, 0.0)`, all others in translucent grey `(0.72, 0.72, 0.72, 0.55)`.
+Edges are drawn as 3D lines between node-box **centres** (at height `z + H`, i.e. the vertical middle of each node box) at `glLineWidth(1.5)`. This lifts them above ground level so they are always visible. Edges connected to the selected node are drawn in orange `(1.0, 0.6, 0.0)`, all others in translucent grey `(0.72, 0.72, 0.72, 0.55)`.
 
 ### Screen-space Overlays (HUD pass)
 
@@ -304,12 +330,28 @@ Set in `editor/qed/qedkeybindings.qsc` via `SetEventBinding()`.
 
 | Event name              | Default binding                       | Action                                    |
 |-------------------------|---------------------------------------|-------------------------------------------|
-| `ShowGraphNodes`        | `<F3>`                                | Toggle graph overlay on/off               |
+| `ShowGraphNodes`        | `<F7>`                                | Toggle graph overlay on/off               |
 | `ScaleGraphNode`        | `<LeftMouseButton><Decimal>`          | Reset selected node radius to 1.0         |
 | `ScaleGraphNodeHalfe`   | `<LeftMouseButton><Divide>`           | Halve selected node radius (× 0.5)        |
 | `ScaleGraphNodeDouble`  | `<LeftMouseButton><Multiply>`         | Double selected node radius (× 2.0)       |
 | `CreateGraphNode`       | `<LeftMouseButton><Plus>`             | Create a new node at the current position |
 | `DeleteGraphNode`       | `<LeftMouseButton><Minus>`            | Delete the selected node                  |
+| `AddGraphLink`          | `<Alt><Plus>`                         | Two-step: mark source, then link to target |
+| `RemoveGraphLink`       | `<Alt><Minus>`                        | Two-step: mark source, then unlink target |
+| `ToggleGraphNodeLabels` | `<Alt><L>`                            | Toggle on-screen node ID labels           |
+
+### Adding / Removing Links (Two-Step)
+
+Links (edges) between nodes are edited in a two-step workflow:
+
+1. **Left-click** the first node to select it (turns orange).
+2. Press **Alt + +** (AddGraphLink) — the node is marked as the link source (green double ring). The status bar confirms: *"Link source: node N — select target, press Alt++ to link"*.
+3. **Left-click** the second node to select it.
+4. Press **Alt + +** again — a navigation edge is created between the two nodes.
+
+To **remove** a link, use the same steps but press **Alt + −** (RemoveGraphLink) instead. If no link exists between the two nodes, the status bar reports it.
+
+The link source is cleared automatically after the second step, or when the graph overlay is hidden/reloaded.
 
 The `ScaleGraphNode*` bindings change `node.radius`, which also directly scales the 3D visual box because the box half-extent is `QGraphNodeSize × 100 × max(1.0, radius)`.
 

@@ -27,6 +27,13 @@ struct GraphNode {
     std::string criteria;        // e.g. "NODECRITERIA_VIEW"
     int    link1    = -1;        // connected node ID (-1 = none)
     int    link2    = -1;        // connected node ID (-1 = none)
+    // Legacy (alternate tagged) format only — preserved verbatim on save.
+    float  f3       = 0.5f;      // 3rd float after radius (purpose unknown)
+    std::vector<int> legacy_link_targets;  // per-node link target IDs
+    std::vector<int> legacy_link_types;    // per-node link types
+    int    legacy_graph_link     = 0;      // 0 = no inter-graph link, 1 = has
+    int    legacy_graph_link_tgt = 0;
+    int    legacy_graph_link_typ = 0;
 };
 
 struct GraphEdge {
@@ -41,6 +48,7 @@ struct GraphFile {
     std::vector<GraphEdge>  edges;
     bool                    valid = false;
     std::string             error;
+    bool                    is_legacy = false;  // alternate tagged format (no magic)
 };
 
 // Visual/semantic classification of a node, derived from its criteria string.
@@ -58,6 +66,10 @@ const GraphNode* GRAPH_FindNode(const GraphFile& graph, int id);
 // Parse a navigation graph .dat file.
 // Filepath example: missions/location0/level1/graphs/graph1.dat
 GraphFile GRAPH_Parse(const std::string& filepath);
+
+// Parse the legacy alternate tagged format (no magic; 1-byte type tags).
+// Called internally by GRAPH_Parse when the standard magic is absent.
+GraphFile GRAPH_ParseLegacy(const uint8_t* data, size_t size, const std::string& filepath);
 
 // Save edited node positions back to disk.
 // Re-reads the original bytes from `srcPath`, overwrites the X/Y/Z position of

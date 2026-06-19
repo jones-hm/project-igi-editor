@@ -164,6 +164,11 @@ namespace {
     }
 }
 
+// Forward declarations for legacy format (defined after GRAPH_Write).
+static bool GRAPH_WriteLegacy(const std::string& outPath, const GraphFile& graph);
+static bool GRAPH_SaveLegacy(const std::string& srcPath, const std::string& outPath,
+                             const GraphFile& graph);
+
 bool GRAPH_Write(const std::string& srcPath, const std::string& outPath,
                  const GraphFile& graph) {
     std::ifstream file(srcPath, std::ios::binary | std::ios::ate);
@@ -172,6 +177,21 @@ bool GRAPH_Write(const std::string& srcPath, const std::string& outPath,
         return false;
     }
     const size_t fileSize = static_cast<size_t>(file.tellg());
+    file.seekg(0);
+    // Detect legacy tagged format (first byte 0x05, no magic).
+    {
+        uint8_t first4[4] = {};
+        file.read(reinterpret_cast<char*>(first4), 4);
+        file.close();
+        uint32_t magic = 0; std::memcpy(&magic, first4, 4);
+        if (magic != GRAPH_MAGIC && first4[0] == 0x05) {
+            GraphFile w = graph;
+            w.is_legacy = true;
+            return GRAPH_WriteLegacy(outPath, w);
+        }
+    }
+    file.open(srcPath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) return false;
     file.seekg(0);
     constexpr size_t HEADER_SIZE = 30;
     if (fileSize < HEADER_SIZE) return false;
@@ -297,6 +317,333 @@ bool GRAPH_Write(const std::string& srcPath, const std::string& outPath,
 }
 
 // ---------------------------------------------------------------------------
+// Legacy (alternate tagged) format — 1-byte type tags, no magic.
+//   0x05 = int32   (5 bytes: tag + LE int32)
+//   0x06 = float32 (5 bytes: tag + LE float)
+//   0x08 = vec3d   (25 bytes: tag + 3 × LE double)
+//   0x09 = bstring (2 + len: tag + length byte + data, last byte is null)
+//
+// Layout:
+//   header:  nodeCount(i32)  maxNodes(i32)  edgeCount(i32)
+//   nodes:   ID  pos(v3d)  gamma  radius  f3  material  criteria
+//            numLinks  numLinks×targetId  numLinks×linkType
+//            hasGraphLink  [graphLinkTarget  graphLinkType]   (if hasGraphLink)
+//   edges:   edgeCount × (link1  link2  linkType)
+//   adjacency table: maxNodes × maxNodes × 8 bytes (raw, at END)
+// ---------------------------------------------------------------------------
+
+namespace {
+    // Read helpers for the legacy tagged format.
+    bool LegacyReadI32(const uint8_t* data, size_t size, size_t& off, int32_t& out) {
+        if (off + 5 > size || data[off] != 0x05) return false;
+        std::memcpy(&out, data + off + 1, 4);
+        off += 5; return true;
+    }
+    bool LegacyReadF32(const uint8_t* data, size_t size, size_t& off, float& out) {
+        if (off + 5 > size || data[off] != 0x06) return false;
+        std::memcpy(&out, data + off + 1, 4);
+        off += 5; return true;
+    }
+    bool LegacyReadV3d(const uint8_t* data, size_t size, size_t& off, double& x, double& y, double& z) {
+        if (off + 25 > size || data[off] != 0x08) return false;
+        std::memcpy(&x, data + off + 1, 8);
+        std::memcpy(&y, data + off + 9, 8);
+        std::memcpy(&z, data + off + 17, 8);
+        off += 25; return true;
+    }
+    bool LegacyReadStr(const uint8_t* data, size_t size, size_t& off, std::string& out) {
+        if (off + 2 > size || data[off] != 0x09) return false;
+        const uint8_t len = data[off + 1];
+        if (off + 2 + len > size) return false;
+        const char* p = reinterpret_cast<const char*>(data + off + 2);
+        out.assign(p, len);
+        while (!out.empty() && out.back() == '\0') out.pop_back();
+        off += 2 + len; return true;
+    }
+    // Write helpers.
+    void LegacyPutI32(std::vector<uint8_t>& b, int32_t v) {
+        b.push_back(0x05);
+        b.push_back((uint8_t)v); b.push_back((uint8_t)(v >> 8));
+        b.push_back((uint8_t)(v >> 16)); b.push_back((uint8_t)(v >> 24));
+    }
+    void LegacyPutF32(std::vector<uint8_t>& b, float v) {
+        uint32_t u; std::memcpy(&u, &v, 4);
+        b.push_back(0x06);
+        b.push_back((uint8_t)u); b.push_back((uint8_t)(u >> 8));
+        b.push_back((uint8_t)(u >> 16)); b.push_back((uint8_t)(u >> 24));
+    }
+    void LegacyPutV3d(std::vector<uint8_t>& b, double x, double y, double z) {
+        b.push_back(0x08);
+        uint64_t u; std::memcpy(&u, &x, 8);
+        for (int i = 0; i < 8; ++i) b.push_back((uint8_t)(u >> (i * 8)));
+        std::memcpy(&u, &y, 8);
+        for (int i = 0; i < 8; ++i) b.push_back((uint8_t)(u >> (i * 8)));
+        std::memcpy(&u, &z, 8);
+        for (int i = 0; i < 8; ++i) b.push_back((uint8_t)(u >> (i * 8)));
+    }
+    void LegacyPutStr(std::vector<uint8_t>& b, const std::string& s) {
+        std::string str = s;
+        if (str.size() > 254) str.resize(254);
+        b.push_back(0x09);
+        b.push_back((uint8_t)(str.size() + 1));  // length includes null terminator
+        b.insert(b.end(), str.begin(), str.end());
+        b.push_back(0);
+    }
+}
+
+GraphFile GRAPH_ParseLegacy(const uint8_t* data, size_t size, const std::string& filepath) {
+    GraphFile result;
+    result.is_legacy = true;
+    size_t off = 0;
+
+    // Header: nodeCount, maxNodes, edgeCount
+    int32_t nodeCount = 0, maxNodes = 0, edgeCount = 0;
+    if (!LegacyReadI32(data, size, off, nodeCount) ||
+        !LegacyReadI32(data, size, off, maxNodes) ||
+        !LegacyReadI32(data, size, off, edgeCount)) {
+        result.error = "Legacy header parse failed: " + filepath;
+        return result;
+    }
+    if (maxNodes <= 0 || maxNodes > 4096) {
+        result.error = "Legacy MaxNodes implausible: " + std::to_string(maxNodes);
+        return result;
+    }
+    result.max_nodes = maxNodes;
+
+    // Node records
+    for (int i = 0; i < nodeCount; ++i) {
+        GraphNode node;
+        int32_t id = 0;
+        if (!LegacyReadI32(data, size, off, id)) break;
+        node.id = id;
+        if (!LegacyReadV3d(data, size, off, node.x, node.y, node.z)) break;
+        if (!LegacyReadF32(data, size, off, node.gamma)) break;
+        if (!LegacyReadF32(data, size, off, node.radius)) break;
+        if (!LegacyReadF32(data, size, off, node.f3)) break;
+        if (!LegacyReadI32(data, size, off, node.material)) break;
+        if (!LegacyReadStr(data, size, off, node.criteria)) break;
+
+        // Per-node link list: numLinks, targets[], types[]
+        int32_t numLinks = 0;
+        if (!LegacyReadI32(data, size, off, numLinks)) break;
+        for (int j = 0; j < numLinks; ++j) {
+            int32_t t = 0; if (!LegacyReadI32(data, size, off, t)) { break; }
+            node.legacy_link_targets.push_back(t);
+        }
+        for (int j = 0; j < numLinks; ++j) {
+            int32_t t = 0; if (!LegacyReadI32(data, size, off, t)) { break; }
+            node.legacy_link_types.push_back(t);
+        }
+        // Inter-graph link
+        if (!LegacyReadI32(data, size, off, node.legacy_graph_link)) break;
+        if (node.legacy_graph_link != 0) {
+            LegacyReadI32(data, size, off, node.legacy_graph_link_tgt);
+            LegacyReadI32(data, size, off, node.legacy_graph_link_typ);
+        }
+        result.nodes.push_back(std::move(node));
+    }
+
+    // Edge records: edgeCount × (link1, link2, linkType)
+    for (int i = 0; i < edgeCount; ++i) {
+        int32_t l1 = 0, l2 = 0, lt = 0;
+        if (!LegacyReadI32(data, size, off, l1)) break;
+        if (!LegacyReadI32(data, size, off, l2)) break;
+        if (!LegacyReadI32(data, size, off, lt)) break;
+        GraphEdge e; e.node1 = l1; e.node2 = l2; e.link_type = lt;
+        result.edges.push_back(e);
+    }
+
+    // Attach edge link IDs to nodes (same as standard format).
+    for (const GraphEdge& e : result.edges) {
+        for (GraphNode& n : result.nodes) {
+            if (n.id == e.node1) {
+                if (n.link1 == -1) n.link1 = e.node2;
+                else if (n.link2 == -1) n.link2 = e.node2;
+            } else if (n.id == e.node2) {
+                if (n.link1 == -1) n.link1 = e.node1;
+                else if (n.link2 == -1) n.link2 = e.node1;
+            }
+        }
+    }
+
+    result.valid = true;
+    Logger::Get().Log(LogLevel::INFO,
+        "[GRAPH] Legacy parse " + filepath + " | nodes=" + std::to_string(result.nodes.size()) +
+        " edges=" + std::to_string(result.edges.size()) +
+        " maxNodes=" + std::to_string(maxNodes));
+    return result;
+}
+
+// Full serializer for the legacy tagged format. Regenerates all tagged records
+// from `graph` and rebuilds the adjacency (APSP) table at the end.
+static bool GRAPH_WriteLegacy(const std::string& outPath, const GraphFile& graph) {
+    const int maxNodes = graph.max_nodes > 0 ? graph.max_nodes : 100;
+    std::vector<uint8_t> out;
+
+    // Header
+    LegacyPutI32(out, (int32_t)graph.nodes.size());
+    LegacyPutI32(out, maxNodes);
+    LegacyPutI32(out, (int32_t)graph.edges.size());
+
+    // Nodes
+    for (const GraphNode& n : graph.nodes) {
+        LegacyPutI32(out, n.id);
+        LegacyPutV3d(out, n.x, n.y, n.z);
+        LegacyPutF32(out, n.gamma);
+        LegacyPutF32(out, n.radius);
+        LegacyPutF32(out, n.f3);
+        LegacyPutI32(out, n.material);
+        LegacyPutStr(out, n.criteria);
+        const int nl = (int)n.legacy_link_targets.size();
+        LegacyPutI32(out, nl);
+        for (int t : n.legacy_link_targets) LegacyPutI32(out, t);
+        for (int t : n.legacy_link_types)   LegacyPutI32(out, t);
+        LegacyPutI32(out, n.legacy_graph_link);
+        if (n.legacy_graph_link != 0) {
+            LegacyPutI32(out, n.legacy_graph_link_tgt);
+            LegacyPutI32(out, n.legacy_graph_link_typ);
+        }
+    }
+
+    // Edges
+    for (const GraphEdge& e : graph.edges) {
+        LegacyPutI32(out, e.node1);
+        LegacyPutI32(out, e.node2);
+        LegacyPutI32(out, e.link_type);
+    }
+
+    // Adjacency (APSP) table — same Floyd-Warshall as the standard format.
+    {
+        const size_t adjBytes = static_cast<size_t>(maxNodes) * maxNodes * 8;
+        std::vector<uint8_t> adj(adjBytes);
+        const int32_t kNeg = -1; const float kNegF = -1.0f;
+        for (size_t k = 0; k < adjBytes / 8; ++k) {
+            std::memcpy(&adj[k * 8],     &kNeg,  4);
+            std::memcpy(&adj[k * 8 + 4], &kNegF, 4);
+        }
+
+        std::vector<int> ids;
+        std::vector<const GraphNode*> np;
+        for (const GraphNode& n : graph.nodes)
+            if (n.id > 0 && n.id < maxNodes) { ids.push_back(n.id); np.push_back(&n); }
+        const int n = static_cast<int>(ids.size());
+        std::unordered_map<int, int> idx;
+        for (int i = 0; i < n; ++i) idx[ids[i]] = i;
+
+        const double INF = 1e30;
+        std::vector<double> dist(static_cast<size_t>(n) * n, INF);
+        std::vector<int>    pred(static_cast<size_t>(n) * n, -1);
+        for (int i = 0; i < n; ++i) dist[static_cast<size_t>(i) * n + i] = 0.0;
+
+        for (const GraphEdge& e : graph.edges) {
+            auto a = idx.find(e.node1), b = idx.find(e.node2);
+            if (a == idx.end() || b == idx.end() || a->second == b->second) continue;
+            const int ia = a->second, ib = b->second;
+            const double dx = np[ia]->x - np[ib]->x, dy = np[ia]->y - np[ib]->y,
+                         dz = np[ia]->z - np[ib]->z;
+            const double w = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (w < dist[static_cast<size_t>(ia) * n + ib]) {
+                dist[static_cast<size_t>(ia) * n + ib] = w; pred[static_cast<size_t>(ia) * n + ib] = ids[ia];
+                dist[static_cast<size_t>(ib) * n + ia] = w; pred[static_cast<size_t>(ib) * n + ia] = ids[ib];
+            }
+        }
+        for (int k = 0; k < n; ++k)
+            for (int i = 0; i < n; ++i) {
+                const double dik = dist[static_cast<size_t>(i) * n + k];
+                if (dik >= INF) continue;
+                for (int j = 0; j < n; ++j) {
+                    const double nd = dik + dist[static_cast<size_t>(k) * n + j];
+                    if (nd < dist[static_cast<size_t>(i) * n + j]) {
+                        dist[static_cast<size_t>(i) * n + j] = nd;
+                        pred[static_cast<size_t>(i) * n + j] = pred[static_cast<size_t>(k) * n + j];
+                    }
+                }
+            }
+        for (int i = 0; i < n; ++i)
+            for (int j = 0; j < n; ++j) {
+                if (i == j) continue;
+                const double dd = dist[static_cast<size_t>(i) * n + j];
+                if (dd >= INF) continue;
+                const size_t off2 = (static_cast<size_t>(ids[i]) * maxNodes + ids[j]) * 8;
+                const int32_t ref = pred[static_cast<size_t>(i) * n + j];
+                const float   fdd = static_cast<float>(dd);
+                std::memcpy(&adj[off2],     &ref, 4);
+                std::memcpy(&adj[off2 + 4], &fdd, 4);
+            }
+        out.insert(out.end(), adj.begin(), adj.end());
+    }
+
+    std::ofstream f(outPath, std::ios::binary | std::ios::trunc);
+    if (!f.is_open()) {
+        Logger::Get().Log(LogLevel::ERR, "[GRAPH] Legacy write: cannot open: " + outPath);
+        return false;
+    }
+    f.write(reinterpret_cast<const char*>(out.data()), static_cast<std::streamsize>(out.size()));
+    if (!f) return false;
+    Logger::Get().Log(LogLevel::INFO, "[GRAPH] Legacy wrote " +
+        std::to_string(graph.nodes.size()) + " nodes, " +
+        std::to_string(graph.edges.size()) + " edges to: " + outPath);
+    return true;
+}
+
+// Position-patch for the legacy format: walks the tagged node records and
+// overwrites the 3 position doubles of matched node IDs. File size unchanged.
+static bool GRAPH_SaveLegacy(const std::string& srcPath, const std::string& outPath,
+                             const GraphFile& graph) {
+    std::ifstream file(srcPath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) return false;
+    const size_t fileSize = static_cast<size_t>(file.tellg());
+    file.seekg(0);
+    std::vector<uint8_t> buf(fileSize);
+    if (!file.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(fileSize)))
+        return false;
+    file.close();
+
+    size_t off = 0;
+    int32_t nodeCount = 0, maxNodes = 0, edgeCount = 0;
+    if (!LegacyReadI32(buf.data(), fileSize, off, nodeCount) ||
+        !LegacyReadI32(buf.data(), fileSize, off, maxNodes) ||
+        !LegacyReadI32(buf.data(), fileSize, off, edgeCount)) return false;
+
+    auto findEdited = [&graph](int id) -> const GraphNode* {
+        for (const GraphNode& n : graph.nodes)
+            if (n.id == id) return &n;
+        return nullptr;
+    };
+
+    for (int i = 0; i < nodeCount; ++i) {
+        int32_t id = 0; float f; std::string s;
+        double x, y, z;
+        if (!LegacyReadI32(buf.data(), fileSize, off, id)) break;
+        // Position v3d: tag at off, 3 doubles at off+1
+        if (off + 25 > fileSize || buf[off] != 0x08) break;
+        if (const GraphNode* ed = findEdited(id)) {
+            std::memcpy(buf.data() + off + 1,  &ed->x, 8);
+            std::memcpy(buf.data() + off + 9,  &ed->y, 8);
+            std::memcpy(buf.data() + off + 17, &ed->z, 8);
+        }
+        off += 25;
+        if (!LegacyReadF32(buf.data(), fileSize, off, f)) break;  // gamma
+        if (!LegacyReadF32(buf.data(), fileSize, off, f)) break;  // radius
+        if (!LegacyReadF32(buf.data(), fileSize, off, f)) break;  // f3
+        if (!LegacyReadI32(buf.data(), fileSize, off, id)) break; // material
+        if (!LegacyReadStr(buf.data(), fileSize, off, s)) break;  // criteria
+        // Skip per-node link data
+        int32_t nl = 0;
+        if (!LegacyReadI32(buf.data(), fileSize, off, nl)) break;
+        off += static_cast<size_t>(nl) * 5 * 2;  // nl targets + nl types
+        int32_t gl = 0;
+        if (!LegacyReadI32(buf.data(), fileSize, off, gl)) break;
+        if (gl != 0) off += 5 * 2;  // graphLinkTarget + graphLinkType
+    }
+
+    std::ofstream out(outPath, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) return false;
+    out.write(reinterpret_cast<const char*>(buf.data()), static_cast<std::streamsize>(fileSize));
+    return out.good();
+}
+
+// ---------------------------------------------------------------------------
 // GRAPH_Save — overwrite node positions in-place, preserving everything else.
 // Walks the tagged node records the same way GRAPH_Parse does and patches the
 // 3 position doubles of any node whose id appears in `graph.nodes`.
@@ -310,6 +657,16 @@ bool GRAPH_Save(const std::string& srcPath, const std::string& outPath,
     }
     const size_t fileSize = static_cast<size_t>(file.tellg());
     file.seekg(0);
+
+    // Detect legacy tagged format (first byte 0x05, no magic).
+    if (fileSize >= 4) {
+        uint8_t first4[4] = {};
+        file.read(reinterpret_cast<char*>(first4), 4);
+        file.seekg(0);
+        uint32_t magic = 0; std::memcpy(&magic, first4, 4);
+        if (magic != GRAPH_MAGIC && first4[0] == 0x05)
+            return GRAPH_SaveLegacy(srcPath, outPath, graph);
+    }
 
     constexpr size_t HEADER_SIZE = 30;
     if (fileSize < HEADER_SIZE) return false;
@@ -420,7 +777,15 @@ GraphFile GRAPH_Parse(const std::string& filepath) {
     // ------------------------------------------------------------------
     const uint32_t magic = b.read<uint32_t>(0);
     if (magic != GRAPH_MAGIC) {
-        result.error = "Bad magic in graph file: " + filepath;
+        // Legacy alternate format: no magic, starts with a 1-byte type tag
+        // (0x05 = int32). Used by some graph files (e.g. level 8 graph1/graph7).
+        if (fileSize >= 5 && buf[0] == 0x05) {
+            GraphFile lg = GRAPH_ParseLegacy(buf.data(), fileSize, filepath);
+            if (lg.valid) return lg;
+            result.error = lg.error.empty() ? ("Legacy parse failed: " + filepath) : lg.error;
+        } else {
+            result.error = "Bad magic in graph file: " + filepath;
+        }
         Logger::Get().Log(LogLevel::ERR, "[GRAPH] " + result.error);
         return result;
     }

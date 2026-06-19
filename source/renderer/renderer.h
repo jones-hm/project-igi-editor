@@ -533,6 +533,17 @@ public:
 	void					ScaleSelectedGraphNode(float factor);  // radius *= factor; factor<=0 resets to 1
 	int						CreateGraphNode();                     // adds a node near the selection; returns new id
 	void					DeleteSelectedGraphNode();             // removes the selected node and its edges
+	// Two-step link editing. First call marks the selected node as the link
+	// source; second call adds/removes an edge between the source and the
+	// currently selected node, then clears the source. Returns a status string
+	// for the HUD (empty = nothing happened, e.g. no node selected).
+	std::string				AddGraphLinkStep();
+	std::string				RemoveGraphLinkStep();
+	void					ClearGraphLinkSource() { graph_link_source_ = -1; }
+	int						GraphLinkSource() const { return graph_link_source_; }
+	// Toggle on-screen node ID labels for the graph overlay.
+	void					ToggleGraphLabels() { graph_overlay_show_labels_ = !graph_overlay_show_labels_; }
+	bool					GraphLabelsVisible() const { return graph_overlay_show_labels_; }
 	// Fine edits for the properties panel (operate on the selected node, mark dirty):
 	void					NudgeSelectedGraphNode(double dx, double dy, double dz);
 	void					AdjustSelectedGraphGamma(float d);
@@ -616,6 +627,8 @@ private:
 	bool					graph_overlay_visible_ = false;
 	bool					graph_overlay_dirty_ = false;
 	int						graph_overlay_selected_ = -1;
+	int						graph_link_source_ = -1;        // first node of a two-step link edit (-1 = none)
+	bool					graph_overlay_show_labels_ = true;  // on-screen node ID labels
 	// Draw the graph overlay (nodes/edges/labels + hover/selection tooltip) using
 	// the active screen-space GL state; `draw_text_sm` is the caller's label lambda
 	// and (mouseX,mouseY) are GLUT top-left cursor coords for hover detection.
