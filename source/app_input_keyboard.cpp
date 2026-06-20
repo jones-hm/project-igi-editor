@@ -822,7 +822,13 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 					label = objects[i].type + " " + objects[i].name + " " + objects[i].taskId;
 				}
 				std::transform(label.begin(), label.end(), label.begin(), [](unsigned char c){ return std::tolower(c); });
-				if (label.find(q_lower) != std::string::npos) {
+				// ById requires exact match — task IDs are pixel-perfect, so
+				// typing "7" must not also match "73", "700", etc. All other
+				// find modes keep substring matching.
+				const bool is_match = (find_mode_ == FindMode::ById)
+					? (label == q_lower)
+					: (label.find(q_lower) != std::string::npos);
+				if (is_match) {
 					find_result_idx_ = i;
 					break;
 				}

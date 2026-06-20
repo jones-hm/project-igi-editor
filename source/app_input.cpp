@@ -251,7 +251,13 @@ void App::DispatchEventBindings() {
 					label = objects[idx].type + " " + objects[idx].name + " " + objects[idx].taskId;
 				}
 				std::transform(label.begin(), label.end(), label.begin(), [](unsigned char c){ return std::tolower(c); });
-				if (label.find(q) != std::string::npos) {
+				// ById requires exact match — task IDs are pixel-perfect, so
+				// typing "7" must not also match "73", "700", etc. All other
+				// find modes keep substring matching.
+				const bool is_match = (find_mode_ == FindMode::ById)
+					? (label == q)
+					: (label.find(q) != std::string::npos);
+				if (is_match) {
 					find_result_idx_ = idx;
 					found = true;
 					// Expand ancestors and scroll to result
