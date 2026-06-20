@@ -13,7 +13,7 @@
 #include "renderer_objects.h"
 #include "renderer_splines.h"
 #include "../level/task_schema.h"
-#include "../parsers/graph_parser.h"
+#include "graph_writer.h"
 #include <functional>
 
 /*

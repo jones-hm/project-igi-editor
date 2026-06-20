@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
-#include "dat_parser.h"
+#include "../renderer/dat_writer.h"
 
 struct MTPModelTexture {
     std::string modelName;

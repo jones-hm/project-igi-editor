@@ -34,7 +34,7 @@
  *   Data payload begins at header_offset + 8.
  *****************************************************************************/
 
-#include "graph_parser.h"
+#include "graph_writer.h"
 #include "../logger.h"
 
 #include <fstream>

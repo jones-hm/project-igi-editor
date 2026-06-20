@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "parsers/graph_parser.h"
+#include "../source/renderer/graph_writer.h"
 #include "utils.h"
 #include <string>
 #include <cmath>

@@ -3,7 +3,7 @@
  * @brief   IGI level DAT model-texture mapping parser
  *****************************************************************************/
 
-#include "dat_parser.h"
+#include "dat_writer.h"
 #include "../logger.h"
 #include "../utils.h"
 #include <fstream>

@@ -10,7 +10,7 @@
  *     BODY chunk: 4-byte fourcc "BODY" + uint32 size + raw binary data
  *****************************************************************************/
 
-#include "res_parser.h"
+#include "res_writer.h"
 #include "../logger.h"
 #include <fstream>
 #include <cstring>

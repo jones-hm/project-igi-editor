@@ -11,7 +11,7 @@
  *   • TGA 2.0 footer ("TRUEVISION-XFILE.\0") is written.
  *****************************************************************************/
 
-#include "tex_parser.h"
+#include "tex_writer.h"
 #include "../logger.h"
 
 #include <fstream>

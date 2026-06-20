@@ -11,7 +11,7 @@ bool RES_Compile(const std::string& scriptPath, std::string& error);
 // Repacks a set of in-memory resources into a binary .res (ILFF IRES) archive.
 // Used to patch an existing archive (parse → modify one entry → write all back)
 // without needing every loose file on disk. Preserves entry order and names.
-#include "res_parser.h"
+#include "res_writer.h"
 #include <functional>
 bool RES_WriteEntries(const std::vector<RESEntry>& entries, const std::string& outPath, std::string& error);
 

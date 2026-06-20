@@ -2,7 +2,7 @@
 #include "../pch.h"
 #include "model.h"
 #include "../level/level_objects.h"
-#include "../parsers/dat_parser.h"
+#include "dat_writer.h"
 #include <map>
 #include <string>
 #include <vector>

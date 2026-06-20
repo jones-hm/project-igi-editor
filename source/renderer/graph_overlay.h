@@ -9,7 +9,7 @@
 
 #pragma once
 #include <glm/glm.hpp>
-#include "parsers/graph_parser.h"
+#include "graph_writer.h"
 
 // Project a world-space point through `viewProj` to screen pixels (origin
 // top-left). Returns false if the point is behind the camera (clip.w <= 0);

@@ -1,8 +1,8 @@
 #include "pch.h"
 #include "res_compiler.h"
 #include "../logger.h"
-#include "qsc_lexer.h"
-#include "qsc_parser.h"
+#include "../level/qsc_lexer.h"
+#include "../level/qsc_parser.h"
 #include <fstream>
 #include <filesystem>
 #include <iostream>

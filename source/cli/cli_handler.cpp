@@ -3,7 +3,7 @@
 #include "cli_tests.h"
 #include "common.h"
 #include "logger.h"
-#include "parsers/res_parser.h"
+#include "renderer/res_writer.h"
 #include "utils.h"
 #include <filesystem>
 #include <algorithm>

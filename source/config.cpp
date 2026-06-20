@@ -2,11 +2,11 @@
 #include "config.h"
 #include "logger.h"
 #include "utils.h"
-#include "parsers/qsc_lexer.h"
-#include "parsers/qsc_parser.h"
-#include "parsers/qvm_compiler.h"
-#include "parsers/qvm_parser.h"
-#include "parsers/qvm_decompiler.h"
+#include "level/qsc_lexer.h"
+#include "level/qsc_parser.h"
+#include "level/qvm_compiler.h"
+#include "level/qvm_parser.h"
+#include "level/qvm_decompiler.h"
 #include <fstream>
 #include <iostream>
 #include <sstream>

@@ -17,7 +17,7 @@
  *****************************************************************************/
 
 #include "asset_extractor.h"
-#include "res_parser.h"
+#include "../renderer/res_writer.h"
 #include "../logger.h"
 #include <filesystem>
 #include <fstream>

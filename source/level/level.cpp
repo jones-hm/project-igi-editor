@@ -11,11 +11,11 @@
 #include "logger.h"
 #include "utils.h"
 #include "cli/asset_extractor.h"
-#include "parsers/qvm_parser.h"
-#include "parsers/qvm_decompiler.h"
-#include "parsers/qsc_lexer.h"
-#include "parsers/qsc_parser.h"
-#include "parsers/qvm_compiler.h"
+#include "qvm_parser.h"
+#include "qvm_decompiler.h"
+#include "qsc_lexer.h"
+#include "qsc_parser.h"
+#include "qvm_compiler.h"
 
 
 

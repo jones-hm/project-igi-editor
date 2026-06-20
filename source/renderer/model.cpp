@@ -1,5 +1,5 @@
 #include "model.h"
-#include "parsers/mef_native.h"
+#include "mef_native.h"
 #include "../pch.h"
 #include "../logger.h"
 #include <glm/gtc/type_ptr.hpp>

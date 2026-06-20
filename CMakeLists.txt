@@ -40,7 +40,6 @@ endif()
 file(GLOB SOURCES "source/*.h" "source/*.cpp")
 file(GLOB SOURCES_LEVEL "source/level/*.*")
 file(GLOB SOURCES_RENDERER "source/renderer/*.*")
-file(GLOB SOURCES_PARSERS "source/parsers/*.*")
 file(GLOB SOURCES_CLI "source/cli/*.*")
 file(GLOB SHADERS_41 "shaders/41/*.*")
 file(GLOB SHADERS_45 "shaders/45/*.*")
@@ -52,12 +51,11 @@ endif()
 
 source_group("level" FILES ${SOURCES_LEVEL})
 source_group("renderer" FILES ${SOURCES_RENDERER})
-source_group("parsers" FILES ${SOURCES_PARSERS})
 source_group("cli" FILES ${SOURCES_CLI})
 source_group("shaders/41" FILES ${SHADERS_41})
 source_group("shaders/45" FILES ${SHADERS_45})
 
-add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SOURCES_PARSERS} ${SOURCES_CLI} ${SHADERS_41} ${SHADERS_45})
+add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SOURCES_CLI} ${SHADERS_41} ${SHADERS_45})
 
 if (WIN32)
   set_target_properties(igi-editor PROPERTIES
@@ -95,28 +93,28 @@ set_source_files_properties(
   source/renderer/renderer_splines.cpp
   source/renderer/renderer_terrain.cpp
   source/renderer/wic_loader.cpp
-  source/parsers/qvm_parser.cpp
-  source/parsers/res_parser.cpp
+  source/level/qvm_parser.cpp
+  source/renderer/res_writer.cpp
   source/level/res_model_set.cpp
-  source/parsers/res_compiler.cpp
-  source/parsers/dat_parser.cpp
-  source/parsers/mtp_parser.cpp
-  source/parsers/mtp_tool.cpp
-  source/parsers/tex_parser.cpp
-  source/parsers/graph_parser.cpp
+  source/renderer/res_compiler.cpp
+  source/renderer/dat_writer.cpp
+  source/level/mtp_writer.cpp
+  source/renderer/tex_writer.cpp
+  source/renderer/graph_writer.cpp
   source/cli/asset_extractor.cpp
   source/level/terrain.cpp
   source/level/terrain_io.cpp
   source/level/terrain_lod.cpp
   source/level/terrain_mesh.cpp
   source/level/terrain_query.cpp
-  source/parsers/qvm_decompiler.cpp
-  source/parsers/qsc_lexer.cpp
-  source/parsers/qsc_parser.cpp
-  source/parsers/qvm_compiler.cpp
+  source/level/qvm_decompiler.cpp
+  source/level/qsc_lexer.cpp
+  source/level/qsc_parser.cpp
+  source/level/qvm_compiler.cpp
   source/cli/cli_handler.cpp
   source/cli/cli_tests.cpp
   source/cli/verify_level.cpp
+  source/utils_igi1conv.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
@@ -124,7 +122,6 @@ target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source)
-target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source/parsers)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/tinygltf)
 
@@ -255,7 +252,6 @@ if (MSVC)
 endif()
 
 target_include_directories(igi_tests PRIVATE source)
-target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/parsers)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
@@ -263,11 +259,11 @@ target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/tinygltf)
 target_link_libraries(igi_tests PRIVATE gtest_main)
 target_sources(igi_tests PRIVATE
-    source/parsers/qsc_lexer.cpp
-    source/parsers/qsc_parser.cpp
-    source/parsers/qvm_parser.cpp
-    source/parsers/qvm_compiler.cpp
-    source/parsers/qvm_decompiler.cpp
+    source/level/qsc_lexer.cpp
+    source/level/qsc_parser.cpp
+    source/level/qvm_parser.cpp
+    source/level/qvm_compiler.cpp
+    source/level/qvm_decompiler.cpp
     source/config.cpp
     source/utils.cpp
     source/common.cpp
@@ -276,15 +272,16 @@ target_sources(igi_tests PRIVATE
     source/level/level_objects.cpp
     source/level/level_objects_serialize.cpp
     source/cli/verify_level_core.cpp
-    source/parsers/dat_parser.cpp
-    source/parsers/graph_parser.cpp
+    source/renderer/dat_writer.cpp
+    source/renderer/graph_writer.cpp
     source/renderer/graph_project.cpp
-    source/parsers/res_parser.cpp
-    source/parsers/res_compiler.cpp
+    source/renderer/res_writer.cpp
+    source/renderer/res_compiler.cpp
     source/level/res_model_set.cpp
-    source/parsers/tex_parser.cpp
-    source/parsers/mtp_parser.cpp
-    source/parsers/fnt_parser.cpp
+    source/renderer/tex_writer.cpp
+    source/level/mtp_writer.cpp
+    source/renderer/fnt_parser.cpp
+    source/level/terrain_files.cpp
 )
 
 # level_objects.cpp (and its pch.h header graph: app.h, renderer, level.h) relies
