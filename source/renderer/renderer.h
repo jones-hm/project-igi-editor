@@ -416,6 +416,11 @@ public:
 		int  prop_drag_obj_index_  = -1;  // LevelObject targeted by active slider/pad drag (-1 = parent)
 		std::string prop_text_buf_;
 		int  prop_text_caret_      = 0;
+		// AI Script editor text selection (driven by Ctrl+Shift+arrow / mouse
+		// drag / Ctrl+A). prop_text_sel_focus_ < 0 OR equal to anchor means
+		// no selection; otherwise the range [anchor, focus) is highlighted.
+		int  prop_text_sel_anchor_ = -1;
+		int  prop_text_sel_focus_  = -1;
 		int  prop_panel_scroll_    = 0;  // vertical scroll offset (pixels)
 
 		// C3: Find bar

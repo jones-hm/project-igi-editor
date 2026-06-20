@@ -40,6 +40,13 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 	if (button == GLUT_LEFT_BUTTON) {
 		if (GLUT_DOWN == state) {
 			mouse_state_.left_button_down_ = true;
+			// Any left-click outside the AI Script text box should drop the
+			// current selection so stale highlighting doesn't linger. The
+			// AIScriptText click handler re-installs the selection if the
+			// user is dragging inside the text box.
+			if (!ai_text_dragging_) {
+				ClearPropTextSelection();
+			}
 
 			// Graph node properties panel (left side): handle button clicks first.
 			if (renderer_.IsGraphOverlayVisible() && renderer_.GraphSelected() >= 0 &&
@@ -255,6 +262,24 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 										if (len > 0 && (ls + len) <= (int)ai_script_text_.size() &&
 										    ai_script_text_[ls + len - 1] == '\n') --len;
 										prop_text_caret_ = ls + std::min(click_col, len);
+										// Click in the AI Script text starts a possible
+										// drag-selection. Shift+click extends from the
+										// existing anchor (or the caret if no anchor).
+										const bool shiftDown = (glutGetModifiers() & GLUT_ACTIVE_SHIFT) != 0;
+										if (shiftDown && prop_text_sel_anchor_ < 0) {
+											prop_text_sel_anchor_ = prop_text_caret_;
+										} else if (!shiftDown) {
+											prop_text_sel_anchor_ = prop_text_caret_;
+											prop_text_sel_focus_  = -1;
+										}
+										ai_text_dragging_  = true;
+										// Stash the box geometry so Input_OnMotion can map
+										// subsequent cursor positions back to caret indices
+										// for drag-selection.
+										ai_text_box_x1_ = w.x1;
+										ai_text_box_y1_ = w.y1;
+										ai_text_box_w_  = w.x2 - w.x1;
+										ai_text_box_h_  = w.y2 - w.y1;
 									}
 								} else {
 									// PosZSlider / OriSlider / RgbSlider / NumSlider — single-value drag
@@ -466,6 +491,10 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			prop_drag_speed_ = 0.f;
 			prop_last_drag_dx_ = 0;
 			prop_last_drag_dy_ = 0;
+			// End AI Script editor drag-selection: commit the selection
+			// range (anchor / focus already populated) and stop tracking the
+			// cursor. The next click in the text box will start a new range.
+			ai_text_dragging_ = false;
 			status_message_.clear(); // Clear movement telemetry status when mouse is released
 
 			if (window_state_.cursor_visible_) {
@@ -518,6 +547,28 @@ void App::Input_OnMotion(int x, int y) {
 	// Always update mouse coordinates for hover tooltip/interaction
 	mouse_state_.prior_x_ = x;
 	mouse_state_.prior_y_ = y;
+
+	// AI Script editor drag-selection: while the left button is down inside
+	// the text box, move the focus end of the selection with the cursor.
+	// Caret is updated in tandem so the next typed character lands where the
+	// cursor is.
+	if (ai_text_dragging_ && prop_text_edit_field_ == PropPanel::kAIScriptTextField
+	    && mouse_state_.left_button_down_) {
+		const int local_x = x - ai_text_box_x1_;
+		const int local_y = y - ai_text_box_y1_;
+		const int row_h   = PropPanel::kBoxH;
+		prop_text_caret_ = AiScriptPixelToCaret(prop_text_buf_,
+		                                         local_x - 3, local_y,
+		                                         ai_script_vscroll_,
+		                                         ai_text_box_h_, AiScriptMaxChars(), row_h);
+		prop_text_sel_focus_ = prop_text_caret_;
+		// Auto-scroll vertically if the drag moves above/below the box.
+		if (local_y < 0)
+			ai_script_vscroll_ = std::max(0, ai_script_vscroll_ - 1);
+		else if (local_y > ai_text_box_h_)
+			ai_script_vscroll_ = ai_script_vscroll_ + 1;
+		return; // consume the motion — don't pass to camera/treeview
+	}
 
 	// Priority 1: TreeView Hover
 	if (show_hud_ && x < 350 && !enableCameraMode) {

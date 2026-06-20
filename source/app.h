@@ -234,6 +234,18 @@ private:
                                  // slider/pad drag (-1 = selected/parent)
   std::string prop_text_buf_;
   int prop_text_caret_ = 0; // caret index within prop_text_buf_
+  // ── Text selection (used by AI Script editor; mouse drag, Shift+arrows, Ctrl+A).
+  //   anchor = stationary end (click point), focus = moving end (caret). A
+  //   selection exists when anchor >= 0 AND focus >= 0 AND anchor != focus.
+  int prop_text_sel_anchor_ = -1;
+  int prop_text_sel_focus_  = -1;
+  // Mouse-drag selection tracking: set on mousedown in the AI Script text
+  // box, cleared on mouseup. While true, the caret is moved with the cursor.
+  bool ai_text_dragging_ = false;
+  // Last known AI script text-box geometry (set on mousedown, used by
+  // mouse-motion to map (x,y) → caret position for drag selection).
+  int  ai_text_box_x1_ = 0, ai_text_box_y1_ = 0;
+  int  ai_text_box_h_ = 0, ai_text_box_w_ = 0;
   // Text field captured when a model/autocomplete picker opens, so the chosen
   // item is inserted into the exact field the cursor was in — even if focus
   // changed.
@@ -261,6 +273,23 @@ private:
   bool ai_script_dirty_ = false;
   int ai_script_vscroll_ = 0;      // first visible visual line
   int ai_script_path_hscroll_ = 0; // first visible char in path box
+
+  // AI Script editor undo/redo. Records snapshot the full text + caret+anchor
+  // before/after each committed edit (typed character, paste, cut, delete,
+  // replace) so Ctrl+Z / Ctrl+Y behave like a standard notepad.
+  struct AiTextEdit {
+    std::string before;
+    std::string after;
+    int caret_before = 0;
+    int caret_after  = 0;
+    int anchor_before = -1;
+    int anchor_after  = -1;
+  };
+  std::vector<AiTextEdit> ai_text_undo_;
+  std::vector<AiTextEdit> ai_text_redo_;
+  // Cap the history depth — each entry is the full text, so unbounded growth
+  // would balloon memory on a long editing session.
+  static constexpr int kAiTextUndoMax = 100;
 
   // Task type view toggle
   bool show_task_type_ = false;
@@ -426,6 +455,54 @@ private:
   void SaveAndReloadObjects();
   void Undo();
   void Redo();
+
+  // ── AI Script editor helpers (notepad-style) ──
+  // The Ctrl+C/V/X/A/Z/Y shortcuts and mouse-drag selection only activate
+  // when the AI Script text field is focused (prop_text_edit_field_ ==
+  // kAIScriptTextField). All other property text fields ignore them so the
+  // editor-level bindings (undo stack, find, etc.) still fire as before.
+  bool IsAIScriptTextFocused() const {
+    return prop_text_edit_field_ == PropPanel::kAIScriptTextField;
+  }
+  // Push the current AI Script buffer + caret + selection onto the undo
+  // stack. Called immediately BEFORE any mutating operation (insert, delete,
+  // paste, cut, replace). Captures state at rest, not the post-edit state.
+  void PushAiTextUndo();
+  // Notepad-style edit ops (operate on prop_text_buf_ + prop_text_caret_ +
+  // prop_text_sel_*, and sync ai_script_text_ + ai_script_dirty_). Each
+  // mutating op pushes an undo entry. No-ops if the AI Script editor isn't
+  // focused.
+  void AiScriptSelectAll();
+  void AiScriptCopy();
+  void AiScriptCut();
+  void AiScriptPaste();
+  void AiScriptUndo();
+  void AiScriptRedo();
+  void AiScriptDeleteSelection();
+  // Insert plain text at the caret (replaces any active selection). Used by
+  // typing, paste, and autocomplete.
+  void AiScriptInsertText(const std::string& s);
+  // Clear the current text selection. Safe to call even when no selection.
+  void ClearPropTextSelection() {
+    prop_text_sel_anchor_ = -1;
+    prop_text_sel_focus_  = -1;
+  }
+  // True iff the current prop text field has a non-empty selection.
+  bool HasPropTextSelection() const;
+  // Returns the [start,end) of the selection in caret order (start <= end).
+  void GetPropTextSelection(int& selStart, int& selEnd) const;
+  // Inline synonym (used inside the hot input loops where verbosity matters).
+  bool isPropTextSel() const { return HasPropTextSelection(); }
+  // Mirror the live edit buffer into the committed ai_script_text_ and mark
+  // the script dirty so the save hotkey picks it up. No-op when the AI Script
+  // text field isn't the active prop text field.
+  void SyncAIScriptBuffer() {
+    if (prop_text_edit_field_ == PropPanel::kAIScriptTextField) {
+      ai_script_text_  = prop_text_buf_;
+      ai_script_dirty_ = true;
+    }
+  }
+
   // If the graph overlay is visible and a loaded AIGraph task exists in the
   // current objects list, copy that task's world pos into the renderer's
   // overlay offset so the 3D nodes/edges follow the task live (F7 view).

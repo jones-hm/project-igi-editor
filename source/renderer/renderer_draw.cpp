@@ -1833,10 +1833,44 @@ void Renderer::Draw(const draw_params_s &params,
             int max_chars = std::max(1, (w.x2 - w.x1 - 6) / cw);
             int box_lines_cap = std::max(1, (w.y2 - w.y1) / PropPanel::kBoxH);
 
+            // Selection range for THIS field (if active). anchor == focus
+            // means caret-only, no highlight.
+            int sel_a = -1, sel_b = -1;
+            if (editing && task_tree_view.prop_text_sel_anchor_ >= 0
+                && task_tree_view.prop_text_sel_focus_  >= 0
+                && task_tree_view.prop_text_sel_anchor_ != task_tree_view.prop_text_sel_focus_) {
+              sel_a = std::min(task_tree_view.prop_text_sel_anchor_,
+                               task_tree_view.prop_text_sel_focus_);
+              sel_b = std::max(task_tree_view.prop_text_sel_anchor_,
+                               task_tree_view.prop_text_sel_focus_);
+              sel_a = std::max(0, std::min(sel_a, (int)txt.size()));
+              sel_b = std::max(0, std::min(sel_b, (int)txt.size()));
+            }
+
             if (!multiline) {
               // Single-line with horizontal scroll
               int hs = std::max(0, std::min(hscroll, (int)txt.size()));
               std::string disp = txt.size() > (size_t)hs ? txt.substr(hs, max_chars) : "";
+              // Selection highlight (single-line)
+              if (sel_a < sel_b) {
+                int vis_a = std::max(0, sel_a - hs);
+                int vis_b = std::max(0, sel_b - hs);
+                vis_a = std::min(vis_a, (int)disp.size());
+                vis_b = std::min(vis_b, (int)disp.size());
+                if (vis_a < vis_b) {
+                  std::string beforeA = disp.substr(0, vis_a);
+                  std::string beforeB = disp.substr(0, vis_b);
+                  int xa = w.x1 + 3 + measure_text_width(beforeA.c_str(), (int)beforeA.size());
+                  int xb = w.x1 + 3 + measure_text_width(beforeB.c_str(), (int)beforeB.size());
+                  glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                  glColor4f(0.3f, 0.6f, 1.0f, 0.45f); // pale blue highlight
+                  glBegin(GL_QUADS);
+                  glVertex2i(xa, w.y1 + 3); glVertex2i(xb, w.y1 + 3);
+                  glVertex2i(xb, w.y1 + 16); glVertex2i(xa, w.y1 + 16);
+                  glEnd();
+                  glDisable(GL_BLEND);
+                }
+              }
               draw_text(w.x1 + 3, w.y1 + 12, disp.c_str(), 1.0f, 1.0f, 0.85f);
               if (editing && caret_on) {
                 int vis = std::max(0, caret_idx - hs);
@@ -1859,6 +1893,34 @@ void Renderer::Draw(const draw_params_s &params,
               caret_line = (int)(std::upper_bound(lstarts.begin(), lstarts.end(), caret_idx) - lstarts.begin()) - 1;
               caret_line = std::max(0, std::min(caret_line, (int)lstarts.size() - 1));
               caret_col  = caret_idx - lstarts[caret_line];
+            }
+            // Selection highlight pass: one translucent rectangle per visible
+            // line that overlaps the [sel_a, sel_b) range. Drawn BEFORE the
+            // text so the white characters stay readable on top.
+            if (sel_a < sel_b) {
+              glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+              glColor4f(0.3f, 0.6f, 1.0f, 0.45f);
+              int rl = 0;
+              for (int li = start_line; li < (int)lstarts.size() && rl < box_lines_cap; li++, rl++) {
+                int ls = lstarts[li];
+                int le = (li + 1 < (int)lstarts.size()) ? lstarts[li + 1] : (int)txt.size();
+                if (le > ls && txt[le - 1] == '\n') le--;
+                int line_len = std::max(0, le - ls);
+                // Clip the selection to this visual line.
+                int hi_a = std::max(sel_a, ls);
+                int hi_b = std::min(sel_b, ls + line_len);
+                if (hi_a >= hi_b) continue;
+                std::string beforeA = txt.substr(ls, std::min(hi_a - ls, line_len));
+                std::string beforeB = txt.substr(ls, std::min(hi_b - ls, line_len));
+                int xa = w.x1 + 3 + measure_text_width(beforeA.c_str(), (int)beforeA.size());
+                int xb = w.x1 + 3 + measure_text_width(beforeB.c_str(), (int)beforeB.size());
+                int yt = w.y1 + 3 + rl * PropPanel::kBoxH;
+                glBegin(GL_QUADS);
+                glVertex2i(xa, yt); glVertex2i(xb, yt);
+                glVertex2i(xb, yt + 13); glVertex2i(xa, yt + 13);
+                glEnd();
+              }
+              glDisable(GL_BLEND);
             }
             // Render visible lines from start_line
             int render_line = 0;

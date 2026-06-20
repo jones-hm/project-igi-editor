@@ -49,6 +49,161 @@ void App::UpdateAIScriptPathHScroll() {
 		ai_script_path_hscroll_ = prop_text_caret_ - mc + 1;
 }
 
+// ── AI Script editor — notepad-style helpers ───────────────────────────────
+// All of these gate on IsAIScriptTextFocused() so the editor-level
+// Ctrl+Z / Ctrl+F / Ctrl+N bindings still fire when other text fields are
+// being edited. Only the AI Script text field gets the full notepad
+// surface (Ctrl+C/V/X/A/Z/Y + mouse drag selection).
+bool App::HasPropTextSelection() const {
+	return prop_text_sel_anchor_ >= 0 && prop_text_sel_focus_ >= 0
+		&& prop_text_sel_anchor_ != prop_text_sel_focus_;
+}
+
+void App::GetPropTextSelection(int& selStart, int& selEnd) const {
+	if (!HasPropTextSelection()) { selStart = selEnd = -1; return; }
+	selStart = std::min(prop_text_sel_anchor_, prop_text_sel_focus_);
+	selEnd   = std::max(prop_text_sel_anchor_, prop_text_sel_focus_);
+}
+
+void App::AiScriptSelectAll() {
+	if (!IsAIScriptTextFocused()) return;
+	prop_text_sel_anchor_ = 0;
+	prop_text_sel_focus_  = (int)prop_text_buf_.size();
+	// Move caret to the end so subsequent typing replaces the selection.
+	prop_text_caret_ = (int)prop_text_buf_.size();
+	UpdateAIScriptScroll();
+}
+
+void App::PushAiTextUndo() {
+	if (!IsAIScriptTextFocused()) return;
+	AiTextEdit e;
+	e.before      = prop_text_buf_;
+	e.caret_before = prop_text_caret_;
+	e.anchor_before = prop_text_sel_anchor_;
+	ai_text_undo_.push_back(std::move(e));
+	if ((int)ai_text_undo_.size() > kAiTextUndoMax)
+		ai_text_undo_.erase(ai_text_undo_.begin());
+	// Any new edit invalidates the redo stack (standard editor semantics).
+	ai_text_redo_.clear();
+}
+
+void App::AiScriptDeleteSelection() {
+	if (!IsAIScriptTextFocused()) return;
+	if (!HasPropTextSelection()) return;
+	PushAiTextUndo();
+	int s, e; GetPropTextSelection(s, e);
+	prop_text_buf_.erase(s, e - s);
+	prop_text_caret_ = s;
+	ClearPropTextSelection();
+	ai_script_text_  = prop_text_buf_;
+	ai_script_dirty_ = true;
+	UpdateAIScriptScroll();
+}
+
+void App::AiScriptInsertText(const std::string& s) {
+	if (!IsAIScriptTextFocused() || s.empty()) return;
+	// Replace any active selection (single undo entry covers the whole op).
+	if (HasPropTextSelection()) {
+		PushAiTextUndo();
+		int a, b; GetPropTextSelection(a, b);
+		prop_text_buf_.erase(a, b - a);
+		prop_text_caret_ = a;
+		ClearPropTextSelection();
+	} else {
+		PushAiTextUndo();
+	}
+	prop_text_buf_.insert(prop_text_caret_, s);
+	prop_text_caret_ += (int)s.size();
+	ai_script_text_  = prop_text_buf_;
+	ai_script_dirty_ = true;
+	UpdateAIScriptScroll();
+}
+
+void App::AiScriptCopy() {
+	if (!IsAIScriptTextFocused()) return;
+	std::string txt;
+	if (HasPropTextSelection()) {
+		int s, e; GetPropTextSelection(s, e);
+		txt = prop_text_buf_.substr(s, e - s);
+	} else {
+		// No selection → copy entire buffer (Notepad/most editors do this).
+		txt = prop_text_buf_;
+	}
+	if (!txt.empty()) {
+		Utils::SetClipboardText(txt);
+		status_message_ = "Copied " + std::to_string(txt.size()) + " chars to clipboard";
+	}
+}
+
+void App::AiScriptCut() {
+	if (!IsAIScriptTextFocused()) return;
+	if (HasPropTextSelection()) {
+		int s, e; GetPropTextSelection(s, e);
+		Utils::SetClipboardText(prop_text_buf_.substr(s, e - s));
+		AiScriptDeleteSelection();
+		status_message_ = "Cut selection to clipboard";
+	} else {
+		// No selection → cut the whole buffer (matches Notepad's Ctrl+X).
+		Utils::SetClipboardText(prop_text_buf_);
+		PushAiTextUndo();
+		prop_text_buf_.clear();
+		prop_text_caret_ = 0;
+		ClearPropTextSelection();
+		ai_script_text_  = prop_text_buf_;
+		ai_script_dirty_ = true;
+		status_message_ = "Cut entire script to clipboard";
+	}
+}
+
+void App::AiScriptPaste() {
+	if (!IsAIScriptTextFocused()) return;
+	const std::string clip = Utils::GetClipboardText();
+	if (clip.empty()) return;
+	AiScriptInsertText(clip);
+	status_message_ = "Pasted " + std::to_string(clip.size()) + " chars from clipboard";
+}
+
+void App::AiScriptUndo() {
+	if (!IsAIScriptTextFocused()) return;
+	if (ai_text_undo_.empty()) { status_message_ = "Nothing to undo"; return; }
+	// Move the current state onto the redo stack so Ctrl+Y can re-apply it.
+	AiTextEdit redo;
+	redo.before       = prop_text_buf_;
+	redo.caret_before = prop_text_caret_;
+	redo.anchor_before = prop_text_sel_anchor_;
+	ai_text_redo_.push_back(std::move(redo));
+	AiTextEdit e = std::move(ai_text_undo_.back());
+	ai_text_undo_.pop_back();
+	prop_text_buf_    = e.before;
+	prop_text_caret_  = e.caret_before;
+	prop_text_sel_anchor_ = e.anchor_before;
+	prop_text_sel_focus_  = -1; // focus was implicit (= caret) before
+	ai_script_text_  = prop_text_buf_;
+	ai_script_dirty_ = true;
+	UpdateAIScriptScroll();
+	status_message_ = "Undo (" + std::to_string(ai_text_undo_.size()) + " left)";
+}
+
+void App::AiScriptRedo() {
+	if (!IsAIScriptTextFocused()) return;
+	if (ai_text_redo_.empty()) { status_message_ = "Nothing to redo"; return; }
+	AiTextEdit undo;
+	undo.before       = prop_text_buf_;
+	undo.caret_before = prop_text_caret_;
+	undo.anchor_before = prop_text_sel_anchor_;
+	ai_text_undo_.push_back(std::move(undo));
+	AiTextEdit e = std::move(ai_text_redo_.back());
+	ai_text_redo_.pop_back();
+	prop_text_buf_    = e.before;
+	prop_text_caret_  = e.caret_before;
+	prop_text_sel_anchor_ = e.anchor_before;
+	prop_text_sel_focus_  = -1;
+	ai_script_text_  = prop_text_buf_;
+	ai_script_dirty_ = true;
+	UpdateAIScriptScroll();
+	status_message_ = "Redo (" + std::to_string(ai_text_redo_.size()) + " left)";
+}
+
 void App::LoadAIScriptForSelected() {
 	if (ai_script_dirty_)
 		status_message_ = "Warning: unsaved AI script edits discarded (save level first)";

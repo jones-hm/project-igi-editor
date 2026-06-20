@@ -7,6 +7,11 @@
 
 void App::Input_OnSpecial(int key, int x, int y) {
 	auto& config = Config::Get();
+	// Shift detection mirrors Input_OnKeyboard: GLUT modifiers are sometimes
+	// not reported, so fall back to GetAsyncKeyState for Shift+arrow
+	// selection in the AI Script editor.
+	const bool shiftDown = (glutGetModifiers() & GLUT_ACTIVE_SHIFT) != 0 ||
+	                       (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 
 	// Autocomplete task picker navigation
 	if (ac_task_picker_open_) {
@@ -73,14 +78,29 @@ void App::Input_OnSpecial(int key, int x, int y) {
 		bool isScript = (prop_text_edit_field_ == PropPanel::kAIScriptTextField);
 		const int mc = AiScriptMaxChars();
 
+		// Shift+arrow extends the selection in the AI Script editor
+		// (Notepad/Home/End as well). The anchor is set on first Shift+arrow
+		// (or the first time the selection becomes non-empty); subsequent
+		// Shift+arrows only move the focus.
+		if (isScript && shiftDown && prop_text_sel_anchor_ < 0 &&
+		    (key == GLUT_KEY_LEFT || key == GLUT_KEY_RIGHT ||
+		     key == GLUT_KEY_UP   || key == GLUT_KEY_DOWN  ||
+		     key == GLUT_KEY_HOME || key == GLUT_KEY_END)) {
+			prop_text_sel_anchor_ = prop_text_caret_;
+		}
+
 		if (key == GLUT_KEY_LEFT) {
 			if (prop_text_caret_ > 0) --prop_text_caret_;
 			if (isScript) UpdateAIScriptScroll(); else UpdateAIScriptPathHScroll();
+			if (isScript && shiftDown) prop_text_sel_focus_ = prop_text_caret_;
+			else if (isScript) ClearPropTextSelection();
 			return;
 		}
 		if (key == GLUT_KEY_RIGHT) {
 			if (prop_text_caret_ < (int)prop_text_buf_.size()) ++prop_text_caret_;
 			if (isScript) UpdateAIScriptScroll(); else UpdateAIScriptPathHScroll();
+			if (isScript && shiftDown) prop_text_sel_focus_ = prop_text_caret_;
+			else if (isScript) ClearPropTextSelection();
 			return;
 		}
 		if (isScript) {
@@ -97,6 +117,39 @@ void App::Input_OnSpecial(int key, int x, int y) {
 				    prop_text_buf_[starts[nl] + line_len - 1] == '\n') --line_len;
 				prop_text_caret_ = starts[nl] + std::min(col, line_len);
 				UpdateAIScriptScroll();
+				if (shiftDown) prop_text_sel_focus_ = prop_text_caret_;
+				else           ClearPropTextSelection();
+				return;
+			}
+			if (key == GLUT_KEY_HOME) {
+				// Home: start of current visual line; Ctrl+Home: start of buffer
+				if (isScript && (glutGetModifiers() & GLUT_ACTIVE_CTRL)) {
+					prop_text_caret_ = 0;
+				} else {
+					auto starts = AiTextLineStarts(prop_text_buf_, mc);
+					int cl = (int)(std::upper_bound(starts.begin(), starts.end(), prop_text_caret_) - starts.begin()) - 1;
+					cl = std::max(0, std::min(cl, (int)starts.size() - 1));
+					prop_text_caret_ = starts[cl];
+				}
+				UpdateAIScriptScroll();
+				if (shiftDown) prop_text_sel_focus_ = prop_text_caret_;
+				else           ClearPropTextSelection();
+				return;
+			}
+			if (key == GLUT_KEY_END) {
+				if (isScript && (glutGetModifiers() & GLUT_ACTIVE_CTRL)) {
+					prop_text_caret_ = (int)prop_text_buf_.size();
+				} else {
+					auto starts = AiTextLineStarts(prop_text_buf_, mc);
+					int cl = (int)(std::upper_bound(starts.begin(), starts.end(), prop_text_caret_) - starts.begin()) - 1;
+					cl = std::max(0, std::min(cl, (int)starts.size() - 1));
+					int next_end = (cl + 1 < (int)starts.size()) ? starts[cl + 1] : (int)prop_text_buf_.size();
+					if (next_end > starts[cl] && prop_text_buf_[next_end - 1] == '\n') --next_end;
+					prop_text_caret_ = next_end;
+				}
+				UpdateAIScriptScroll();
+				if (shiftDown) prop_text_sel_focus_ = prop_text_caret_;
+				else           ClearPropTextSelection();
 				return;
 			}
 			if (key == GLUT_KEY_PAGE_UP) {
@@ -499,6 +552,21 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	// Detect Ctrl via GLUT *and* GetAsyncKeyState: GLUT modifiers are occasionally not
 	// reported for Ctrl+Space (key 0/space), which silently dropped inline autocomplete.
 	if (ctrlDown) {
+		// AI Script editor notepad-style shortcuts — ONLY when the AI Script text
+		// field is focused. Other property text fields ignore these so the
+		// editor-level Ctrl+F / Ctrl+N / Ctrl+W bindings still work as before.
+		if (prop_text_edit_field_ == PropPanel::kAIScriptTextField) {
+			if (key == 'a' || key == 'A') { AiScriptSelectAll(); return; }
+			if (key == 'c' || key == 'C') { AiScriptCopy();     return; }
+			if (key == 'x' || key == 'X') { AiScriptCut();      return; }
+			if (key == 'v' || key == 'V') { AiScriptPaste();    return; }
+			// Ctrl+Z = undo, Ctrl+Y / Ctrl+Shift+Z = redo
+			if (key == 'z' || key == 'Z') {
+				if (shiftDown) AiScriptRedo(); else AiScriptUndo();
+				return;
+			}
+			if (key == 'y' || key == 'Y') { AiScriptRedo(); return; }
+		}
 		if (key == 14 && !shiftDown) { // Ctrl+N only (not Ctrl+Shift+N — that's TaskFindByTaskNote)
 			// Only open when a property text box is focused, so Enter knows which
 			// field to insert the chosen item into.
@@ -577,30 +645,61 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		else {
 			if (key == 27) { // ESC — cancel (revert)
 				prop_text_edit_field_ = -1;
+				ClearPropTextSelection();
 				return;
 			}
 			if (key == 13) { // Enter
 				if (multiline) {              // VarString/String256: insert newline
+					// AI Script editor: respect active selection (replace with newline)
+					if (isPropTextSel()) {
+						PushAiTextUndo();
+						int a, b; GetPropTextSelection(a, b);
+						prop_text_buf_.erase(a, b - a);
+						caret = a;
+						ClearPropTextSelection();
+					} else {
+						PushAiTextUndo();
+					}
 					prop_text_buf_.insert(prop_text_buf_.begin() + caret, '\n');
 					caret++;
+					SyncAIScriptBuffer();
 					UpdateAIScriptScroll();
 				} else {                      // single-line: commit
 					CommitPropTextEdit();
 				}
 				return;
 			}
-			if (key == 8) { // Backspace — delete before caret
-				if (caret > 0) {
+			if (key == 8) { // Backspace — delete before caret (or delete selection)
+				if (isPropTextSel()) {
+					PushAiTextUndo();
+					int a, b; GetPropTextSelection(a, b);
+					prop_text_buf_.erase(a, b - a);
+					caret = a;
+					ClearPropTextSelection();
+					SyncAIScriptBuffer();
+				} else if (caret > 0) {
+					PushAiTextUndo();
 					prop_text_buf_.erase(prop_text_buf_.begin() + (caret - 1));
 					caret--;
-					UpdateAIScriptScroll();
-					UpdateAIScriptPathHScroll();
+					SyncAIScriptBuffer();
 				}
+				UpdateAIScriptScroll();
+				UpdateAIScriptPathHScroll();
 				return;
 			}
-			if (key == 127) { // Delete — delete at caret
-				if (caret < (int)prop_text_buf_.size())
+			if (key == 127) { // Delete — delete at caret (or delete selection)
+				if (isPropTextSel()) {
+					PushAiTextUndo();
+					int a, b; GetPropTextSelection(a, b);
+					prop_text_buf_.erase(a, b - a);
+					caret = a;
+					ClearPropTextSelection();
+					SyncAIScriptBuffer();
+				} else if (caret < (int)prop_text_buf_.size()) {
+					PushAiTextUndo();
 					prop_text_buf_.erase(prop_text_buf_.begin() + caret);
+					SyncAIScriptBuffer();
+				}
 				UpdateAIScriptScroll();
 				return;
 			}
@@ -608,9 +707,19 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 				InlineAutocomplete();
 				return;
 			}
-			if (key >= 32 && key <= 126) { // printable: insert at caret
+			if (key >= 32 && key <= 126) { // printable: insert at caret (replace selection)
+				if (isPropTextSel()) {
+					PushAiTextUndo();
+					int a, b; GetPropTextSelection(a, b);
+					prop_text_buf_.erase(a, b - a);
+					caret = a;
+					ClearPropTextSelection();
+				} else {
+					PushAiTextUndo();
+				}
 				prop_text_buf_.insert(prop_text_buf_.begin() + caret, (char)key);
 				caret++;
+				SyncAIScriptBuffer();
 				UpdateAIScriptScroll();
 				UpdateAIScriptPathHScroll();
 				return;

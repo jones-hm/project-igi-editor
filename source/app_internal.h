@@ -105,6 +105,24 @@ inline int AiScriptMaxChars() {
 	return std::max(1, (PropPanel::kWidth - 2 * PropPanel::kPad - 6) / 7);
 }
 
+// Map a (x,y) screen coord inside the AI script text box (origin at the
+// box's top-left, y grows down) to a caret index in `txt`. Returns the
+// closest valid position. Used by mouse drag-selection.
+inline int AiScriptPixelToCaret(const std::string& txt, int x, int y,
+                                 int vscroll, int box_h,
+                                 int max_chars, int row_h) {
+	if (txt.empty()) return 0;
+	const auto starts = AiTextLineStarts(txt, max_chars);
+	int row = std::max(0, y / std::max(1, row_h));
+	int abs_line = std::max(0, std::min((int)starts.size() - 1, vscroll + row));
+	int col = std::max(0, x / 7);
+	int ls   = starts[abs_line];
+	int next = (abs_line + 1 < (int)starts.size()) ? starts[abs_line + 1] : (int)txt.size();
+	int len  = next - ls;
+	if (len > 0 && (ls + len) <= (int)txt.size() && txt[ls + len - 1] == '\n') --len;
+	return std::max(0, std::min((int)txt.size(), ls + std::min(col, len)));
+}
+
 // ── movement key table ──
 struct movement_key_s {
 	char	lower_case_;
