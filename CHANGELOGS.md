@@ -1,5 +1,40 @@
 # Changelogs
 
+## 3.4.1-pre — Live Graph Sync, Exact-ID Find & AI Script Notepad
+
+### 🐛 Bug Fixes
+- **Fixed: AIGraph task move did not live-update the F7 graph overlay.** When the user moved the AIGraph task via the TaskTree property panel, the 2D position pad / Z slider, or Undo / Redo, the AIGraph task's world pos was updated but the renderer's `graph_overlay_offset_` stayed at the F7-press-time value — so the 3D nodes and edges drifted away from the task. Added `Renderer::SetGraphOverlayOffset` + `App::SyncGraphOverlayOffsetFromAIGraph`; the helper is a no-op unless the overlay is visible AND the moving task's `taskId` matches the overlay's `taskId`, so moving other objects does nothing and toggling F7 off suppresses the work. Wired into `CommitPropTextEdit`, `ApplyPropPositionDrag`, `Undo`, `Redo`, and `SaveAndReloadObjects`.
+- **Fixed: `TaskFindByTaskID` matched "7" against "73", "700", every "7" inside any id.** Task IDs are pixel-perfect identifiers, so the search was changed from `find()` substring to exact case-insensitive equality in both the live-while-typing path (`app_input_keyboard.cpp`) and the `TaskFindAgain` / Ctrl+Shift+F next-match path (`app_input.cpp`). Other find modes (`TextInTask`, `ByNote`, `TaskNameTypeId`) keep their substring behaviour.
+- **Fixed: AI Script editor's Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+A / Ctrl+Z / Ctrl+Y were no-ops.** GLUT sends the ASCII control-character code for `Ctrl+letter` (1=SOH/A, 3=ETX/C, 0x18=CAN/X, 0x16=SYN/V, 0x19=EM/Y, 0x1A=SUB/Z) — not the letter itself. The handler was checking `'c' = 99` etc. and never matched. Now checks the control code (primary) and the letter code (fallback), matching the pattern the existing `Ctrl+N` / `Ctrl+O` handlers use.
+- **Fixed: AI Script editor selection highlight drew "way above" the text box.** The blue band quad used top-down `w.y1` Y directly but OpenGL is bottom-up; every other UI quad in the renderer uses `gl_y() = vh - sy`. Single-line and multi-line highlight passes now wrap their vertices in `gl_y()` so the band sits exactly on the selected characters.
+
+### ✨ New Features
+- **AI Script editor — full notepad surface, scoped to the AI Script text field only.** The shortcuts and mouse selection are gated on `prop_text_edit_field_ == kAIScriptTextField` (via `App::IsAIScriptTextFocused()`) so other property text fields, the find bar, `Ctrl+N` task picker, save bindings, and `Ctrl+H` continue to work unchanged.
+  - `Ctrl+A` Select all
+  - `Ctrl+C` / `Ctrl+X` / `Ctrl+V` Copy / cut / paste via Windows clipboard (`Utils::SetClipboardText` / `GetClipboardText`)
+  - `Ctrl+Z` Undo (AI-script-local stack, capped at 100 entries)
+  - `Ctrl+Y` / `Ctrl+Shift+Z` Redo
+  - `Shift+Left/Right/Up/Down/Home/End` Extend selection
+  - `Ctrl+Home` / `Ctrl+End` Start / end of buffer
+  - `Backspace` / `Delete` / `Enter` / printable typing — replace the active selection (Notepad behaviour)
+  - **Mouse**: click places caret and clears selection; `Shift+Click` extends from existing anchor; `Click+Drag` is live drag-selection with auto-scroll at the box edges; clicking elsewhere drops the selection.
+- **AI Script editor — local undo/redo.** `App::AiTextEdit` struct snapshots the full text + caret + anchor before each mutating op (insert, paste, cut, delete, replace) so `Ctrl+Z` / `Ctrl+Y` are O(1) and byte-perfect. New edits clear the redo stack (standard editor semantics). The undo/redo writes stay in the live buffer; only `Ctrl+S` / `Ctrl+W` (existing save bindings) commit to the `.qvm` on disk.
+- **Selection rendering.** New `prop_text_sel_anchor_` / `prop_text_sel_focus_` ints mirrored into the renderer's `task_tree_view`. A translucent blue band is drawn per visual line, beneath the text so characters stay readable.
+
+### ⌨️ New Keybindings (AI Script editor only)
+| Event | Binding | Action |
+|-------|---------|--------|
+| `AiScriptSelectAll` | `Ctrl+A` | Select all in the AI Script text |
+| `AiScriptCopy` | `Ctrl+C` | Copy selection (or whole buffer) to clipboard |
+| `AiScriptCut` | `Ctrl+X` | Cut selection (or whole buffer) to clipboard |
+| `AiScriptPaste` | `Ctrl+V` | Paste from clipboard at caret |
+| `AiScriptUndo` | `Ctrl+Z` | Undo last AI Script edit |
+| `AiScriptRedo` | `Ctrl+Y` / `Ctrl+Shift+Z` | Redo last undone edit |
+| `AiScriptExtendSel` | `Shift+Left/Right/Up/Down/Home/End` | Extend selection (no auto-commit) |
+| `AiScriptDragSel` | Click+Drag in AI Script text | Live drag-selection with edge auto-scroll |
+
+---
+
 ## 3.4.0-pre — igi1conv-Only Parsers Migration
 
 ### 🛠️ Refactor
