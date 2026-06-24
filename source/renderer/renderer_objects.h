@@ -73,7 +73,7 @@ public:
     size_t GetMeshCacheCount() const { return mesh_cache_.size(); }
     size_t GetTextureCacheCount() const { return texture_cache_.size(); }
 
-    void Draw(GLuint ubo_mats, bool overlay_wireframe, const std::vector<LevelObject>& objects, int selected_object_index, int hover_object_index, int draw_parts, const glm::vec3& camera_pos, bool show_magic_obj_spheres = false, int skip_static_draw_index = -1);
+    void Draw(GLuint ubo_mats, bool overlay_wireframe, const std::vector<LevelObject>& objects, int selected_object_index, int hover_object_index, int draw_parts, const glm::vec3& camera_pos, bool show_magic_obj_spheres = false, const std::unordered_set<int>* skip_static_draw_indices = nullptr);
     int PickObjectAtScreen(int x, int y, int w, int h,
                            GLuint ubo_mats,
                            const std::vector<LevelObject>& objects,
@@ -90,6 +90,11 @@ public:
     void DrawModelPreview(const std::string& modelId, GLuint ubo_mats,
                           int vpX, int vpY, int vpW, int vpH,
                           float rotX, float rotY);
+    // Draws one static prop mesh at an arbitrary world matrix within the normal
+    // scene pass — used to attach a weapon mesh to a live bone transform (e.g. an
+    // AI's hand). Binds the shared Matrices UBO (ubo_mats) so the shader gets the
+    // scene's Proj*View*GlobalScale; worldMat is the model matrix in raw world units.
+    void DrawAttachedMesh(const std::string& modelId, bool isBuilding, const glm::mat4& worldMat, GLuint ubo_mats);
     GLuint GetShaderProgram() const { return shader_program_; }
     void DrawAttachmentsForSpline(const std::string& modelId, bool isBuilding,
                                   const glm::mat4& unscaledWorldMat, GLuint ubo_mats,

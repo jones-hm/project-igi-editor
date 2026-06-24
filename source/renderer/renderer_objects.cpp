@@ -340,7 +340,7 @@ void Renderer_Objects::Shutdown() {
 // ─── InitPickingFBO ───────────────────────────────────────────────────────────
 void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                             const std::vector<LevelObject>& objects, int selected_object_index, int hover_object_index, int draw_parts,
-                            const glm::vec3& camera_pos, bool show_magic_obj_spheres, int skip_static_draw_index)
+                            const glm::vec3& camera_pos, bool show_magic_obj_spheres, const std::unordered_set<int>* skip_static_draw_indices)
 {
     // Define the flags (must match renderer.h)
     const int DRAW_OBJECTS = 4;
@@ -423,7 +423,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
             // This object's rigid mesh is being replaced by a live skinned/animated
             // draw elsewhere this frame (see Renderer::DrawSkinnedMesh) — skip it
             // here so the two don't render on top of each other.
-            if (skip_static_draw_index >= 0 && &obj - &objects[0] == skip_static_draw_index) continue;
+            if (skip_static_draw_indices && skip_static_draw_indices->count((int)(&obj - &objects[0]))) continue;
 
             // Reset tint to white at the start of EVERY iteration so a magenta tint
             // set for a previous object can never leak into this one, regardless of

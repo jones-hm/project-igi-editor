@@ -452,6 +452,7 @@ void App::Frame(float delta_seconds) {
 			.terrain_brush_strength_ = edit_brush_strength_,
 			.auto_save_enabled_        = auto_save_enabled_,
 			.auto_save_interval_seconds_ = auto_save_interval_seconds_,
+			.music_on_ = music_playing_,
 			.anim_status_  = BuildAnimStatusString(),
 			.anim_playing_ = !animPlaybacks_.empty(),
 			.anim_debug_visible_ = show_anim_debug_,
@@ -468,7 +469,7 @@ void App::Frame(float delta_seconds) {
 		// it (that painted the character on top of the menu). Instead keep the
 		// object's normal static mesh in the 3D pass — animation isn't advancing
 		// while paused anyway — by not skipping it here.
-		draw_params_.skip_static_draw_index_ = -1;
+		draw_params_.skip_static_draw_indices_ = nullptr;
 		draw_params_.terrain_id_at_world_xy_ =
 			[this](double x, double y) { return level_.GetTerrainNodeId(x, y); };
 		draw_params_.terrain_z_at_world_xy_ =
@@ -550,7 +551,11 @@ void App::Frame(float delta_seconds) {
 	draw_params_.level_objects_ = &level_.GetLevelObjects();
 	draw_params_.selected_object_index_ = selected_object_index_;
 	draw_params_.show_magic_obj_spheres_ = show_magic_obj_spheres_;
-	draw_params_.skip_static_draw_index_ = GetSkinnedReplacementObjectIndex();
+	// All AI with an active, playing clip are skinned-replaced simultaneously
+	// (skinnedReplacementIndices must outlive renderer_.Draw() below, so it's a
+	// local in this Frame() call, not a temporary).
+	std::unordered_set<int> skinnedReplacementIndices = GetSkinnedReplacementObjectIndices();
+	draw_params_.skip_static_draw_indices_ = &skinnedReplacementIndices;
 	draw_params_.terrain_id_at_world_xy_ =
 		[this](double x, double y) { return level_.GetTerrainNodeId(x, y); };
 
@@ -637,6 +642,7 @@ void App::Frame(float delta_seconds) {
 		.terrain_brush_strength_ = edit_brush_strength_,
 		.auto_save_enabled_        = auto_save_enabled_,
 		.auto_save_interval_seconds_ = auto_save_interval_seconds_,
+		.music_on_ = music_playing_,
 		.anim_status_  = BuildAnimStatusString(),
 		.anim_playing_ = !animPlaybacks_.empty(),
 		.anim_debug_visible_ = show_anim_debug_,
@@ -648,38 +654,115 @@ void App::Frame(float delta_seconds) {
 
 	renderer_.Draw(draw_params_, task_tree_view);
 
-    // Draw the live skinned mesh for the selected object's active animation.
+    // Find the "right hand" bone index in modelId's parsed bone list (REIH+MANB
+    // names), cached per modelId. This is the same index space EvaluateWorld's
+    // worldTransforms and the rest-pose bone list use (both come from the same
+    // shared character rig), so one lookup serves both the animating and static
+    // weapon-attachment paths below.
+    auto findHandBoneIndex = [this](const std::string& modelId, const ParsedGeometry* geo) -> int {
+        auto cached = handBoneIndexCache_.find(modelId);
+        if (cached != handBoneIndexCache_.end()) return cached->second;
+        int idx = -1;
+        if (geo) {
+            for (size_t i = 0; i < geo->bones.size(); ++i) {
+                if (geo->bones[i].name == "right hand") { idx = (int)i; break; }
+            }
+        }
+        handBoneIndexCache_[modelId] = idx;
+        return idx;
+    };
+
+    // Weapon meshes are authored with the barrel along native +Y. Attached at the
+    // hand bone it comes out aligned with the forearm (appears vertical). Correction,
+    // applied in the weapon's own local frame (right-multiplied onto the hand matrix
+    // so it still follows the hand as the arm animates):
+    //   * rotate 90° about X  -> swings the barrel from vertical to horizontal,
+    //   * rotate 180° about Z  -> single horizontal flip so the barrel points the
+    //     correct way, then
+    //   * roll 180° about the barrel's OWN (post-correction) direction -> flips the
+    //     weapon right-side-up (was upside down) WITHOUT changing the barrel's aim,
+    //     since rotating about the barrel axis leaves that axis fixed. Computed from
+    //     the actual barrel direction so it's correct regardless of the gun's frame.
+    const glm::mat4 kWeaponBase =
+        glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f)) *
+        glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    const glm::vec3 kBarrelDir = glm::normalize(glm::vec3(kWeaponBase * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f)));
+    const glm::mat4 kWeaponHandCorrection =
+        glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), kBarrelDir) * kWeaponBase;
+
+    // Draw the live skinned mesh for every AI with an active, playing clip —
+    // all of them animate and render in parallel, not just the selected object.
     // This MUST run whenever a clip is playing (not gated by F10) — the static
-    // mesh is already skipped via skip_static_draw_index_ above, so gating this
-    // would leave the object invisible. The bone wireframe stays gated by 'B'.
+    // mesh is already skipped via skip_static_draw_indices_ above, so gating
+    // this would leave those objects invisible. The bone wireframe stays scoped
+    // to the selected object only (avoids clutter) and gated by 'B'.
     {
-        auto ait = animPlaybacks_.find(selected_object_index_);
-        if (ait != animPlaybacks_.end() && ait->second.clip) {
+        auto& objs = level_.GetLevelObjects().GetObjects();
+        for (int idx : skinnedReplacementIndices) {
+            if (idx < 0 || idx >= (int)objs.size()) continue;
+            auto& pb = animPlaybacks_[idx];
             std::vector<glm::mat4> worldTransforms;
-            animRegistry_.EvaluateWorld(ait->second.clip, ait->second.currentTimeMs, worldTransforms);
-            if (!worldTransforms.empty()) {
+            animRegistry_.EvaluateWorld(pb.clip, pb.currentTimeMs, worldTransforms);
+            if (worldTransforms.empty()) continue;
+
+            const auto& obj = objs[idx];
+            glm::mat4 objMat(1.0f);
+            objMat = glm::translate(objMat, glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z));
+            objMat = glm::rotate(objMat, (float)obj.rot.z, glm::vec3(0, 0, 1));
+            objMat = glm::rotate(objMat, (float)obj.rot.x, glm::vec3(1, 0, 0));
+            objMat = glm::rotate(objMat, (float)obj.rot.y, glm::vec3(0, 1, 0));
+            objMat = glm::scale(objMat, glm::vec3(40.96f * obj.scale));
+            renderer_.DrawSkinnedMesh(obj.modelId, obj.isBuilding, worldTransforms, objMat);
+
+            if (show_anim_skeleton_ && idx == selected_object_index_) {
                 // boneParents is indexed by bone ID (same indexing EvaluateWorld uses for
                 // worldTransforms), so DrawAnimSkeleton can connect each bone to its real
                 // parent instead of assuming a flat chain of consecutive array indices.
                 std::vector<int> boneParents(worldTransforms.size(), -1);
-                for (const auto& b : ait->second.clip->bones) {
+                for (const auto& b : pb.clip->bones) {
                     if (b.index >= 0 && (size_t)b.index < boneParents.size())
                         boneParents[b.index] = b.parent;
                 }
-                auto& objs = level_.GetLevelObjects().GetObjects();
-                if (selected_object_index_ >= 0 && selected_object_index_ < (int)objs.size()) {
-                    const auto& obj = objs[selected_object_index_];
-                    glm::mat4 objMat(1.0f);
-                    objMat = glm::translate(objMat, glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z));
-                    objMat = glm::rotate(objMat, (float)obj.rot.z, glm::vec3(0, 0, 1));
-                    objMat = glm::rotate(objMat, (float)obj.rot.x, glm::vec3(1, 0, 0));
-                    objMat = glm::rotate(objMat, (float)obj.rot.y, glm::vec3(0, 1, 0));
-                    objMat = glm::scale(objMat, glm::vec3(40.96f * obj.scale));
-                    renderer_.DrawSkinnedMesh(obj.modelId, obj.isBuilding, worldTransforms, objMat);
-                    if (show_anim_skeleton_)
-                        renderer_.DrawAnimSkeleton(worldTransforms, boneParents, objMat);
+                renderer_.DrawAnimSkeleton(worldTransforms, boneParents, objMat);
+            }
+
+            if (!obj.weaponModelId.empty()) {
+                const ParsedGeometry* geo = renderer_.GetOrLoadSkinGeometry(obj.modelId, obj.isBuilding);
+                int handIdx = findHandBoneIndex(obj.modelId, geo);
+                if (handIdx >= 0 && (size_t)handIdx < worldTransforms.size()) {
+                    glm::mat4 handWorldMat = objMat * worldTransforms[handIdx] * kWeaponHandCorrection;
+                    renderer_.DrawAttachedMesh(obj.weaponModelId, false, handWorldMat);
                 }
             }
+        }
+    }
+
+    // Static/paused AI (not currently in skinnedReplacementIndices) still hold
+    // their weapon, positioned at the hand bone's REST pose instead of an
+    // animated transform.
+    {
+        auto& objs = level_.GetLevelObjects().GetObjects();
+        for (int idx = 0; idx < (int)objs.size(); ++idx) {
+            const auto& obj = objs[idx];
+            if (obj.weaponModelId.empty() || obj.deleted) continue;
+            if (skinnedReplacementIndices.count(idx)) continue; // already drawn above (animated)
+
+            const ParsedGeometry* geo = renderer_.GetOrLoadSkinGeometry(obj.modelId, obj.isBuilding);
+            int handIdx = findHandBoneIndex(obj.modelId, geo);
+            if (handIdx < 0 || !geo || (size_t)handIdx >= geo->bones.size()) continue;
+
+            std::vector<glm::vec3> restPositions = ComputeBoneWorldPositionsPublic(geo->bones);
+            if ((size_t)handIdx >= restPositions.size()) continue;
+
+            glm::mat4 objMat(1.0f);
+            objMat = glm::translate(objMat, glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z));
+            objMat = glm::rotate(objMat, (float)obj.rot.z, glm::vec3(0, 0, 1));
+            objMat = glm::rotate(objMat, (float)obj.rot.x, glm::vec3(1, 0, 0));
+            objMat = glm::rotate(objMat, (float)obj.rot.y, glm::vec3(0, 1, 0));
+            objMat = glm::scale(objMat, glm::vec3(40.96f * obj.scale));
+
+            glm::mat4 handLocalMat = glm::translate(glm::mat4(1.0f), restPositions[handIdx] * kMefNativeScale);
+            renderer_.DrawAttachedMesh(obj.weaponModelId, false, objMat * handLocalMat * kWeaponHandCorrection);
         }
     }
 
@@ -819,32 +902,8 @@ float App::GetSelectedObjectScale() const {
 #include <glm/ext/matrix_transform.hpp>
 
 // ── Animation system ─────────────────────────────────────────────────────────
-
-void App::InitAnimationForObject(int objIndex) {
-    auto& objects = level_.GetLevelObjects().GetObjects();
-    if (objIndex < 0 || objIndex >= (int)objects.size()) return;
-    const auto& obj = objects[objIndex];
-    if (obj.boneHierarchy < 0) return;
-
-    // Don't re-init if already playing for this object
-    auto it = animPlaybacks_.find(objIndex);
-    if (it != animPlaybacks_.end() && it->second.clip != nullptr) return;
-
-    // Import animations for this bone hierarchy if not already done
-    if (!animRegistry_.ImportAnimations(obj.boneHierarchy)) return;
-
-    // Only auto-play the object's actual "Stand Animation" clip. Do NOT fall back to
-    // an arbitrary first clip — that would visibly re-skin/replace an AI soldier with
-    // an unrelated animation even though its real animation was not found.
-    const AnimationClip* clip = animRegistry_.GetClipByAnimId(obj.boneHierarchy, obj.standAnimation);
-    if (!clip) return;
-
-    AnimPlayback pb;
-    pb.Start(clip);
-    animPlaybacks_[objIndex] = pb;
-    Logger::Get().Log(LogLevel::INFO, "[Anim] Auto-playing '" + clip->name +
-        "' for object " + std::to_string(objIndex) + " (" + obj.type + ")");
-}
+// (Per-object auto-play init now lives in LoadLevel's parallel resolution pass;
+//  see app_level.cpp. There is no single-object initializer anymore.)
 
 void App::UpdateAnimations(float dtSec) {
     // Skip if global pause is on
@@ -927,9 +986,20 @@ const std::vector<int>& App::GetOrComputeAnimationIds(int objIndex) {
     if (cached != animIdsCache_.end()) return cached->second;
 
     auto& objects = level_.GetLevelObjects().GetObjects();
-    if (objIndex < 0 || objIndex >= (int)objects.size()) return kEmpty;
+    if (objIndex < 0 || objIndex >= (int)objects.size() || objects[objIndex].boneHierarchy < 0) return kEmpty;
+
+    return animIdsCache_[objIndex] = ComputeAnimationIdsForObject(objIndex);
+}
+
+// Pure computation, no cache reads/writes — safe to call concurrently from worker
+// threads (level-load parallel animation resolution) as long as no other thread is
+// mutating LevelObjects/AnimationRegistry at the same time (registry must already
+// be fully imported — see LoadLevel's sequential ImportAnimations pre-pass).
+std::vector<int> App::ComputeAnimationIdsForObject(int objIndex) const {
+    auto& objects = level_.GetLevelObjects().GetObjects();
+    if (objIndex < 0 || objIndex >= (int)objects.size()) return {};
     const auto& obj = objects[objIndex];
-    if (obj.boneHierarchy < 0) return kEmpty;
+    if (obj.boneHierarchy < 0) return {};
 
     std::vector<int> ids;
     if (obj.standAnimation >= 0) ids.push_back(obj.standAnimation);
@@ -971,7 +1041,7 @@ const std::vector<int>& App::GetOrComputeAnimationIds(int objIndex) {
         ", bone hierarchy " + std::to_string(obj.boneHierarchy) + "): " + std::to_string(ids.size()) +
         " animation id(s) available");
 
-    return animIdsCache_[objIndex] = std::move(ids);
+    return ids;
 }
 
 void App::ToggleAnimationForObject(int objIndex, int animId) {
@@ -1007,20 +1077,34 @@ void App::ToggleAnimationForObject(int objIndex, int animId) {
     }
 }
 
-int App::GetSkinnedReplacementObjectIndex() {
-    if (selected_object_index_ < 0) return -1;
-    auto it = animPlaybacks_.find(selected_object_index_);
-    if (it == animPlaybacks_.end() || !it->second.clip) return -1;
-
+std::unordered_set<int> App::GetSkinnedReplacementObjectIndices() {
+    std::unordered_set<int> result;
     auto& objs = level_.GetLevelObjects().GetObjects();
-    if (selected_object_index_ >= (int)objs.size()) return -1;
-    const auto& obj = objs[selected_object_index_];
-    // Only skip the static draw if the skinned replacement can actually render —
-    // otherwise a model whose skin geometry fails to load goes permanently
-    // invisible (neither the static nor the skinned draw ever produces anything).
-    if (!renderer_.HasSkinGeometry(obj.modelId, obj.isBuilding)) return -1;
+    for (const auto& [idx, pb] : animPlaybacks_) {
+        // Paused (animation toggled off for this AI) -> show its normal static
+        // mesh, not a frozen skinned pose. Only objects actively playing get
+        // replaced with the live skinned draw.
+        if (!pb.clip || !pb.playing) continue;
+        if (idx < 0 || idx >= (int)objs.size()) continue;
+        const auto& obj = objs[idx];
+        // Only skip the static draw if the skinned replacement can actually render —
+        // otherwise a model whose skin geometry fails to load goes permanently
+        // invisible (neither the static nor the skinned draw ever produces anything).
+        if (!renderer_.HasSkinGeometry(obj.modelId, obj.isBuilding)) continue;
+        result.insert(idx);
+    }
 
-    return selected_object_index_;
+    if (result != animSkinnedIndicesPrev_) {
+        Logger::Get().Log(LogLevel::INFO, "[Anim] Skinned/animated replacement active for " +
+            std::to_string(result.size()) + " AI object(s) in parallel: " +
+            [&]() {
+                std::string s;
+                for (int idx : result) s += std::to_string(idx) + " ";
+                return s;
+            }());
+        animSkinnedIndicesPrev_ = result;
+    }
+    return result;
 }
 
 void App::ComputePropAnimUiState(int& boneHierarchy, std::vector<int>& ids, int& activeId, bool& isPlaying) {

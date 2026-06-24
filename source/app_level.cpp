@@ -6,6 +6,8 @@
 #include "app_internal.h"
 #include "utils_igi1conv.h"
 #include <mmsystem.h>
+#include <future>
+#include <set>
 
 void App::PlayLevelMusic(int level_no) {
     StopLevelMusic();
@@ -82,6 +84,17 @@ void App::StopLevelMusic() {
     mciSendStringA("close bgmusic", nullptr, 0, nullptr);
     music_playing_ = false;
     Logger::Get().Log(LogLevel::INFO, "[Music] Stopped");
+}
+
+void App::ToggleMusic() {
+    if (music_playing_) {
+        StopLevelMusic();
+        Logger::Get().Log(LogLevel::INFO, "[Music] Toggled OFF via Escape menu");
+    } else {
+        int lvl = (last_loaded_level_ >= 0) ? last_loaded_level_ : 1;
+        PlayLevelMusic(lvl);
+        Logger::Get().Log(LogLevel::INFO, "[Music] Toggled ON via Escape menu (level " + std::to_string(lvl) + ")");
+    }
 }
 
 void App::LoadLevel(int level_no) {
@@ -269,15 +282,76 @@ void App::LoadLevel(int level_no) {
 				    : "UNAVAILABLE (" + gameRes + "): " + resErr));
 		}
 		// ── After all objects loaded: auto-import animations for HumanSoldier-family NPCs ──
+		// Every eligible AI auto-plays its real animation (Stand Animation, AI script,
+		// or PatrolPath command) in parallel from the start — not just the one being
+		// inspected. Resolving each AI's animation is heavy (it can spawn igi1conv.exe
+		// to decompile that AI's .qvm script), so resolution runs on worker threads;
+		// only the result merge touches shared state, and only on this (main) thread.
 		Logger::Get().Log(LogLevel::INFO, "[App] Auto-importing animations for AI NPCs...");
 		animPlaybacks_.clear();
 		animIdsCache_.clear();
+
+		std::vector<int> eligible;
 		for (int i = 0; i < (int)objects.size(); ++i) {
 			if (objects[i].deleted || objects[i].boneHierarchy < 0) continue;
-			InitAnimationForObject(i);
+			eligible.push_back(i);
+		}
+
+		// Phase 1 (sequential, main thread): import every distinct bone hierarchy's
+		// animation set BEFORE any worker thread touches AnimationRegistry — its
+		// internal cache map is written lazily on first import and is not safe to
+		// write concurrently for the same or different bone hierarchies.
+		std::set<int> hierarchiesToImport;
+		for (int i : eligible) hierarchiesToImport.insert(objects[i].boneHierarchy);
+		for (int h : hierarchiesToImport) animRegistry_.ImportAnimations(h);
+
+		// Phase 2 (parallel, worker threads): resolve each AI's animation ids + first
+		// matching clip. Read-only against AnimationRegistry (already fully imported
+		// above) and LevelObjects; writes only to each task's own local result.
+		struct AnimResolveResult { int objIndex; std::vector<int> ids; const AnimationClip* clip = nullptr; bool usedDefault = false; };
+		std::vector<std::future<AnimResolveResult>> futures;
+		futures.reserve(eligible.size());
+		for (int i : eligible) {
+			futures.push_back(std::async(std::launch::async, [this, i]() -> AnimResolveResult {
+				AnimResolveResult r{i};
+				r.ids = ComputeAnimationIdsForObject(i);
+				const auto& o = level_.GetLevelObjects().GetObjects()[i];
+				for (int id : r.ids) {
+					r.clip = animRegistry_.GetClipByAnimId(o.boneHierarchy, id);
+					if (r.clip) break;
+				}
+				// No specific referenced animation resolved -> fall back to the bone
+				// hierarchy's default (lowest-animId) clip so EVERY AI animates by
+				// default, not just those whose QSC/AI-script names an animation.
+				if (!r.clip) {
+					r.clip = animRegistry_.GetDefaultClip(o.boneHierarchy);
+					r.usedDefault = (r.clip != nullptr);
+				}
+				return r;
+			}));
+		}
+		Logger::Get().Log(LogLevel::INFO, "[Anim] Resolving animations for " +
+			std::to_string(eligible.size()) + " AI NPC(s) across " +
+			std::to_string(futures.size()) + " worker thread(s) in parallel...");
+
+		// Phase 3 (sequential, main thread): merge results — animPlaybacks_ /
+		// animIdsCache_ are plain maps, never written from worker threads directly,
+		// so there is no clash here even though Phase 2 ran fully concurrently.
+		for (auto& f : futures) {
+			AnimResolveResult r = f.get();
+			animIdsCache_[r.objIndex] = r.ids;
+			if (!r.clip) continue;
+			AnimPlayback pb;
+			pb.Start(r.clip);
+			pb.forceLoop = true;  // every AI animates continuously, not just once
+			animPlaybacks_[r.objIndex] = pb;
+			Logger::Get().Log(LogLevel::INFO, "[Anim] Auto-playing '" + r.clip->name + "'" +
+				(r.usedDefault ? " (DEFAULT fallback — no referenced animation)" : "") +
+				" for object " + std::to_string(r.objIndex) + " (" + objects[r.objIndex].type + ")");
 		}
 		Logger::Get().Log(LogLevel::INFO, "[App] Animation init complete: " +
-			std::to_string(animPlaybacks_.size()) + " AI NPCs have animations.");
+			std::to_string(animPlaybacks_.size()) + " of " + std::to_string(eligible.size()) +
+			" eligible AI NPCs have a real animation and are now playing in parallel.");
 
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 		Logger::Get().Log(LogLevel::INFO, "[App] LoadLevel() COMPLETE for level " + std::to_string(level_no));

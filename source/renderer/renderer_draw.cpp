@@ -232,7 +232,7 @@ void Renderer::Draw(const draw_params_s &params,
                   params.level_objects_->GetObjects(),
                   params.selected_object_index_, task_tree_view.hover_object_index_,
                   params.draw_parts_, params.view_define_->pos_,
-                  params.show_magic_obj_spheres_, params.skip_static_draw_index_);
+                  params.show_magic_obj_spheres_, params.skip_static_draw_indices_);
     splines_.Draw(params.level_objects_->GetObjects(), ubo_mats_,
                   objects_.GetShaderProgram());
   }
@@ -1476,6 +1476,8 @@ void Renderer::Draw(const draw_params_s &params,
       btn_labels.push_back("Auto Save");
       const int SEARCH_ROW = btn_labels.size();
       btn_labels.push_back("Model Search");
+      const int MUSIC_ROW = btn_labels.size();
+      btn_labels.push_back("Music");
       const int TERRAIN_HEADER_ROW = btn_labels.size();
 
       bool exp = task_tree_view.pause_terrain_expanded_;
@@ -1601,6 +1603,23 @@ void Renderer::Draw(const draw_params_s &params,
           std::string buf = task_tree_view.pause_search_input_;
           if (is_active && (clock() / 500) % 2 == 0) buf += "_";
           draw_text_sys(box_x + 5, screen_btn_y, buf.c_str(), 1.0f, 1.0f, 1.0f);
+
+        } else if (i == MUSIC_ROW) {
+          // Music on/off checkbox: "[X] Music" / "[ ] Music", centered, hover-highlighted.
+          if (hovered) {
+            glEnable(GL_BLEND);
+            glColor4f(0.0f, 0.8f, 0.0f, 0.35f);
+            glBegin(GL_QUADS);
+            glVertex2i(menu_x, gl_btn_y - 15); glVertex2i(menu_x + menu_w, gl_btn_y - 15);
+            glVertex2i(menu_x + menu_w, gl_btn_y + 15); glVertex2i(menu_x, gl_btn_y + 15);
+            glEnd();
+            glDisable(GL_BLEND);
+          }
+          char musicbuf[24];
+          snprintf(musicbuf, sizeof(musicbuf), "[%c] Music", task_tree_view.music_on_ ? 'X' : ' ');
+          int tw = (int)strlen(musicbuf) * 6;
+          draw_text_sys(menu_x + (menu_w - tw) / 2, screen_btn_y, musicbuf,
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
         } else if (i == TERRAIN_HEADER_ROW) {
           draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 3),

@@ -1,5 +1,23 @@
 # Changelogs
 
+## 3.6.0-pre — AI Held Weapons & Escape-Menu Music Toggle
+
+### ✨ New Features
+- **AI soldiers now hold their assigned weapon in-hand.** Each `HumanSoldier`-family task in `objects.qvm` carries a `Gun*` weapon child whose `WEAPON_ID_*` enum is resolved to the same render model used by `GunPickup`/`AmmoPickup` (via the existing `ResolvePickupModelId`). The weapon mesh is attached to the soldier's **"right hand"** bone (located by name in the parsed MEF bone list) so it moves with the hand as the animation plays. Static/paused AI hold the weapon at the rest-pose hand position.
+  - **Cutscene / single-node AI are excluded.** If the soldier's `HumanAI` child references an AIGraph with ≤1 node, or whose name contains "cutscene", no weapon is attached — these are scripted cutscene actors, not combat AI. (Verified: level-1 task 1666 "Jones" with graph 2 / 1 node is correctly skipped.)
+  - **Live weapon-id refresh.** Changing a soldier's (or its weapon child's) Weapon ID in the TaskTree property panel re-resolves and updates the held weapon immediately in the editor — no reload required (`LevelObjects::ResolveSoldierWeapon`).
+  - Populates the previously-unused `primaryWeapon` / `graphId` / `graphName` AI tooltip fields as a side effect.
+- **Escape-menu Music on/off toggle.** A new `[X] Music` / `[ ] Music` checkbox row in the pause menu (between Model Search and Terrain Options) starts/stops level music live via `App::ToggleMusic()`; the checkbox reflects current playback state.
+
+### 🐛 Bug Fixes
+- **Fixed: attached weapons were invisible.** `DrawAttachedMesh` used the object shader but never bound the shared Matrices UBO, so the vertex shader had no `u_mvp` (Proj·View·GlobalScale) and the weapon rendered off-screen. Now binds the UBO like the main scene draw.
+- **Weapon orientation correction.** Weapon meshes are authored barrel-along-+Y; attached at the hand they came out vertical/upside-down. A fixed local correction (90° tilt to horizontal, horizontal flip to correct aim, then a 180° roll about the computed barrel axis to set it right-side-up) orients them like a held rifle without affecting position or aim.
+
+### 🔧 Technical
+- **Parser** (`level_objects.cpp`): new `HumanAI` (graph id), `Gun*` weapon-child (weapon enum), and extended `AIGraph` (node count) capture; new `LevelObject` fields `weaponModelId`, `graphNodeCount`, `aiGraphTaskId`, `weaponEnumId`.
+- **`Renderer_Objects::DrawAttachedMesh`** + `Renderer` forwarders, and `GetOrLoadSkinGeometry` exposed for hand-bone lookup.
+- Per-model "right hand" bone index cached in `App::handBoneIndexCache_` to avoid per-frame name scans.
+
 ## 3.5.0-pre — Auto-Playing AI Animations in Parallel & Level Music
 
 ### ✨ New Features

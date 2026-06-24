@@ -109,8 +109,10 @@ void AnimPlayback::Update(float dtMs) {
     currentTimeMs += dtMs * speed;
     int dur = clip->duration_ms();
     if (dur > 0) {
-        if (clip->loop()) {
-            // Loop: wrap around
+        if (clip->loop() || forceLoop) {
+            // Loop: wrap around. forceLoop keeps editor auto-play running
+            // continuously even for clips whose own tp_flag is non-looping —
+            // so every AI animates forever instead of freezing after one cycle.
             while (currentTimeMs >= (float)dur) currentTimeMs -= (float)dur;
         } else {
             // Clamp and stop
@@ -245,6 +247,16 @@ const AnimationClip* AnimationRegistry::GetFirstClip(int boneHierarchy) const {
     auto it = registry_.find(boneHierarchy);
     if (it == registry_.end() || it->second.clips.empty()) return nullptr;
     return &it->second.clips.begin()->second;
+}
+
+const AnimationClip* AnimationRegistry::GetDefaultClip(int boneHierarchy) const {
+    auto it = registry_.find(boneHierarchy);
+    if (it == registry_.end() || it->second.clips.empty()) return nullptr;
+    const AnimationClip* best = nullptr;
+    for (const auto& [name, clip] : it->second.clips) {
+        if (!best || clip.animId < best->animId) best = &clip;
+    }
+    return best;
 }
 
 bool AnimationRegistry::HasAnimations(int boneHierarchy) const {

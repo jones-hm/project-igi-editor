@@ -447,6 +447,16 @@ void App::CommitPropTextEdit() {
 	obj.modified = true;
 	level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
 
+	// If a soldier's weapon child (Gun*) enum was just edited, re-resolve the parent
+	// soldier's held-weapon model so the weapon shown in the editor updates live —
+	// without this it would only refresh on a full reload. If the soldier itself was
+	// edited, refresh it directly (harmless no-op when nothing weapon-related changed).
+	if (obj.type.rfind("Gun", 0) == 0 && obj.parentIndex >= 0) {
+		level_.GetLevelObjects().ResolveSoldierWeapon(obj.parentIndex);
+	} else {
+		level_.GetLevelObjects().ResolveSoldierWeapon(oi);
+	}
+
 	// Live-sync the graph overlay offset when the user moves the AIGraph
 	// task via the property panel — otherwise the 3D nodes/edges stay at the
 	// stale position while F7 is showing the graph.

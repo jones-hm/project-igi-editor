@@ -13,6 +13,7 @@
 #include <atomic>
 #include <optional>
 #include <set>
+#include <unordered_set>
 
 /*
 ================================================================================
@@ -227,24 +228,35 @@ private:
 	std::unordered_map<int, std::vector<int>> animIdsCache_; // object index -> discovered AIAction_PlayAnimation ids
 	bool show_anim_debug_ = false; // F10: animation status panel (independent of F2/TaskTree)
 	bool show_anim_skeleton_ = false; // B: bone wireframe overlay, off by default, independent of F10/playback state
+	// modelId -> "right hand" bone index within GetOrLoadSkinGeometry's parsed bone
+	// list, cached so per-frame weapon attachment doesn't re-scan bone names. -1 =
+	// looked up once already and not found (don't repeat the failed search either).
+	std::unordered_map<std::string, int> handBoneIndexCache_;
 
 	// Level background music (game_music.wav, converted from ILSF -> PCM, looped via MCI)
 	bool music_playing_ = false;
 	void PlayLevelMusic(int level_no);
 	void StopLevelMusic();
 	void CheckMusicLoop(); // call every frame: manually restarts playback since MCI "repeat" is unreliable for waveaudio
-	void InitAnimationForObject(int objIndex);
+	void ToggleMusic();    // Escape-menu Music checkbox: stop if playing, else (re)start current level's music
 	void UpdateAnimations(float dtSec);
 	std::string BuildAnimStatusString();
 	int FindHumanAiTaskId(int objIndex) const;
 	const std::vector<int>& GetOrComputeAnimationIds(int objIndex);
+	// Pure computation (no cache reads/writes) of GetOrComputeAnimationIds' result —
+	// safe to call concurrently from worker threads. Used by LoadLevel's parallel
+	// per-AI animation resolution (see app_level.cpp).
+	std::vector<int> ComputeAnimationIdsForObject(int objIndex) const;
 	void ToggleAnimationForObject(int objIndex, int animId);
 	// Fills the property panel's "Animation Control" section state for the
 	// currently selected object (boneHierarchy stays -1 when not applicable).
 	void ComputePropAnimUiState(int& boneHierarchy, std::vector<int>& ids, int& activeId, bool& isPlaying);
-	// Returns selected_object_index_ when it has an active clip (so its rigid
-	// mesh should be skipped in favor of the live skinned draw), else -1.
-	int GetSkinnedReplacementObjectIndex();
+	// Returns every object index with an active, playing clip and renderable skin
+	// geometry — i.e. every AI currently animating in parallel, not just the
+	// selected one. Their rigid (static) mesh is skipped in favor of the live
+	// skinned draw. Logs whenever the active set changes (object added/removed).
+	std::unordered_set<int> GetSkinnedReplacementObjectIndices();
+	std::unordered_set<int> animSkinnedIndicesPrev_; // for change-only logging
 
   // C2: Typed task property editor
   bool prop_editor_open_ = false;

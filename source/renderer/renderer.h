@@ -397,9 +397,11 @@ public:
 		const class LevelObjects* level_objects_;
 		int					selected_object_index_;
 		bool				show_magic_obj_spheres_;
-		// Object index whose rigid (static) mesh should be skipped because a live
-		// skinned/animated mesh is being drawn in its place instead (-1 = none).
-		int					skip_static_draw_index_ = -1;
+		// Object indices whose rigid (static) mesh should be skipped because a live
+		// skinned/animated mesh is being drawn in its place instead (nullptr/empty = none).
+		// All AI with active playback are skinned-replaced simultaneously, so this can
+		// hold many indices at once, not just the selected object.
+		const std::unordered_set<int>* skip_static_draw_indices_ = nullptr;
 
 		// Returns the terrain CTR node id at a world (x,y), or -1. Set by App so the
 		// renderer can show the terrain id under the cursor without depending on Level. (issue 3)
@@ -501,6 +503,7 @@ public:
 		// Auto-save state
 		bool   auto_save_enabled_        = false;
 		int    auto_save_interval_seconds_ = 300;
+		bool   music_on_                 = false; // Escape-menu Music checkbox state
 
 		// Animation state
 		std::string anim_status_;           // summary text of animations playing
@@ -634,6 +637,16 @@ public:
     bool                    HasSkinGeometry(const std::string& modelId, bool isBuilding) {
         const ParsedGeometry* geo = objects_.GetOrLoadSkinGeometry(modelId, isBuilding);
         return geo && !geo->vertices.empty() && !geo->triangles.empty();
+    }
+    // Exposes the parsed bone list (REIH+MANB names/parents/rest pivots) for callers
+    // that need to locate a named bone (e.g. "right hand") for weapon attachment.
+    const ParsedGeometry*   GetOrLoadSkinGeometry(const std::string& modelId, bool isBuilding) {
+        return objects_.GetOrLoadSkinGeometry(modelId, isBuilding);
+    }
+    // Draws one static prop mesh at an arbitrary world matrix in the normal scene
+    // pass — used to attach a weapon mesh to a live bone transform (an AI's hand).
+    void                    DrawAttachedMesh(const std::string& modelId, bool isBuilding, const glm::mat4& worldMat) {
+        objects_.DrawAttachedMesh(modelId, isBuilding, worldMat, ubo_mats_);
     }
     void                    SetSplineTerrainQuery(std::function<bool(double, double, float&)> fn) { splines_.SetTerrainQuery(std::move(fn)); }
 	glm::vec3				GetMeshExtents(const std::string& modelId, bool isBuilding) { return objects_.GetMeshExtents(modelId, isBuilding); }

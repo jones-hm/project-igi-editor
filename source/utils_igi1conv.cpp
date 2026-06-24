@@ -25,7 +25,9 @@ std::string GetExePath() {
 }
 
 std::string MakeTempPath(const std::string& suffix) {
-    static std::mt19937_64 rng(std::random_device{}());
+    // thread_local: animation resolution now runs this concurrently across worker
+    // threads at level load — a shared/static RNG would be a data race.
+    thread_local std::mt19937_64 rng(std::random_device{}());
     std::ostringstream ss;
     ss << std::filesystem::temp_directory_path().string()
        << "\\igi1conv_" << std::hex << rng() << suffix;

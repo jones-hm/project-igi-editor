@@ -81,6 +81,12 @@ public:
     // Get the first available clip for a bone hierarchy (for auto-play). Returns nullptr if none.
     const AnimationClip* GetFirstClip(int boneHierarchy) const;
 
+    // Get the DEFAULT clip for a bone hierarchy: the one with the lowest animId.
+    // Used as the auto-play fallback for AI that reference no specific animation,
+    // so "every AI animates" without depending on unordered_map iteration order
+    // (which is arbitrary). Returns nullptr if the hierarchy has no clips.
+    const AnimationClip* GetDefaultClip(int boneHierarchy) const;
+
     // Evaluate bone transforms at a given time (ms). Fills boneTransforms with
     // local-space transforms for each bone in the clip's skeleton.
     void Evaluate(const AnimationClip* clip, float timeMs, std::vector<glm::mat4>& boneTransforms) const;
@@ -128,6 +134,7 @@ struct AnimPlayback {
     float currentTimeMs = 0.f;
     bool  playing = false;
     float speed = 1.0f;
+    bool  forceLoop = false;  // editor: keep looping even if clip's tp_flag is non-looping
 
     void Reset() { currentTimeMs = 0.f; playing = false; }
     void Start(const AnimationClip* c) { clip = c; currentTimeMs = 0.f; playing = true; }
