@@ -164,6 +164,7 @@ enum class WidgetKind {
     AIScriptPath,  // single-line editable: resolved .qvm file path
     AIScriptText,  // multiline editable: decompiled QSC source
     AnimIdButton,  // button: toggle play/pause for one discovered AIAction_PlayAnimation id (id stored in `comp`)
+    LightmapButton, // button: "Calculate Light Mapping" (Building/EditRigidObj only)
 };
 
 struct Widget {
@@ -200,7 +201,8 @@ static constexpr int kZSliderW   = 22;   // vertical Z slider width
 inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = false,
                           const std::vector<std::pair<int, const TaskSchemaNS::TaskSchema*>>& children = {},
                           int animBoneHierarchy = -1,
-                          const std::vector<int>& animIds = {}) {
+                          const std::vector<int>& animIds = {},
+                          bool showLightmapButton = false) {
     using namespace TaskSchemaNS;
     Layout L;
     L.panel_x = kLeft; L.panel_y = kTop; L.panel_w = kWidth;
@@ -358,6 +360,14 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
                              kLeft + kPad, y, kLeft + kWidth - kPad, y + scriptH,
                              kAIScriptTextField, 0});
         y += scriptH + 6;
+    }
+
+    // "Calculate Light Mapping" button — Building/EditRigidObj only.
+    if (showLightmapButton) {
+        y += kRowH;  // gap line, consistent with the other button sections
+        L.widgets.push_back({WidgetKind::LightmapButton, kLeft + kPad, y,
+                             kLeft + kWidth - kPad, y + kBoxH, -1, 0});
+        y += kBoxH + 4;
     }
 
     L.panel_h = (y + kPad) - kTop;
