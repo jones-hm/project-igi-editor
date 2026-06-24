@@ -36,7 +36,7 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
 
     auto buildSubMesh = [&](size_t triangleStart, size_t triangleCount) -> std::optional<SubMesh> {
         std::vector<float> verts;
-        verts.reserve(triangleCount * 3 * 8);
+        verts.reserve(triangleCount * 3 * 10);
 
         for (size_t triIndex = triangleStart; triIndex < triangleStart + triangleCount; ++triIndex) {
             const auto& tri = geometry.triangles[triIndex];
@@ -86,6 +86,8 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
                 // on models that fell through to this fallback.
                 verts.push_back(src.uv.x);
                 verts.push_back(1.0f - src.uv.y);
+                verts.push_back(geometry.modelType == 3 ? src.uv2.x : 0.0f);
+                verts.push_back(geometry.modelType == 3 ? src.uv2.y : 0.0f);
             };
 
             addVertex(tri[0]);
@@ -100,7 +102,7 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
         SubMesh sub;
         sub.textureID = 0;
         sub.alphaMode = 0;
-        sub.vertexCount = static_cast<int>(verts.size() / 8);
+        sub.vertexCount = static_cast<int>(verts.size() / 10);
         sub.baseColorFactor = glm::vec4(1.0f);
 
         glGenVertexArrays(1, &sub.VAO);
@@ -108,12 +110,14 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
         glBindVertexArray(sub.VAO);
         glBindBuffer(GL_ARRAY_BUFFER, sub.VBO);
         glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(float), verts.data(), GL_STATIC_DRAW);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)0);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(3 * sizeof(float)));
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(6 * sizeof(float)));
         glEnableVertexAttribArray(2);
+        glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(8 * sizeof(float)));
+        glEnableVertexAttribArray(3);
         glBindVertexArray(0);
 
         return sub;
@@ -192,6 +196,8 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
 
                         verts.push_back(src.uv.x);
                         verts.push_back(1.0f - src.uv.y);
+                        verts.push_back(geometry.modelType == 3 ? src.uv2.x : 0.0f);
+                        verts.push_back(geometry.modelType == 3 ? src.uv2.y : 0.0f);
                     };
 
                     addVertex(tri[0]);
@@ -206,7 +212,7 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
 
             SubMesh sub;
             sub.textureID = 0;
-            sub.vertexCount = static_cast<int>(verts.size() / 8);
+            sub.vertexCount = static_cast<int>(verts.size() / 10);
             sub.baseColorFactor = glm::vec4(1.0f);
             sub.alphaMode = materialHasAlpha ? 2 : 0;
             sub.materialSlot = materialSlot;
@@ -216,12 +222,14 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
             glBindVertexArray(sub.VAO);
             glBindBuffer(GL_ARRAY_BUFFER, sub.VBO);
             glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(float), verts.data(), GL_STATIC_DRAW);
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)0);
             glEnableVertexAttribArray(0);
-            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(3 * sizeof(float)));
             glEnableVertexAttribArray(1);
-            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(6 * sizeof(float)));
             glEnableVertexAttribArray(2);
+            glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(8 * sizeof(float)));
+            glEnableVertexAttribArray(3);
             glBindVertexArray(0);
 
             mesh.vertexCount += sub.vertexCount;
