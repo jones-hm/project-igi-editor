@@ -242,6 +242,7 @@ add_executable(igi_tests
     tests/test_pickup_resolve.cpp
     tests/test_res_model_set.cpp
     tests/test_res_stream_append.cpp
+    tests/test_mef_native_lightmap.cpp
 )
 
 # Explicit runtime so igi_tests always matches igi-editor (/MDd Debug, /MD Release).
@@ -282,6 +283,7 @@ target_sources(igi_tests PRIVATE
     source/level/mtp_writer.cpp
     source/renderer/fnt_parser.cpp
     source/level/terrain_files.cpp
+    source/renderer/mef_native.cpp
 )
 
 # level_objects.cpp (and its pch.h header graph: app.h, renderer, level.h) relies

@@ -272,6 +272,11 @@ std::vector<RenderVertex> ParseRenderVertices(const std::vector<uint8_t>& bytes,
             vertices[i].weight        = ReadValue<float>   (bytes, base + 32);
             vertices[i].localVertexId = ReadValue<uint16_t>(bytes, base + 36);
             vertices[i].boneIndex     = ReadValue<uint16_t>(bytes, base + 38);
+        } else if (modelType == 3) {
+            vertices[i].uv2 = glm::vec2(
+                ReadValue<float>(bytes, base + 32),
+                ReadValue<float>(bytes, base + 36)
+            );
         }
     }
 

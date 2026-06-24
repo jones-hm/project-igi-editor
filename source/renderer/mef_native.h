@@ -14,6 +14,7 @@ struct RenderVertex {
     glm::vec3 rawPos{0.f};      // raw XTRV position (NOT scaled, NOT baked) — for ASCII export
     glm::vec3 normal{0.f};      // from XTRV bytes +12..+23
     glm::vec2 uv{0.f};
+    glm::vec2 uv2{0.f};         // lightmap atlas UV, modelType==3 only, XTRV bytes +32..+39
     uint16_t boneIndex{0};
     uint16_t localVertexId{0};  // XTRV.vn @+36
     float    weight{1.0f};      // XTRV.w  @+32
