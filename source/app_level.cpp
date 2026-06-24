@@ -4,6 +4,85 @@
  *          Split from app.cpp; shares app_internal.h.
  *****************************************************************************/
 #include "app_internal.h"
+#include "utils_igi1conv.h"
+#include <mmsystem.h>
+
+void App::PlayLevelMusic(int level_no) {
+    StopLevelMusic();
+
+    // Per-level override from qedconfig.qsc (QEDLevelMusic(level, "filename.wav")),
+    // falling back to the game's default "game_music.wav" if unset.
+    std::string musicFile = "game_music.wav";
+    auto& musicMap = Config::Get().levelMusicFiles;
+    auto cfgIt = musicMap.find(level_no);
+    if (cfgIt != musicMap.end() && !cfgIt->second.empty()) musicFile = cfgIt->second;
+
+    std::string soundsDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
+        std::to_string(level_no) + "\\sounds";
+    std::string srcWav = soundsDir + "\\" + musicFile;
+    if (!std::filesystem::exists(srcWav)) {
+        Logger::Get().Log(LogLevel::ERR, "[Music] Configured music file not found: " + srcWav +
+            " (searched " + soundsDir + ")");
+        return;
+    }
+
+    std::string outWav = Utils::GetExeDirectory() + "\\cache\\music\\level" + std::to_string(level_no) +
+        "_" + std::filesystem::path(musicFile).stem().string() + ".wav";
+    if (!std::filesystem::exists(outWav)) {
+        Logger::Get().Log(LogLevel::INFO, "[Music] Converting " + srcWav + " -> " + outWav);
+        std::string err;
+        if (!igi1conv::WavConvert(srcWav, outWav, err)) {
+            Logger::Get().Log(LogLevel::WARNING, "[Music] Convert failed: " + err);
+            return;
+        }
+    }
+
+    // Defensively close any stale alias left over from a previous run that
+    // didn't shut down cleanly (e.g. killed by --verify-level's timeout).
+    mciSendStringA("close bgmusic", nullptr, 0, nullptr);
+
+    std::string openCmd = "open \"" + outWav + "\" type waveaudio alias bgmusic";
+    MCIERROR rc = mciSendStringA(openCmd.c_str(), nullptr, 0, nullptr);
+    if (rc != 0) {
+        char buf[256] = {};
+        mciGetErrorStringA(rc, buf, sizeof(buf));
+        Logger::Get().Log(LogLevel::WARNING, "[Music] mci open failed (" + std::to_string(rc) + "): " + buf);
+        return;
+    }
+
+    // MCI's "repeat" flag is unreliable for plain waveaudio devices, so loop
+    // manually: CheckMusicLoop() (called every frame) restarts playback from
+    // 0 once the device reports "stopped".
+    rc = mciSendStringA("play bgmusic from 0", nullptr, 0, nullptr);
+    if (rc != 0) {
+        char buf[256] = {};
+        mciGetErrorStringA(rc, buf, sizeof(buf));
+        Logger::Get().Log(LogLevel::WARNING, "[Music] mci play failed (" + std::to_string(rc) + "): " + buf);
+        mciSendStringA("close bgmusic", nullptr, 0, nullptr);
+        return;
+    }
+
+    music_playing_ = true;
+    Logger::Get().Log(LogLevel::INFO, "[Music] Playing level " + std::to_string(level_no) + " music (looping): " + outWav);
+}
+
+void App::CheckMusicLoop() {
+    if (!music_playing_) return;
+    char status[64] = {};
+    MCIERROR rc = mciSendStringA("status bgmusic mode", status, sizeof(status), nullptr);
+    if (rc != 0) return; // device gone (e.g. closed externally) — leave music_playing_ as-is, harmless
+    if (std::string(status) == "stopped") {
+        mciSendStringA("play bgmusic from 0", nullptr, 0, nullptr);
+        Logger::Get().Log(LogLevel::DEBUG, "[Music] Looping back to start");
+    }
+}
+
+void App::StopLevelMusic() {
+    if (!music_playing_) return;
+    mciSendStringA("close bgmusic", nullptr, 0, nullptr);
+    music_playing_ = false;
+    Logger::Get().Log(LogLevel::INFO, "[Music] Stopped");
+}
 
 void App::LoadLevel(int level_no) {
 	try {
@@ -189,10 +268,23 @@ void App::LoadLevel(int level_no) {
 				(ok ? std::to_string(entryCount) + " entries (streamed)"
 				    : "UNAVAILABLE (" + gameRes + "): " + resErr));
 		}
+		// ── After all objects loaded: auto-import animations for HumanSoldier-family NPCs ──
+		Logger::Get().Log(LogLevel::INFO, "[App] Auto-importing animations for AI NPCs...");
+		animPlaybacks_.clear();
+		animIdsCache_.clear();
+		for (int i = 0; i < (int)objects.size(); ++i) {
+			if (objects[i].deleted || objects[i].boneHierarchy < 0) continue;
+			InitAnimationForObject(i);
+		}
+		Logger::Get().Log(LogLevel::INFO, "[App] Animation init complete: " +
+			std::to_string(animPlaybacks_.size()) + " AI NPCs have animations.");
+
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 		Logger::Get().Log(LogLevel::INFO, "[App] LoadLevel() COMPLETE for level " + std::to_string(level_no));
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 		drawLoadBar(100, "done");
+
+		PlayLevelMusic(level_no);
 	}
 	catch (const std::exception& e) {
 		std::string errorMsg = "Error loading level " + std::to_string(level_no) + ":\n" + std::string(e.what());

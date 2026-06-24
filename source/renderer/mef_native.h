@@ -140,3 +140,7 @@ struct ParsedGeometry {
 // Parse a binary MEF file and return all geometry + bone data.
 // Throws std::runtime_error on any fatal parse error.
 ParsedGeometry ParseMefFile(const std::string& filepath);
+
+// Cumulative parent-chain sum of each bone's (parent-relative) rest pivot,
+// giving each bone's absolute rest-pose position (raw, unscaled units).
+std::vector<glm::vec3> ComputeBoneWorldPositionsPublic(const std::vector<BoneInfo>& bones);

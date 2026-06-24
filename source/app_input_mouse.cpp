@@ -146,7 +146,9 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 							const TaskSchema* cscp = GetSchema(objects[ci].type);
 							if (cscp && !cscp->empty()) children.push_back({ci, cscp});
 						}
-						PropPanel::Layout L = PropPanel::BuildLayout(schema, is_ai, children);
+						int animBoneHierarchy; std::vector<int> animIds; int animActiveId; bool animIsPlaying;
+						ComputePropAnimUiState(animBoneHierarchy, animIds, animActiveId, animIsPlaying);
+						PropPanel::Layout L = PropPanel::BuildLayout(schema, is_ai, children, animBoneHierarchy, animIds);
 						// Apply the same vertical scroll the renderer uses so hit-tests align.
 						if (prop_panel_scroll_ > 0)
 							for (auto& w : L.widgets) { w.y1 -= prop_panel_scroll_; w.y2 -= prop_panel_scroll_; }
@@ -184,7 +186,10 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 									return 0.f;
 								};
 
-								if (w.kind == K::NoteBox) {
+								if (w.kind == K::AnimIdButton) {
+									if (w.comp >= 0) ToggleAnimationForObject(selected_object_index_, w.comp);
+									return;
+								} else if (w.kind == K::NoteBox) {
 									prop_edit_obj_index_ = tIdx;
 									prop_text_edit_field_ = -2; // sentinel: editing note
 									prop_text_buf_ = tobj.name;

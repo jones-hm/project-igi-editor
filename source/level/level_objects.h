@@ -20,6 +20,8 @@ struct LevelObject {
     std::string secondaryWeapon; // Secondary weapon name from JSON
     std::string secondaryAmmo;    // Secondary ammo from JSON
     int team = 0; // 0 = Friendly, 1 = Enemy — read from argTokens at load; tooltip uses argTokens directly
+    int boneHierarchy = -1;  // HumanSoldier-family arg@9: index into common/ANIMS/<NNN>.IFF (-1 = none)
+    int standAnimation = -1; // HumanSoldier-family arg@10: animation_id of the default clip to play (-1 = none)
     glm::dvec3 pos = glm::dvec3(0.0);
     glm::dvec3 original_pos = glm::dvec3(0.0);  // Original position from QSC for fallback matching
     glm::dvec3 rot = glm::dvec3(0.0);

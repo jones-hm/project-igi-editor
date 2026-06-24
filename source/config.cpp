@@ -235,6 +235,9 @@ void Config::Load() {
                 else if (key == "SetObjectFile") data_.objectFilePath = val;
                 else if (key == "QGraphNodeSize") data_.graphNodeSize = std::max(1, std::stoi(val));
             }
+            if (key == "LevelMusic" && args.size() >= 2) {
+                try { data_.levelMusicFiles[std::stoi(args[0])] = args[1]; } catch (...) {}
+            }
             if (key == "SetCameraOrientation" && args.size() >= 3) {
                 data_.cameraOriX = std::stof(args[0]);
                 data_.cameraOriY = std::stof(args[1]);
@@ -394,6 +397,9 @@ void Config::Save() {
         file << "QEDSetCameraRadius(" << data_.cameraRadiusX << ", " << data_.cameraRadiusY << ");\n";
         file << "QEDSetCameraPosition(" << data_.cameraPosX << ", " << data_.cameraPosY << ", " << data_.cameraPosZ << ");\n";
         file << "QEDSetCameraMatrix(" << data_.cameraMatX << ", " << data_.cameraMatY << ", " << data_.cameraMatZ << ");\n";
+        for (const auto& [lvl, fname] : data_.levelMusicFiles) {
+            file << "QEDLevelMusic(" << lvl << ", \"" << fname << "\");\n";
+        }
         file.close();
     }
     // NOTE: qedkeybindings.qsc is a user-authored source of truth and is deliberately

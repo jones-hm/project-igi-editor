@@ -124,6 +124,13 @@ bool MefExportObj(const std::string& mefPath, const std::string& outObj,
 // `igi1conv mef info <f.mef>`.
 std::string MefInfo(const std::string& mefPath, std::string& err);
 
+// `igi1conv iff convert <src.iff> <out_dir>` — exports .BEF files + Anims.qsc.
+bool IffConvert(const std::string& iffPath, const std::string& outDir, std::string& err);
+
+// `igi1conv wav convert <src.wav> -o <out.wav>` — decodes the game's ILSF
+// container (raw or IMA-ADPCM) to a standard playable PCM .wav.
+bool WavConvert(const std::string& srcWav, const std::string& outWav, std::string& err);
+
 // Generates a unique temp file path under the system temp dir.
 std::string MakeTempPath(const std::string& suffix);
 

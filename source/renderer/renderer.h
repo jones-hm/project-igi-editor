@@ -163,6 +163,7 @@ enum class WidgetKind {
     ChildHeader,   // non-interactive separator label for a child task section
     AIScriptPath,  // single-line editable: resolved .qvm file path
     AIScriptText,  // multiline editable: decompiled QSC source
+    AnimIdButton,  // button: toggle play/pause for one discovered AIAction_PlayAnimation id (id stored in `comp`)
 };
 
 struct Widget {
@@ -197,7 +198,9 @@ static constexpr int kZSliderW   = 22;   // vertical Z slider width
 // Real32x9 / RGB) expand to multiple sub-rows. Returns rows' y positions implicitly
 // via widget rects; panel_h is the total height.
 inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = false,
-                          const std::vector<std::pair<int, const TaskSchemaNS::TaskSchema*>>& children = {}) {
+                          const std::vector<std::pair<int, const TaskSchemaNS::TaskSchema*>>& children = {},
+                          int animBoneHierarchy = -1,
+                          const std::vector<int>& animIds = {}) {
     using namespace TaskSchemaNS;
     Layout L;
     L.panel_x = kLeft; L.panel_y = kTop; L.panel_w = kWidth;
@@ -318,6 +321,29 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
         y += 4;
     }
 
+    // Animation Control section — only for HumanSoldier-family objects with a
+    // resolved bone hierarchy (common/ANIMS/<NNN>.IFF). One checkbox row per
+    // discovered animation id (Stand Animation + AI script + PatrolPath
+    // "predefined animation" commands); checking toggles play/pause for that clip.
+    if (animBoneHierarchy >= 0) {
+        y += kRowH;  // "Bone Hierarchy: <NNN>.IFF" label line
+        int rowY = y;
+        if (animIds.empty()) {
+            // comp = -1 sentinel: non-interactive "no animations found" placeholder,
+            // so the draw/hit-test code always has a widget to anchor the section to.
+            L.widgets.push_back({WidgetKind::AnimIdButton, kLeft + kPad, rowY,
+                                 kLeft + kWidth - kPad, rowY + kBoxH, -1, -1});
+            y = rowY + kBoxH + 4;
+        } else {
+            for (size_t i = 0; i < animIds.size(); ++i) {
+                int y1 = rowY + (int)i * (kBoxH + 4);
+                L.widgets.push_back({WidgetKind::AnimIdButton, kLeft + kPad, y1,
+                                     kLeft + kWidth - kPad, y1 + kBoxH, -1, animIds[i]});
+            }
+            y = rowY + (int)animIds.size() * (kBoxH + 4) + 2;
+        }
+    }
+
     // AI Script section — only for AI tasks (HumanSoldier, HumanAI, etc.)
     if (is_ai) {
         y += kRowH;  // "AI Script Path:" label line
@@ -371,6 +397,9 @@ public:
 		const class LevelObjects* level_objects_;
 		int					selected_object_index_;
 		bool				show_magic_obj_spheres_;
+		// Object index whose rigid (static) mesh should be skipped because a live
+		// skinned/animated mesh is being drawn in its place instead (-1 = none).
+		int					skip_static_draw_index_ = -1;
 
 		// Returns the terrain CTR node id at a world (x,y), or -1. Set by App so the
 		// renderer can show the terrain id under the cursor without depending on Level. (issue 3)
@@ -472,6 +501,17 @@ public:
 		// Auto-save state
 		bool   auto_save_enabled_        = false;
 		int    auto_save_interval_seconds_ = 300;
+
+		// Animation state
+		std::string anim_status_;           // summary text of animations playing
+		bool        anim_playing_ = false;  // true if any animation is active
+		bool        anim_debug_visible_ = false; // F10: show status panel + skeleton overlay
+
+		// Property panel "Animation Control" section (selected object only).
+		int              prop_anim_bone_hierarchy_ = -1; // -1 = section hidden
+		std::vector<int> prop_anim_ids_;                 // discovered AIAction_PlayAnimation ids
+		int              prop_anim_active_id_ = -1;      // currently loaded clip's animId (-1 = none)
+		bool             prop_anim_is_playing_ = false;
 	};
 
 
@@ -573,6 +613,18 @@ public:
 	// Draw the left-side properties panel for the selected node.
 	void					DrawGraphNodePanel(const draw_params_s& params,
 								const std::function<void(int,int,const char*,float,float,float)>& draw_text_sm);
+    // Draw animated skeleton wireframe for the given bone transforms.
+    void                    DrawAnimSkeleton(const std::vector<glm::mat4>& boneWorldTransforms,
+                                             const glm::mat4& objWorldMat);
+    // CPU-skins the model's rest-pose mesh against the given (BEF) bone world
+    // transforms and draws it as a solid mesh — the actual visible alternative
+    // to the wireframe overlay above. boneWorldTransforms come from
+    // AnimationRegistry::EvaluateWorld (BEF skeleton indexing); the model's own
+    // .mef bone list is assumed to share that same indexing (true for the
+    // shared character rigs — see GetIgi1HardcodedBones).
+    void                    DrawSkinnedMesh(const std::string& modelId, bool isBuilding,
+                                            const std::vector<glm::mat4>& boneWorldTransforms,
+                                            const glm::mat4& objWorldMat);
     void                    SetSplineTerrainQuery(std::function<bool(double, double, float&)> fn) { splines_.SetTerrainQuery(std::move(fn)); }
 	glm::vec3				GetMeshExtents(const std::string& modelId, bool isBuilding) { return objects_.GetMeshExtents(modelId, isBuilding); }
 	float					GetMeshZOffset(const std::string& modelId, bool isBuilding) { return objects_.GetMeshZOffset(modelId, isBuilding); }

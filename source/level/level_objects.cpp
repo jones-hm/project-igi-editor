@@ -237,6 +237,8 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
                 case 5: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.z = cur_a->dbl_; obj.original_pos.z = cur_a->dbl_; } break;
                 case 6: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.rot.z = cur_a->dbl_; obj.original_rot.z = cur_a->dbl_; } break;
                 case 7: if (cur_a->type_ == QSC::arg_s::type_t::STR) obj.modelId = Utils::Trim(cur_a->str_); break;
+                case 9: if (cur_a->type_ == QSC::arg_s::type_t::DBL) obj.boneHierarchy = (int)cur_a->dbl_; break;
+                case 10: if (cur_a->type_ == QSC::arg_s::type_t::DBL) obj.standAnimation = (int)cur_a->dbl_; break;
             }
         } else if (isDoor) {
             switch (arg_idx) {

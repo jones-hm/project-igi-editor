@@ -9,6 +9,7 @@
 #include "igi_bridge.h"
 #include "level/res_model_set.h"
 #include "renderer/model.h"
+#include "animation.h"
 #include <atomic>
 #include <optional>
 #include <set>
@@ -218,7 +219,32 @@ private:
   void UpdateCursorMode();
   void DrawCustomCursor();
 
-  std::set<std::string> ai_model_ids_; // AITYPE_ model IDs from IGIModels.json
+	std::set<std::string> ai_model_ids_; // AITYPE_ model IDs from IGIModels.json
+
+	// Animation system
+	AnimationRegistry animRegistry_;
+	std::unordered_map<int, AnimPlayback> animPlaybacks_; // object index -> playback state
+	std::unordered_map<int, std::vector<int>> animIdsCache_; // object index -> discovered AIAction_PlayAnimation ids
+	bool show_anim_debug_ = false; // F10: animation skeleton overlay + status panel (independent of F2/TaskTree)
+
+	// Level background music (game_music.wav, converted from ILSF -> PCM, looped via MCI)
+	bool music_playing_ = false;
+	void PlayLevelMusic(int level_no);
+	void StopLevelMusic();
+	void CheckMusicLoop(); // call every frame: manually restarts playback since MCI "repeat" is unreliable for waveaudio
+	void InitAnimationForObject(int objIndex);
+	void UpdateAnimations(float dtSec);
+	std::string BuildAnimStatusString();
+	int FindHumanAiTaskId(int objIndex) const;
+	const std::vector<int>& GetOrComputeAnimationIds(int objIndex);
+	void ToggleAnimationForObject(int objIndex, int animId);
+	// Fills the property panel's "Animation Control" section state for the
+	// currently selected object (boneHierarchy stays -1 when not applicable).
+	void ComputePropAnimUiState(int& boneHierarchy, std::vector<int>& ids, int& activeId, bool& isPlaying);
+	// Returns selected_object_index_ when it has an active clip and the debug
+	// overlay is on (so its rigid mesh should be skipped in favor of the live
+	// skinned draw), else -1.
+	int GetSkinnedReplacementObjectIndex() const;
 
   // C2: Typed task property editor
   bool prop_editor_open_ = false;

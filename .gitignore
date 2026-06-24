@@ -127,7 +127,13 @@ releases/
 # Caches
 __pycache__/
 *.pyc
+node_modules/
+.npm/
+.yarn/
+.pnpm-store/
 *.qsc
 *.qas
 *qvm.worktrees
+package.json
+package-lock.json
 !assets/editor/tools/igi1conv/**

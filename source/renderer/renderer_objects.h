@@ -1,6 +1,7 @@
 #pragma once
 #include "../pch.h"
 #include "model.h"
+#include "mef_native.h"
 #include "../level/level_objects.h"
 #include "dat_writer.h"
 #include <map>
@@ -72,7 +73,7 @@ public:
     size_t GetMeshCacheCount() const { return mesh_cache_.size(); }
     size_t GetTextureCacheCount() const { return texture_cache_.size(); }
 
-    void Draw(GLuint ubo_mats, bool overlay_wireframe, const std::vector<LevelObject>& objects, int selected_object_index, int hover_object_index, int draw_parts, const glm::vec3& camera_pos, bool show_magic_obj_spheres = false);
+    void Draw(GLuint ubo_mats, bool overlay_wireframe, const std::vector<LevelObject>& objects, int selected_object_index, int hover_object_index, int draw_parts, const glm::vec3& camera_pos, bool show_magic_obj_spheres = false, int skip_static_draw_index = -1);
     int PickObjectAtScreen(int x, int y, int w, int h,
                            GLuint ubo_mats,
                            const std::vector<LevelObject>& objects,
@@ -93,6 +94,11 @@ public:
     void DrawAttachmentsForSpline(const std::string& modelId, bool isBuilding,
                                   const glm::mat4& unscaledWorldMat, GLuint ubo_mats,
                                   glm::vec3 leafScale = glm::vec3(40.96f));
+    // Skeletal-skin vertex/bone data for live animation playback (CPU skinning).
+    // Looks up and parses the model's .mef once, then caches it (rest-pose
+    // RenderVertex array + per-bone rest pivots, same data the static mesh
+    // cache was built from). Returns nullptr if the model can't be found.
+    const ParsedGeometry* GetOrLoadSkinGeometry(const std::string& modelId, bool isBuilding);
 
 private:
     int current_level_ = 1;
@@ -104,6 +110,7 @@ private:
     mutable std::map<std::string, int> model_level_map_;
     mutable std::map<std::string, int> texture_level_map_;
     std::map<std::string, std::vector<AttachInfo>> attachment_cache_;
+    std::map<std::string, ParsedGeometry> skin_geometry_cache_;
     // Per-pick-pass capture of pickable ATTA sub-models (see AttaPickEntry).
     std::vector<AttaPickEntry> atta_pick_entries_;
     // Keys (model@pos) of EditRigidObj tasks; an ATTA matching one is suppressed
@@ -159,6 +166,7 @@ private:
                                    GLint loc_ambient, GLint loc_useTex, GLint loc_tex, GLint loc_alpha,
                                    std::unordered_set<std::string>& drawn,
                                    glm::vec3 leafScale = glm::vec3(40.96f));
+
     // Like DrawAttachmentsRecursive but uses the picking shader. Each ATTA sub-model
     // that has no matching EditRigidObj (occupancy check) gets a UNIQUE pick ID
     // (kAttaPickBase + entry) and is recorded in atta_pick_entries_ with its world

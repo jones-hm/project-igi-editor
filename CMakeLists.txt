@@ -136,7 +136,7 @@ if (WIN32)
   message("Selected GL library path: ${GL_LIB_DIR}")
 
   target_link_directories(igi-editor PRIVATE ${GL_LIB_DIR})
-  target_link_libraries(igi-editor PRIVATE freeglut glew32 OpenGL32)
+  target_link_libraries(igi-editor PRIVATE freeglut glew32 OpenGL32 winmm)
 
   # Increase PCH memory limit to fix compiler heap errors
   if (MSVC)

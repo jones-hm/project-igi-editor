@@ -296,5 +296,26 @@ std::string Renderer_Objects::FindModelFile(const std::string& modelId, bool isB
     return "";
 }
 
+const ParsedGeometry* Renderer_Objects::GetOrLoadSkinGeometry(const std::string& modelId, bool isBuilding) {
+    auto it = skin_geometry_cache_.find(modelId);
+    if (it != skin_geometry_cache_.end()) return &it->second;
+
+    std::string filepath = FindModelFile(modelId, isBuilding);
+    if (filepath.empty()) {
+        Logger::Get().Log(LogLevel::WARNING, "[Anim] No .mef found for skin geometry: " + modelId);
+        return nullptr;
+    }
+
+    ParsedGeometry geo = ParseMefFile(filepath);
+    if (geo.vertices.empty() || geo.bones.empty()) {
+        Logger::Get().Log(LogLevel::WARNING, "[Anim] " + modelId + " has no skeletal vertex/bone data for skinning");
+        return nullptr;
+    }
+
+    Logger::Get().Log(LogLevel::INFO, "[Anim] Loaded skin geometry for " + modelId + ": " +
+        std::to_string(geo.vertices.size()) + " vertices, " + std::to_string(geo.bones.size()) + " bones");
+    return &(skin_geometry_cache_[modelId] = std::move(geo));
+}
+
 
 // ─── InitSelectionBox ────────────────────────────────────────────────────────

@@ -184,8 +184,12 @@ void App::Shutdown() {
 		game_process_ = {};
 	}
 	bridge_.Stop();
+	StopLevelMusic();
 	level_.Unload();
 	level_.FreeTerrainCubeDataPools();
+	animPlaybacks_.clear();
+	animIdsCache_.clear();
+	animRegistry_.Clear();
 	renderer_.Shutdown();
 	if (!g_isCLIMode) {
 		AssetExtractor::CleanupExtractedAssets(Utils::GetExeDirectory());
@@ -374,6 +378,8 @@ void App::Frame(float delta_seconds) {
 		}
 		float ground_z = 0.0f;
 		level_.GetTerrainZ(viewer_.pos_.x, viewer_.pos_.y, ground_z);
+		int propAnimBoneHierarchy; std::vector<int> propAnimIds; int propAnimActiveId; bool propAnimIsPlaying;
+		ComputePropAnimUiState(propAnimBoneHierarchy, propAnimIds, propAnimActiveId, propAnimIsPlaying);
 		Renderer::task_tree_view_params_s task_tree_view = {
 			.show_hud_ = show_hud_,
 			.status_msg_ = status_message_,
@@ -446,25 +452,60 @@ void App::Frame(float delta_seconds) {
 			.terrain_brush_strength_ = edit_brush_strength_,
 			.auto_save_enabled_        = auto_save_enabled_,
 			.auto_save_interval_seconds_ = auto_save_interval_seconds_,
+			.anim_status_  = BuildAnimStatusString(),
+			.anim_playing_ = !animPlaybacks_.empty(),
+			.anim_debug_visible_ = show_anim_debug_,
+			.prop_anim_bone_hierarchy_ = propAnimBoneHierarchy,
+			.prop_anim_ids_ = propAnimIds,
+			.prop_anim_active_id_ = propAnimActiveId,
+			.prop_anim_is_playing_ = propAnimIsPlaying,
 		};
 		draw_params_.level_objects_ = &level_.GetLevelObjects();
 		draw_params_.selected_object_index_ = selected_object_index_;
 		draw_params_.show_magic_obj_spheres_ = show_magic_obj_spheres_;
+		draw_params_.skip_static_draw_index_ = GetSkinnedReplacementObjectIndex();
 		draw_params_.terrain_id_at_world_xy_ =
 			[this](double x, double y) { return level_.GetTerrainNodeId(x, y); };
 		draw_params_.terrain_z_at_world_xy_ =
 			[this](double x, double y, float& z) { return level_.GetTerrainZ(x, y, z); };
-		renderer_.Draw(draw_params_, task_tree_view);
+	renderer_.Draw(draw_params_, task_tree_view);
 
-		DrawCustomCursor();
-		glutSwapBuffers();
-		return;
-	}
+    // Draw animated skeleton overlay for selected object
+    if (show_anim_debug_) {
+        auto ait = animPlaybacks_.find(selected_object_index_);
+        if (ait != animPlaybacks_.end() && ait->second.clip) {
+            std::vector<glm::mat4> worldTransforms;
+            animRegistry_.EvaluateWorld(ait->second.clip, ait->second.currentTimeMs, worldTransforms);
+            if (!worldTransforms.empty()) {
+                auto& objs = level_.GetLevelObjects().GetObjects();
+                if (selected_object_index_ >= 0 && selected_object_index_ < (int)objs.size()) {
+                    const auto& obj = objs[selected_object_index_];
+                    glm::mat4 objMat(1.0f);
+                    objMat = glm::translate(objMat, glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z));
+                    objMat = glm::rotate(objMat, (float)obj.rot.z, glm::vec3(0, 0, 1));
+                    objMat = glm::rotate(objMat, (float)obj.rot.x, glm::vec3(1, 0, 0));
+                    objMat = glm::rotate(objMat, (float)obj.rot.y, glm::vec3(0, 1, 0));
+                    objMat = glm::scale(objMat, glm::vec3(40.96f * obj.scale));
+                    renderer_.DrawSkinnedMesh(obj.modelId, obj.isBuilding, worldTransforms, objMat);
+                    renderer_.DrawAnimSkeleton(worldTransforms, objMat);
+                }
+            }
+        }
+    }
 
-	frame_++;
+	DrawCustomCursor();
+	glutSwapBuffers();
+	return;
+    }
+
+    frame_++;
 	frame_ %= 0xFFFFFFFF;	// reserve value 0xFFFFFFFF (-1) for INVALID_FRAME
 
 	ProcessInput(delta_seconds);
+
+	// Update animation playback (auto-play for AI NPCs)
+	UpdateAnimations(delta_seconds);
+	CheckMusicLoop();
 
 	// Per-frame position-drag velocity: the pad / Z slider accelerate while held in
 	// a direction and keep moving when the cursor is pinned at the window edge.
@@ -527,6 +568,7 @@ void App::Frame(float delta_seconds) {
 	draw_params_.level_objects_ = &level_.GetLevelObjects();
 	draw_params_.selected_object_index_ = selected_object_index_;
 	draw_params_.show_magic_obj_spheres_ = show_magic_obj_spheres_;
+	draw_params_.skip_static_draw_index_ = GetSkinnedReplacementObjectIndex();
 	draw_params_.terrain_id_at_world_xy_ =
 		[this](double x, double y) { return level_.GetTerrainNodeId(x, y); };
 
@@ -535,6 +577,9 @@ void App::Frame(float delta_seconds) {
 	bridge_.SetEnabled(show_hud_);
 	IGIBridge::PositionData data = bridge_.GetLatestData();
 	level_.GetTerrainZ(viewer_.pos_.x, viewer_.pos_.y, ground_z);
+
+	int propAnimBoneHierarchy; std::vector<int> propAnimIds; int propAnimActiveId; bool propAnimIsPlaying;
+	ComputePropAnimUiState(propAnimBoneHierarchy, propAnimIds, propAnimActiveId, propAnimIsPlaying);
 
 	Renderer::task_tree_view_params_s task_tree_view = {
 		.show_hud_ = show_hud_,
@@ -610,9 +655,39 @@ void App::Frame(float delta_seconds) {
 		.terrain_brush_strength_ = edit_brush_strength_,
 		.auto_save_enabled_        = auto_save_enabled_,
 		.auto_save_interval_seconds_ = auto_save_interval_seconds_,
+		.anim_status_  = BuildAnimStatusString(),
+		.anim_playing_ = !animPlaybacks_.empty(),
+		.anim_debug_visible_ = show_anim_debug_,
+		.prop_anim_bone_hierarchy_ = propAnimBoneHierarchy,
+		.prop_anim_ids_ = propAnimIds,
+		.prop_anim_active_id_ = propAnimActiveId,
+		.prop_anim_is_playing_ = propAnimIsPlaying,
 	};
 
 	renderer_.Draw(draw_params_, task_tree_view);
+
+    // Draw animated skeleton overlay for selected object (normal frame)
+    if (show_anim_debug_) {
+        auto ait = animPlaybacks_.find(selected_object_index_);
+        if (ait != animPlaybacks_.end() && ait->second.clip) {
+            std::vector<glm::mat4> worldTransforms;
+            animRegistry_.EvaluateWorld(ait->second.clip, ait->second.currentTimeMs, worldTransforms);
+            if (!worldTransforms.empty()) {
+                auto& objs = level_.GetLevelObjects().GetObjects();
+                if (selected_object_index_ >= 0 && selected_object_index_ < (int)objs.size()) {
+                    const auto& obj = objs[selected_object_index_];
+                    glm::mat4 objMat(1.0f);
+                    objMat = glm::translate(objMat, glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z));
+                    objMat = glm::rotate(objMat, (float)obj.rot.z, glm::vec3(0, 0, 1));
+                    objMat = glm::rotate(objMat, (float)obj.rot.x, glm::vec3(1, 0, 0));
+                    objMat = glm::rotate(objMat, (float)obj.rot.y, glm::vec3(0, 1, 0));
+                    objMat = glm::scale(objMat, glm::vec3(40.96f * obj.scale));
+                    renderer_.DrawSkinnedMesh(obj.modelId, obj.isBuilding, worldTransforms, objMat);
+                    renderer_.DrawAnimSkeleton(worldTransforms, objMat);
+                }
+            }
+        }
+    }
 
 	DrawCustomCursor();
 	glutSwapBuffers();
@@ -748,6 +823,228 @@ float App::GetSelectedObjectScale() const {
 #include <glm/ext/matrix_projection.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
+
+// ── Animation system ─────────────────────────────────────────────────────────
+
+void App::InitAnimationForObject(int objIndex) {
+    auto& objects = level_.GetLevelObjects().GetObjects();
+    if (objIndex < 0 || objIndex >= (int)objects.size()) return;
+    const auto& obj = objects[objIndex];
+    if (obj.boneHierarchy < 0) return;
+
+    // Don't re-init if already playing for this object
+    auto it = animPlaybacks_.find(objIndex);
+    if (it != animPlaybacks_.end() && it->second.clip != nullptr) return;
+
+    // Import animations for this bone hierarchy if not already done
+    if (!animRegistry_.ImportAnimations(obj.boneHierarchy)) return;
+
+    // Prefer the clip matching the object's "Stand Animation" id; fall back to the first clip.
+    const AnimationClip* clip = animRegistry_.GetClipByAnimId(obj.boneHierarchy, obj.standAnimation);
+    if (!clip) clip = animRegistry_.GetFirstClip(obj.boneHierarchy);
+    if (!clip) return;
+
+    AnimPlayback pb;
+    pb.Start(clip);
+    animPlaybacks_[objIndex] = pb;
+    Logger::Get().Log(LogLevel::INFO, "[Anim] Auto-playing '" + clip->name +
+        "' for object " + std::to_string(objIndex) + " (" + obj.type + ")");
+}
+
+void App::UpdateAnimations(float dtSec) {
+    // Skip if global pause is on
+    // (renderer pause check is done in the renderer)
+
+    // For each active playback, update time
+    for (auto& [idx, pb] : animPlaybacks_) {
+        pb.Update(dtSec * 1000.f);
+    }
+}
+
+std::string App::BuildAnimStatusString() {
+    if (animPlaybacks_.empty()) return {};
+
+    std::string s;
+    int count = 0;
+    auto& objects = level_.GetLevelObjects().GetObjects();
+    for (const auto& [idx, pb] : animPlaybacks_) {
+        if (!pb.clip) continue;
+        if (count >= 5) { // cap at 5 lines
+            s += "... and " + std::to_string((int)animPlaybacks_.size() - count) + " more\n";
+            break;
+        }
+        std::string name = (idx >= 0 && idx < (int)objects.size()) ? objects[idx].name : ("#" + std::to_string(idx));
+        if (name.empty()) name = objects[idx].modelId;
+        s += name + ": " + pb.clip->name;
+        if (pb.playing) {
+            int ms = (int)pb.currentTimeMs;
+            int d = pb.clip->duration_ms();
+            s += " [" + std::to_string(ms) + "/" + std::to_string(d) + "ms]";
+        } else {
+            s += " [paused]";
+        }
+        s += "\n";
+        count++;
+    }
+    if (!s.empty() && s.back() == '\n') s.pop_back();
+    return s;
+}
+
+// Parses the last two comma-separated args of a flat "Task_New(...)" line,
+// e.g. PatrolPathCommand's (cmdCode, param) pair in
+// `Task_New(-1, "PatrolPathCommand", "Plays predefined animation 240", 0, 240)`.
+static bool LastTwoIntArgs(const std::string& qscLine, int& a, int& b) {
+    size_t close = qscLine.rfind(')');
+    if (close == std::string::npos) return false;
+    size_t open = qscLine.rfind('(', close);
+    if (open == std::string::npos) return false;
+    std::string inner = qscLine.substr(open + 1, close - open - 1);
+    std::vector<std::string> parts;
+    size_t start = 0;
+    for (size_t i = 0; i <= inner.size(); ++i) {
+        if (i == inner.size() || inner[i] == ',') {
+            parts.push_back(inner.substr(start, i - start));
+            start = i + 1;
+        }
+    }
+    if (parts.size() < 2) return false;
+    try {
+        b = std::stoi(parts[parts.size() - 1]);
+        a = std::stoi(parts[parts.size() - 2]);
+    } catch (...) { return false; }
+    return true;
+}
+
+int App::FindHumanAiTaskId(int objIndex) const {
+    auto& objects = level_.GetLevelObjects().GetObjects();
+    if (objIndex < 0 || objIndex >= (int)objects.size()) return -1;
+    for (int ci : objects[objIndex].childrenIndices) {
+        if (ci < 0 || ci >= (int)objects.size()) continue;
+        if (objects[ci].deleted || objects[ci].type != "HumanAI") continue;
+        try { return std::stoi(objects[ci].taskId); } catch (...) { return -1; }
+    }
+    return -1;
+}
+
+const std::vector<int>& App::GetOrComputeAnimationIds(int objIndex) {
+    static const std::vector<int> kEmpty;
+    auto cached = animIdsCache_.find(objIndex);
+    if (cached != animIdsCache_.end()) return cached->second;
+
+    auto& objects = level_.GetLevelObjects().GetObjects();
+    if (objIndex < 0 || objIndex >= (int)objects.size()) return kEmpty;
+    const auto& obj = objects[objIndex];
+    if (obj.boneHierarchy < 0) return kEmpty;
+
+    std::vector<int> ids;
+    if (obj.standAnimation >= 0) ids.push_back(obj.standAnimation);
+
+    int aiTaskId = FindHumanAiTaskId(objIndex);
+    if (aiTaskId >= 0 && last_loaded_level_ >= 0) {
+        std::string qvmPath = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
+            std::to_string(last_loaded_level_) + "\\ai\\" + std::to_string(aiTaskId) + ".qvm";
+        Logger::Get().Log(LogLevel::INFO, "[Anim] Resolving animation ids for object " +
+            std::to_string(objIndex) + " via AI task " + std::to_string(aiTaskId) + " (" + qvmPath + ")");
+        for (int id : FindAiScriptAnimationIds(qvmPath)) {
+            if (std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
+        }
+    } else {
+        Logger::Get().Log(LogLevel::DEBUG, "[Anim] Object " + std::to_string(objIndex) +
+            " has no HumanAI child task — only Stand Animation id (if any) is available");
+    }
+
+    // PatrolPath children can include "PatrolPathCommand" entries that play a
+    // predefined animation (cmdCode == 0, param == animation id), independent
+    // of the AI behavior script's own AIAction_PlayAnimation call.
+    for (int ci : obj.childrenIndices) {
+        if (ci < 0 || ci >= (int)objects.size()) continue;
+        if (objects[ci].deleted || objects[ci].type != "PatrolPath") continue;
+        for (int pci : objects[ci].childrenIndices) {
+            if (pci < 0 || pci >= (int)objects.size()) continue;
+            const auto& pcmd = objects[pci];
+            if (pcmd.deleted || pcmd.type != "PatrolPathCommand") continue;
+            int cmdCode = -1, param = -1;
+            if (LastTwoIntArgs(pcmd.qscLine, cmdCode, param) && cmdCode == 0) {
+                Logger::Get().Log(LogLevel::INFO, "[Anim] Object " + std::to_string(objIndex) +
+                    " PatrolPathCommand plays predefined animation " + std::to_string(param));
+                if (std::find(ids.begin(), ids.end(), param) == ids.end()) ids.push_back(param);
+            }
+        }
+    }
+
+    Logger::Get().Log(LogLevel::INFO, "[Anim] Object " + std::to_string(objIndex) + " (" + obj.modelId +
+        ", bone hierarchy " + std::to_string(obj.boneHierarchy) + "): " + std::to_string(ids.size()) +
+        " animation id(s) available");
+
+    return animIdsCache_[objIndex] = std::move(ids);
+}
+
+void App::ToggleAnimationForObject(int objIndex, int animId) {
+    auto& objects = level_.GetLevelObjects().GetObjects();
+    if (objIndex < 0 || objIndex >= (int)objects.size()) return;
+    const auto& obj = objects[objIndex];
+    if (obj.boneHierarchy < 0) return;
+
+    if (!animRegistry_.ImportAnimations(obj.boneHierarchy)) {
+        Logger::Get().Log(LogLevel::WARNING, "[Anim] Could not import bone hierarchy " +
+            std::to_string(obj.boneHierarchy) + " for object " + std::to_string(objIndex));
+        return;
+    }
+    const AnimationClip* clip = animRegistry_.GetClipByAnimId(obj.boneHierarchy, animId);
+    if (!clip) {
+        Logger::Get().Log(LogLevel::WARNING, "[Anim] Animation id " + std::to_string(animId) +
+            " not found in bone hierarchy " + std::to_string(obj.boneHierarchy));
+        return;
+    }
+
+    auto& pb = animPlaybacks_[objIndex];
+    if (pb.clip == clip && pb.playing) {
+        pb.Pause();
+        Logger::Get().Log(LogLevel::INFO, "[Anim] Paused '" + clip->name + "' for object " + std::to_string(objIndex));
+    } else {
+        if (pb.clip == clip) {
+            pb.Resume();
+            Logger::Get().Log(LogLevel::INFO, "[Anim] Resumed '" + clip->name + "' for object " + std::to_string(objIndex));
+        } else {
+            pb.Start(clip);
+            Logger::Get().Log(LogLevel::INFO, "[Anim] Playing '" + clip->name + "' for object " + std::to_string(objIndex));
+        }
+        // Auto-reveal the skeleton overlay so the user actually sees the clip
+        // playing without having to separately press F10.
+        if (!show_anim_debug_) {
+            show_anim_debug_ = true;
+            Logger::Get().Log(LogLevel::INFO, "[Anim] Animation Debug Info auto-shown (was hidden)");
+        }
+    }
+}
+
+int App::GetSkinnedReplacementObjectIndex() const {
+    if (!show_anim_debug_ || selected_object_index_ < 0) return -1;
+    auto it = animPlaybacks_.find(selected_object_index_);
+    if (it == animPlaybacks_.end() || !it->second.clip) return -1;
+    return selected_object_index_;
+}
+
+void App::ComputePropAnimUiState(int& boneHierarchy, std::vector<int>& ids, int& activeId, bool& isPlaying) {
+    boneHierarchy = -1;
+    ids.clear();
+    activeId = -1;
+    isPlaying = false;
+
+    if (!prop_editor_open_ || selected_object_index_ < 0) return;
+    auto& objects = level_.GetLevelObjects().GetObjects();
+    if (selected_object_index_ >= (int)objects.size()) return;
+    const auto& obj = objects[selected_object_index_];
+    if (obj.boneHierarchy < 0) return;
+
+    boneHierarchy = obj.boneHierarchy;
+    ids = GetOrComputeAnimationIds(selected_object_index_);
+    auto pbIt = animPlaybacks_.find(selected_object_index_);
+    if (pbIt != animPlaybacks_.end() && pbIt->second.clip) {
+        activeId = pbIt->second.clip->animId;
+        isPlaying = pbIt->second.playing;
+    }
+}
 
 void App::ToggleAutoSave() {
 	auto_save_enabled_ = !auto_save_enabled_;

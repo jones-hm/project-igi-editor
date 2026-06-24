@@ -115,6 +115,11 @@ struct ConfigData {
 
     // Full event bindings map (all ~120 events loaded from config)
     std::unordered_map<std::string, KeyBinding> eventBindings_;
+
+    // Per-level background music override: level number -> filename (just the
+    // name, e.g. "music_wind.wav") to look up under that level's sounds/ dir.
+    // Levels with no entry fall back to "game_music.wav".
+    std::unordered_map<int, std::string> levelMusicFiles;
 };
 
 class Config {

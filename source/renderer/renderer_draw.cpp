@@ -232,7 +232,7 @@ void Renderer::Draw(const draw_params_s &params,
                   params.level_objects_->GetObjects(),
                   params.selected_object_index_, task_tree_view.hover_object_index_,
                   params.draw_parts_, params.view_define_->pos_,
-                  params.show_magic_obj_spheres_);
+                  params.show_magic_obj_spheres_, params.skip_static_draw_index_);
     splines_.Draw(params.level_objects_->GetObjects(), ubo_mats_,
                   objects_.GetShaderProgram());
   }
@@ -1121,6 +1121,47 @@ void Renderer::Draw(const draw_params_s &params,
       draw_text(wm_x, params.view_define_->viewport_height_ - 20, s_ver_watermark.c_str(), 0.7f, 0.7f, 0.7f);
     }
 
+    // Animation status panel (bottom-left)
+    if (task_tree_view.anim_debug_visible_ && !task_tree_view.anim_status_.empty()) {
+      const int aX = 10;
+      const int aY = 80;
+      const int aW = 360;
+      const int aRowH = 16;
+      int lines = 1;
+      for (char c : task_tree_view.anim_status_) if (c == '\n') lines++;
+      const int aH = 28 + lines * aRowH + 6;
+      const int vph = params.view_define_->viewport_height_;
+
+      // Background
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glColor4f(0.04f, 0.04f, 0.05f, 0.78f);
+      glBegin(GL_QUADS);
+      glVertex2f((float)aX, (float)(vph - aY));
+      glVertex2f((float)(aX + aW), (float)(vph - aY));
+      glVertex2f((float)(aX + aW), (float)(vph - (aY + aH)));
+      glVertex2f((float)aX, (float)(vph - (aY + aH)));
+      glEnd();
+
+      // Border
+      glColor4f(0.3f, 0.8f, 0.3f, 0.9f);
+      glLineWidth(1.0f);
+      glBegin(GL_LINE_LOOP);
+      glVertex2f((float)aX, (float)(vph - aY));
+      glVertex2f((float)(aX + aW), (float)(vph - aY));
+      glVertex2f((float)(aX + aW), (float)(vph - (aY + aH)));
+      glVertex2f((float)aX, (float)(vph - (aY + aH)));
+      glEnd();
+
+      // Title
+      const char* title = task_tree_view.anim_playing_ ? "Animations Playing" : "Animations Loaded";
+      draw_text_sm(aX + 6, aY - 4, title, 0.3f, 0.8f, 0.3f);
+
+      // Status text
+      draw_text_sm(aX + 6, aY - 22, task_tree_view.anim_status_.c_str(), 0.7f, 0.9f, 0.7f);
+      glDisable(GL_BLEND);
+    }
+
     if (task_tree_view.task_picker_open_ && task_tree_view.level_objects_) {
       int picker_x = 20;
       int picker_w = 520;
@@ -1734,7 +1775,9 @@ void Renderer::Draw(const draw_params_s &params,
               if (cscp && !cscp->empty()) child_schemas.push_back({ci, cscp});
           }
 
-          PropPanel::Layout L = PropPanel::BuildLayout(schema, task_tree_view.selected_obj_is_ai, child_schemas);
+          PropPanel::Layout L = PropPanel::BuildLayout(schema, task_tree_view.selected_obj_is_ai, child_schemas,
+                                                        task_tree_view.prop_anim_bone_hierarchy_,
+                                                        task_tree_view.prop_anim_ids_);
 
           // Apply vertical scroll: shift all widget Y positions.
           const int scroll = task_tree_view.prop_panel_scroll_;
@@ -2236,7 +2279,34 @@ void Renderer::Draw(const draw_params_s &params,
           while (wi < (int)L.widgets.size()) {
               using K = PropPanel::WidgetKind;
               const auto& w = L.widgets[wi++];
-              if (w.kind == K::AIScriptPath) {
+              if (w.kind == K::AnimIdButton) {
+                  bool isFirst = (wi - 2 < 0) || (L.widgets[wi - 2].kind != K::AnimIdButton);
+                  if (isFirst) {
+                      char lbl[80];
+                      snprintf(lbl, sizeof(lbl), "Bone Hierarchy: %03d.IFF (check an id to play/pause)",
+                               task_tree_view.prop_anim_bone_hierarchy_);
+                      draw_text(w.x1, w.y1 - PropPanel::kRowH + 12, lbl, 0.8f, 0.8f, 1.0f);
+                  }
+                  // Checkbox glyph, left-aligned within the row.
+                  const int boxSz = w.y2 - w.y1 - 4;
+                  const int boxX1 = w.x1, boxY1 = w.y1 + 2;
+                  if (w.comp < 0) {
+                      // "No animations found" placeholder — informational only.
+                      border(boxX1, boxY1, boxX1 + boxSz, boxY1 + boxSz, 0.5f, 0.5f, 0.5f);
+                      draw_text(boxX1 + boxSz + 8, w.y1 + 12, "No animations found", 0.6f, 0.6f, 0.6f);
+                  } else {
+                      bool isActive  = (w.comp == task_tree_view.prop_anim_active_id_);
+                      bool isPlaying = isActive && task_tree_view.prop_anim_is_playing_;
+                      border(boxX1, boxY1, boxX1 + boxSz, boxY1 + boxSz, 1.0f, 1.0f, 1.0f);
+                      if (isPlaying) {
+                          quad(boxX1 + 3, boxY1 + 3, boxX1 + boxSz - 3, boxY1 + boxSz - 3,
+                               0.2f, 0.9f, 0.3f, 0.95f);
+                      }
+                      char idLbl[32];
+                      snprintf(idLbl, sizeof(idLbl), "Animation %d%s", w.comp, isPlaying ? "  (playing)" : "");
+                      draw_text(boxX1 + boxSz + 8, w.y1 + 12, idLbl, 1.0f, 1.0f, 1.0f);
+                  }
+              } else if (w.kind == K::AIScriptPath) {
                   bool ed = resolveEdit(sel) &&
                             task_tree_view.prop_text_edit_field_ == PropPanel::kAIScriptPathField;
                   draw_text(w.x1, w.y1 - PropPanel::kRowH + 12, "AI Script Path:", 0.8f, 0.8f, 1.0f);

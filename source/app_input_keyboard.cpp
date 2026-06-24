@@ -358,6 +358,14 @@ void App::Input_OnSpecial(int key, int x, int y) {
 		return;
 	}
 
+	// F10 always toggles the Animation Debug overlay (skeleton wireframe + status
+	// panel) — independent of F2/TaskTree.
+	if (key == GLUT_KEY_F10) {
+		show_anim_debug_ = !show_anim_debug_;
+		Logger::Get().Log(LogLevel::INFO, std::string("[App] Animation Debug Info ") + (show_anim_debug_ ? "shown" : "hidden"));
+		return;
+	}
+
 	// All other F-key/special-key bindings go through DispatchEventBindings (qedkeybindings.qsc only)
 
 	// Camera movement keys only fire when SHIFT+ALT is held; plain arrow keys must not move camera.

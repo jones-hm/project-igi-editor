@@ -275,4 +275,20 @@ std::string MefInfo(const std::string& mefPath, std::string& err) {
     return ss.str();
 }
 
+// ─── iff ────────────────────────────────────────────────────────────────────
+
+bool IffConvert(const std::string& iffPath, const std::string& outDir, std::string& err) {
+    std::error_code ec;
+    fs::create_directories(outDir, ec);
+    return Run("iff convert \"" + iffPath + "\" \"" + outDir + "\"", err);
+}
+
+// ─── wav ────────────────────────────────────────────────────────────────────
+
+bool WavConvert(const std::string& srcWav, const std::string& outWav, std::string& err) {
+    std::error_code ec;
+    fs::create_directories(fs::path(outWav).parent_path(), ec);
+    return Run("wav convert \"" + srcWav + "\" -o \"" + outWav + "\"", err);
+}
+
 } // namespace igi1conv
