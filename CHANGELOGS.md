@@ -1,5 +1,32 @@
 # Changelogs
 
+## 3.5.0-pre — Auto-Playing AI Animations in Parallel & Level Music
+
+### ✨ New Features
+- **Every AI animates automatically at level load — all in parallel.** The animation system now resolves every eligible AI's animation simultaneously across worker threads instead of only auto-playing those whose `standAnimation` field matches a real clip. For each AI, resolution tries Stand Animation → AI-script `AIAction_PlayAnimation` ids → PatrolPath predefined animations (in that order); the first match plays. If no animation is referenced, the AI falls back to the bone hierarchy's default clip (lowest `animId`), so no AI stays static by accident. Resolving can be heavy (spawning `igi1conv.exe` per AI to decompile `.qvm` scripts), so phase 1 imports all bone hierarchies sequentially, phase 2 spawns per-AI resolution across `std::async` worker threads, and phase 3 merges results back on the main thread — preventing data races while keeping the level-load latency low (~2s for 55 AI).
+- **Auto-played animations loop continuously.** Non-looping clips (whose BEF `tp_flag = 0`) now force-loop when auto-played, so every AI keeps animating instead of freezing after one cycle. This is editor-only behaviour (`AnimPlayback::forceLoop` flag); manually-toggled animations respect their clip's own loop flag.
+- **Parallel skinned-mesh rendering.** The static mesh skip list changed from a single object index to an `unordered_set<int>`, allowing all auto-playing AI to have their animated mesh drawn in parallel each frame instead of just one. Their individual animation state (playing/paused) is respected independently.
+- **Per-AI animation on/off control.** Each auto-played AI can be individually paused/resumed via the property panel's Animation Control section, without affecting other AI — clicking the animation toggle button for one AI pauses only that AI; others keep looping. Toggling off reverts that AI to its static mesh.
+- **Level music playback with auto-loop.** `PlayLevelMusic` loads the level-specific `.wav` (or game default `game_music.wav` if not overridden in `qedconfig.qsc`), plays it via Windows `mciSendString`, and `CheckMusicLoop` restarts it when it finishes (MCI "repeat" is unreliable for waveaudio, so manual restart ensures looping). Music respects pause mode — it pauses when the editor pauses and resumes when the user un-pauses.
+
+### 🐛 Bug Fixes
+- **Fixed: Only 4 of 29 AI were auto-playing on level 1.** Root cause: most AI don't have a `standAnimation` value; their animation comes from their AI script's `AIAction_PlayAnimation` or PatrolPath commands instead. The old auto-play only checked `standAnimation`, so it missed 23 AI. Now uses `GetOrComputeAnimationIds` to try all three sources in priority order, and falls back to the default clip if none resolve.
+- **Fixed: Auto-played non-looping clips froze after one cycle.** Clips were clamping `currentTimeMs` and setting `playing = false` at duration end. Added `AnimPlayback::forceLoop` so auto-play ignores the clip's `tp_flag` and keeps cycling forever.
+- **Fixed: Data race in `MakeTempPath` RNG.** The `static std::mt19937_64` was shared across concurrent worker threads spawned during animation resolution. Changed to `thread_local` so each thread has its own RNG state without synchronization.
+
+### 🔧 Technical
+- **Parallel animation resolution at level load (Phase 1-3):**
+  - **Phase 1 (main thread, sequential):** Import every distinct bone hierarchy's animation set before any worker thread touches the registry (prevents concurrent writes to the same cache map).
+  - **Phase 2 (worker threads, parallel):** Each AI gets a `std::async` task that computes its animation ids, tries each, and returns the first matching clip (read-only against registry and level objects).
+  - **Phase 3 (main thread, sequential):** Merge results into `animPlaybacks_` and `animIdsCache_` — no concurrent writers, just sequential map inserts.
+- **New API:** `AnimationRegistry::GetDefaultClip(boneHierarchy)` returns the lowest-`animId` clip for fallback. `App::ComputeAnimationIdsForObject(objIndex)` is the thread-safe cache-free helper used by parallel resolution.
+
+### 🎵 Music Integration
+- **Level music auto-plays on load** (via new `PlayLevelMusic(level_no)` call in `LoadLevel`).
+- **Per-level music override** in `qedconfig.qsc`: `QEDLevelMusic(level_no, "custom_music.wav")` sets a custom `.wav` for that level; unset levels use `game_music.wav`.
+- **Auto-loop via `CheckMusicLoop()`** called every frame: detects when the track finishes and restarts it (MCI workaround).
+- **Pause-aware:** `StopLevelMusic()` called on pause; `PlayLevelMusic()` resumes on un-pause.
+
 ## 3.4.1-pre — Live Graph Sync, Exact-ID Find & AI Script Notepad
 
 ### 🐛 Bug Fixes
