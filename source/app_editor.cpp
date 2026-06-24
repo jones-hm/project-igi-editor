@@ -292,6 +292,57 @@ void App::LoadAIScriptForSelected() {
 	ai_script_text_ = QVM_DecompileToString(qvm);
 }
 
+void App::CalculateLightmapForSelectedObject() {
+	auto& objects = level_.GetLevelObjects().GetObjects();
+	if (selected_object_index_ < 0 || selected_object_index_ >= (int)objects.size()) {
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] No object selected.");
+		return;
+	}
+	LevelObject& obj = objects[selected_object_index_];
+	if (obj.type != "Building" && obj.type != "EditRigidObj") {
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] \"" + obj.type + "\" objects don't carry lightmap bindings.");
+		return;
+	}
+
+	const std::string qscPath = level_.GetQscPath();
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Resolving lightmap for model=" + obj.modelId +
+		" taskId=" + obj.taskId + " qsc=" + qscPath);
+
+	std::string err;
+	std::vector<std::string> olmPaths = igi1conv::LightmapResolve(obj.modelId, qscPath, obj.taskId, err);
+	if (olmPaths.empty()) {
+		status_message_ = "Lightmap: " + err;
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] resolve failed: " + err);
+		return;
+	}
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Resolved " + std::to_string(olmPaths.size()) + " .olm file(s).");
+
+	std::vector<GLuint> textures;
+	textures.reserve(olmPaths.size());
+	for (const auto& olmPath : olmPaths) {
+		std::string pngPath = igi1conv::MakeTempPath(".lightmap.png");
+		std::string convErr;
+		if (!igi1conv::OlmToPng(olmPath, pngPath, convErr)) {
+			Logger::Get().Log(LogLevel::ERR, "[Lightmap] olm to-png failed for " + olmPath + ": " + convErr);
+			textures.push_back(0);
+			continue;
+		}
+		std::string loadErr;
+		GLuint tex = LoadPngAsTexture(pngPath, loadErr);
+		std::error_code ec;
+		std::filesystem::remove(pngPath, ec);
+		if (tex == 0) {
+			Logger::Get().Log(LogLevel::ERR, "[Lightmap] PNG load failed for " + olmPath + ": " + loadErr);
+		}
+		textures.push_back(tex);
+	}
+
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Uploaded " + std::to_string(textures.size()) +
+		" lightmap texture(s) for taskId=" + obj.taskId);
+	status_message_ = "Lightmap calculated: " + std::to_string(textures.size()) + " texture(s) applied";
+	renderer_.SetLightmapForTask(obj.taskId, std::move(textures));
+}
+
 // Commit the active text/numeric box (prop_text_buf_) back to the object and
 // objects.qsc, then clear edit focus. Handles the note (-2) and any field box.
 void App::CommitPropTextEdit() {

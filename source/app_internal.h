@@ -27,6 +27,8 @@
 #include "renderer/tex_writer.h"
 #include "renderer/res_writer.h"
 #include "renderer/gl_helper.h"
+#include "renderer/png_loader.h"
+#include "utils_igi1conv.h"
 #include "level/task_schema.h"
 using namespace TaskSchemaNS;
 #include <filesystem>

@@ -248,6 +248,11 @@ private:
 	// per-AI animation resolution (see app_level.cpp).
 	std::vector<int> ComputeAnimationIdsForObject(int objIndex) const;
 	void ToggleAnimationForObject(int objIndex, int animId);
+	// "Calculate Light Mapping" property-panel button: resolves and applies
+	// the selected Building/EditRigidObj's exact-placement baked lightmap.
+	// No-op (with a logged warning) if no object is selected or the selected
+	// object's task type doesn't carry lightmap bindings.
+	void CalculateLightmapForSelectedObject();
 	// Fills the property panel's "Animation Control" section state for the
 	// currently selected object (boneHierarchy stays -1 when not applicable).
 	void ComputePropAnimUiState(int& boneHierarchy, std::vector<int>& ids, int& activeId, bool& isPlaying);
