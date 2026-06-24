@@ -70,6 +70,115 @@ bool Run(const std::string& args, std::string& err, DWORD timeoutMs) {
     return true;
 }
 
+// Like Run(), but captures the child process's stdout (and stderr, merged)
+// into `stdoutOut`. Needed for `lightmap resolve`/`lightmap list`, which
+// have no -o flag — their only output is stdout text.
+static bool RunCaptureStdout(const std::string& args, std::string& stdoutOut,
+                             std::string& err, DWORD timeoutMs = 120000) {
+    const std::string exe = GetExePath();
+    if (!fs::exists(exe)) {
+        err = "igi1conv.exe not found: " + exe;
+        return false;
+    }
+    std::string cmdLine = "\"" + exe + "\" " + args;
+    Logger::Get().Log(LogLevel::INFO, "[igi1conv] " + cmdLine);
+
+    SECURITY_ATTRIBUTES saAttr{};
+    saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+    saAttr.bInheritHandle = TRUE;
+    saAttr.lpSecurityDescriptor = nullptr;
+
+    HANDLE hReadPipe = nullptr, hWritePipe = nullptr;
+    if (!CreatePipe(&hReadPipe, &hWritePipe, &saAttr, 0)) {
+        err = "CreatePipe failed (" + std::to_string(GetLastError()) + ")";
+        return false;
+    }
+    SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+    si.wShowWindow = SW_HIDE;
+    si.hStdOutput = hWritePipe;
+    si.hStdError  = hWritePipe;
+    PROCESS_INFORMATION pi = {};
+    std::vector<char> buf(cmdLine.begin(), cmdLine.end());
+    buf.push_back('\0');
+
+    BOOL ok = CreateProcessA(nullptr, buf.data(), nullptr, nullptr, TRUE,
+                             CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+    CloseHandle(hWritePipe);
+    if (!ok) {
+        err = "CreateProcess failed (" + std::to_string(GetLastError()) + ") for " + cmdLine;
+        Logger::Get().Log(LogLevel::ERR, "[igi1conv] " + err);
+        CloseHandle(hReadPipe);
+        return false;
+    }
+
+    std::string output;
+    char chunk[4096];
+    DWORD nRead = 0;
+    while (ReadFile(hReadPipe, chunk, sizeof(chunk), &nRead, nullptr) && nRead > 0) {
+        output.append(chunk, nRead);
+    }
+    CloseHandle(hReadPipe);
+
+    WaitForSingleObject(pi.hProcess, timeoutMs);
+    DWORD code = 1;
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    stdoutOut = output;
+    if (code != 0) {
+        err = "igi1conv exit code " + std::to_string(code) + " for: " + args +
+              (output.empty() ? "" : ("\n" + output));
+        Logger::Get().Log(LogLevel::ERR, "[igi1conv] " + err);
+        return false;
+    }
+    return true;
+}
+
+// ─── lightmap / olm ───────────────────────────────────────────────────────
+
+std::vector<std::string> ParseLightmapResolveStdout(const std::string& stdoutText, std::string& err) {
+    std::vector<std::string> paths;
+    std::istringstream iss(stdoutText);
+    std::string line;
+    bool inFileList = false;
+    while (std::getline(iss, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!inFileList) {
+            if (line.find(".olm file(s):") != std::string::npos) {
+                inFileList = true;
+            }
+            continue;
+        }
+        if (line.empty()) continue;
+        if (line[0] != ' ' && line[0] != '\t') break;
+        size_t start = line.find_first_not_of(" \t");
+        if (start != std::string::npos) paths.push_back(line.substr(start));
+    }
+    if (paths.empty()) {
+        err = "no .olm file paths found in lightmap resolve output: " +
+              (stdoutText.empty() ? std::string("(empty output)") : stdoutText);
+    }
+    return paths;
+}
+
+std::vector<std::string> LightmapResolve(const std::string& modelId, const std::string& qscPath,
+                                         const std::string& taskId, std::string& err) {
+    std::string args = "lightmap resolve --model \"" + modelId + "\" --qsc \"" + qscPath +
+                       "\" --task-id " + taskId;
+    std::string out;
+    if (!RunCaptureStdout(args, out, err)) return {};
+    return ParseLightmapResolveStdout(out, err);
+}
+
+bool OlmToPng(const std::string& olmPath, const std::string& outPng, std::string& err) {
+    return Run("olm to-png \"" + olmPath + "\" -o \"" + outPng + "\"", err);
+}
+
 // ─── res ───────────────────────────────────────────────────────────────────
 
 std::vector<std::string> ResList(const std::string& resPath, std::string& err) {

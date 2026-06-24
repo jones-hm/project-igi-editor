@@ -100,6 +100,27 @@ bool QscCompile(const std::string& qscPath, const std::string& outQvm, std::stri
 // `igi1conv qsc validate <f.qsc>`.
 bool QscValidate(const std::string& qscPath, std::string& err);
 
+// ─── lightmap / olm ──────────────────────────────────────────────────────
+
+// `igi1conv lightmap resolve --model <id> --qsc <path> --task-id <id>`.
+// Returns the resolved .olm file paths, or empty with `err` set (no
+// binding, no .olm files on disk, exit-code failure, or unexpected output
+// format). `taskId` disambiguates exactly — the editor always knows the
+// exact placement, so the CLI's ambiguous-match exit code never triggers.
+std::vector<std::string> LightmapResolve(const std::string& modelId,
+                                         const std::string& qscPath,
+                                         const std::string& taskId,
+                                         std::string& err);
+
+// Pure parser for `lightmap resolve`'s stdout — exposed for unit testing
+// without spawning a process. Extracts the indented .olm file paths
+// following the "N .olm file(s):" line. Returns empty with `err` set if the
+// format doesn't match (e.g. unexpected output, or no .olm files listed).
+std::vector<std::string> ParseLightmapResolveStdout(const std::string& stdoutText, std::string& err);
+
+// `igi1conv olm to-png <input.olm> -o <out.png>`.
+bool OlmToPng(const std::string& olmPath, const std::string& outPng, std::string& err);
+
 // `igi1conv fnt export <f.fnt> -o <out.png>`.
 bool FntExportPng(const std::string& fntPath, const std::string& outPng, std::string& err);
 
