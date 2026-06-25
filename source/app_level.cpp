@@ -358,6 +358,11 @@ void App::LoadLevel(int level_no) {
 		// [6]=DirlightRes, [7]=Gamma, [8]=MaxRadiosity, [9-11]=IndoorsAmbientRGB, [12]=Filename.
 		for (const auto& obj : objects) {
 			if (obj.type != "Building" && obj.type != "EditRigidObj") continue;
+			// taskId="-1" marks a nested/non-addressable task (see CreateAttaProxy and
+			// the QSC convention used by DirlightKeyframe/LightmapInfo/etc.) — it is NOT
+			// unique, so registering indoor ambient under that literal string would have
+			// every other "-1" object (unrelated crates, poles, trees...) inherit it too.
+			if (obj.taskId == "-1") continue;
 			for (int ci : obj.childrenIndices) {
 				if (ci < 0 || ci >= (int)objects.size()) continue;
 				const auto& kf = objects[ci];

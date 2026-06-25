@@ -664,7 +664,14 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     }
                 }
                 bool mixedMesh = hasTextured && hasUntextured;
-                const std::vector<GLuint>* lightmaps = GetLightmapForTask(obj.taskId);
+                // taskId="-1" marks a nested/non-addressable task (DirlightKeyframe,
+                // LightmapInfo, ATTA proxies, etc. all use this literal string) — it is
+                // NOT unique, so looking it up here would apply whichever unrelated
+                // object's lightmap/indoor-ambient happened to be registered under "-1"
+                // to every other "-1" object too (e.g. unrelated crates turning the same
+                // flat blue as some other building's interior ambient).
+                const bool hasRealTaskId = obj.taskId != "-1";
+                const std::vector<GLuint>* lightmaps = hasRealTaskId ? GetLightmapForTask(obj.taskId) : nullptr;
                 bool hasWorkingLightmap = lightmaps_enabled_ && lightmaps && !lightmaps->empty();
                 if (hasWorkingLightmap) {
                     bool stale = IsLightmapStale(obj.taskId, obj.pos, obj.rot);
@@ -682,7 +689,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 // sun lighting — but its own LightmapInfo task's "Indoors ambient light"
                 // (dim, e.g. 0.08) is what should light its interior, not the full outdoor
                 // sun/ambient, which made every interior look as bright as outdoors.
-                const glm::vec3* indoorAmbient = GetIndoorAmbientForTask(obj.taskId);
+                const glm::vec3* indoorAmbient = hasRealTaskId ? GetIndoorAmbientForTask(obj.taskId) : nullptr;
                 glm::vec3 dynDirlight = sun_front_color_;
                 glm::vec3 dynAmbient = sun_back_color_;
                 if (indoorAmbient && !hasWorkingLightmap) {

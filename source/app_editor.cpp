@@ -370,9 +370,13 @@ void App::CalculateLightmapForSelectedObject() {
 		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] \"" + obj.type + "\" objects don't carry lightmap bindings.");
 		return;
 	}
-	if (obj.isAttaProxy) {
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] ATTA proxy objects (taskId=-1) aren't real QSC tasks — no lightmap binding to resolve.");
-		status_message_ = "Lightmap: ATTA proxy objects don't carry lightmap bindings";
+	if (obj.taskId == "-1") {
+		// taskId="-1" covers ATTA proxies AND any nested/non-addressable task — neither
+		// is a real QSC task igi1conv can disambiguate a binding against, and "-1" is
+		// shared by many unrelated objects, so resolving here would mis-bind whichever
+		// object's lightmap is cached under that literal string.
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] taskId=-1 (ATTA proxy / nested task) isn't a real QSC task — no lightmap binding to resolve.");
+		status_message_ = "Lightmap: this object has no real task id to bind a lightmap to";
 		return;
 	}
 
@@ -433,10 +437,12 @@ void App::CalculateLightmapsForAllObjects() {
 	std::vector<int> targets;
 	for (int i = 0; i < (int)objects.size(); ++i) {
 		const auto& o = objects[i];
-		// ATTA proxies are also type "EditRigidObj" but have taskId="-1" (never a
-		// real QSC task — see CreateAttaProxy), so igi1conv has nothing to resolve
-		// a binding against and exits with an error for every one of them.
-		if (o.isAttaProxy) continue;
+		// taskId="-1" covers ATTA proxies AND any nested/non-addressable task (the
+		// QSC convention shared by DirlightKeyframe/LightmapInfo/etc.) — never a real
+		// QSC task igi1conv can resolve a binding against, and not unique, so a
+		// "successful" resolve here would mis-bind whichever object's lightmap ends
+		// up cached under that literal "-1" string to every other "-1" object too.
+		if (o.taskId == "-1") continue;
 		if (o.type == "Building" || o.type == "EditRigidObj") targets.push_back(i);
 	}
 	if (targets.empty()) {
