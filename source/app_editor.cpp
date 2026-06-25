@@ -309,10 +309,18 @@ static bool EnsureLightmapsUnpacked(const std::string& levelDir, std::string& er
 	size_t unpackedCount = 0;
 	bool unpackOk = RES_ForEachEntry(packedRes,
 		[&](const std::string& name, const uint8_t* data, size_t size) {
-			std::ofstream out(unpackedDir + "\\" + name, std::ios::binary);
+			if (size == 0) return;
+			// Entry names can include subdirectory components (see
+			// AssetExtractor::ExtractResIfNeeded) — flatten to just the filename so
+			// ofstream doesn't silently fail opening a nonexistent subdirectory path.
+			std::string filename = std::filesystem::path(name).filename().string();
+			if (filename.empty()) return;
+			std::ofstream out(unpackedDir + "\\" + filename, std::ios::binary);
 			if (out) {
 				out.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(size));
 				++unpackedCount;
+			} else {
+				Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Cannot write unpacked file: " + unpackedDir + "\\" + filename);
 			}
 		}, err);
 	if (!unpackOk) return false;
