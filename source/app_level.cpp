@@ -102,13 +102,20 @@ void App::ToggleMusic() {
 }
 
 void App::ToggleLightmaps() {
-    Config::Get().enableLightmaps = !Config::Get().enableLightmaps;
+    bool on = !Config::Get().enableLightmaps;
+    Config::Get().enableLightmaps = on;
     Config::Save();
-    renderer_.SetLightmapsEnabled(Config::Get().enableLightmaps);
+    renderer_.SetLightmapsEnabled(on);
     Logger::Get().Log(LogLevel::INFO, std::string("[Lightmap] Toggled ") +
-        (Config::Get().enableLightmaps ? "ON" : "OFF") + " via Escape menu");
-    if (Config::Get().enableLightmaps) {
+        (on ? "ON" : "OFF") + " via Escape menu");
+    if (on) {
+        // ON: bulk-calculate every Building/EditRigidObj's baked lightmap.
         CalculateLightmapsForAllObjects();
+    } else {
+        // OFF: drop all baked lightmaps so nothing is shown. Individual objects
+        // can still be re-lit any time via the per-object Calculate button.
+        renderer_.ClearAllLightmaps();
+        Logger::Get().Log(LogLevel::INFO, "[Lightmap] Cleared all baked lightmaps (checkbox OFF)");
     }
 }
 
@@ -162,6 +169,7 @@ void App::LoadLevel(int level_no) {
 		selected_object_index_ = -1;
 		hover_object_index_ = -1;
 		status_message_.clear();
+		recalculated_task_ids_.clear(); // pending lightmap write-backs are per-level
 
 		// NOTE: We must NOT purge the previous level's extracted assets here. The
 		// texture/model resolver (FindTextureFile step 6 + lazy cross-level extraction)
@@ -501,6 +509,58 @@ void App::LoadLevel(int level_no) {
 	}
 }
 
+void App::WriteBackRecalculatedLightmaps() {
+	if (recalculated_task_ids_.empty()) return;
+
+	const std::string levelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
+		std::to_string(level_.GetLevelNo());
+	const std::string lightmapsDir = levelDir + "\\lightmaps";
+	const std::string unpackedDir = lightmapsDir + "\\lightmaps_unpacked";
+	const std::string resPath = lightmapsDir + "\\lightmaps.res";
+
+	if (!std::filesystem::exists(resPath) || !std::filesystem::exists(unpackedDir)) {
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Write-back skipped: missing " +
+			resPath + " or " + unpackedDir);
+		return;
+	}
+
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Writing back " +
+		std::to_string(recalculated_task_ids_.size()) + " recalculated lightmap(s) into " + resPath);
+
+	// Repack into a temp .res first (name-preserving: each modified .olm in
+	// lightmaps_unpacked replaces its same-named entry; everything else verbatim),
+	// then atomically swap it in. The pristine lightmaps.res is in the per-level
+	// backup, so Reset Level restores the originals.
+	const std::string tmpRes = lightmapsDir + "\\lightmaps_new.res";
+	std::string err;
+	if (!igi1conv::ResRepack(resPath, unpackedDir, tmpRes, err)) {
+		status_message_ = "Lightmap write-back failed: " + err;
+		Logger::Get().Log(LogLevel::ERR, "[Lightmap] res repack failed: " + err);
+		std::error_code ec; std::filesystem::remove(tmpRes, ec);
+		return;
+	}
+
+	std::error_code ec;
+	std::filesystem::rename(tmpRes, resPath, ec);
+	if (ec) {
+		// rename can fail across a lock; fall back to copy+remove.
+		std::filesystem::copy_file(tmpRes, resPath,
+			std::filesystem::copy_options::overwrite_existing, ec);
+		std::error_code ec2; std::filesystem::remove(tmpRes, ec2);
+	}
+	if (ec) {
+		status_message_ = "Lightmap write-back: could not replace lightmaps.res";
+		Logger::Get().Log(LogLevel::ERR, "[Lightmap] Could not replace " + resPath + ": " + ec.message());
+		return;
+	}
+
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Wrote recalculated lightmaps into " + resPath +
+		" (" + std::to_string(recalculated_task_ids_.size()) + " object(s)) — game will use the new lighting");
+	status_message_ += "  |  lightmaps written to game (" +
+		std::to_string(recalculated_task_ids_.size()) + " obj)";
+	recalculated_task_ids_.clear();
+}
+
 void App::SetGameLevel(int level_no) {
 	bridge_.SetGameLevel(level_no);
 }
@@ -605,6 +665,10 @@ void App::SaveCurrentLevel() {
 
 		Logger::Get().Log(LogLevel::INFO, "[App] Calling SaveAndCompile()");
 		SaveAndCompile();
+
+		// Repack any recalculated lightmaps back into the level's lightmaps.res so
+		// the GAME (igi.exe) shows the new lighting, not the original prebaked one.
+		WriteBackRecalculatedLightmaps();
 	}
 	catch (const std::exception& e) {
 		std::string errorMsg = "Error saving level:\n" + std::string(e.what());

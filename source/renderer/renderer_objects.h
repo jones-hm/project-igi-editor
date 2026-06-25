@@ -116,9 +116,30 @@ public:
     void SetLightmapForTask(const std::string& taskId, std::vector<GLuint> textures,
                             const glm::dvec3& bakedPos, const glm::dvec3& bakedRot);
     void ClearLightmapForTask(const std::string& taskId);
+    // Free all baked lightmap textures + per-task bake/stale state (Escape-menu
+    // Lightmaps OFF, and level switch). Leaves indoor-ambient metadata intact.
+    void ClearAllLightmaps();
     const std::vector<GLuint>* GetLightmapForTask(const std::string& taskId) const;
     // Returns false if taskId has no recorded bake pose (treated as not stale).
     bool IsLightmapStale(const std::string& taskId, const glm::dvec3& curPos, const glm::dvec3& curRot) const;
+    bool HasLightmapForTask(const std::string& taskId) const {
+        auto* v = GetLightmapForTask(taskId); return v && !v->empty();
+    }
+    // Retrieve the pos/rot recorded at the time taskId's lightmap was baked
+    // (needed as recalc's --rot-orig). Returns false if no bake is recorded.
+    bool GetLightmapBakePose(const std::string& taskId, glm::dvec3& pos, glm::dvec3& rot) const {
+        auto it = lightmap_bake_pose_by_task_.find(taskId);
+        if (it == lightmap_bake_pose_by_task_.end()) return false;
+        pos = it->second.first; rot = it->second.second; return true;
+    }
+    // Public access to model-file resolution + the resolved level sun (for the
+    // editor's lightmap recalc pipeline).
+    std::string GetModelFilePath(const std::string& modelId, bool isBuilding) {
+        return FindModelFile(modelId, isBuilding);
+    }
+    glm::vec3 GetSunDir() const { return sun_dir_; }
+    glm::vec3 GetSunFrontColor() const { return sun_front_color_; }
+    glm::vec3 GetSunBackColor() const { return sun_back_color_; }
 
     // Escape-menu "Lightmaps" checkbox — when false, calculated lightmaps are
     // never bound during render regardless of SetLightmapForTask state.

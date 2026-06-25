@@ -323,6 +323,31 @@ void Renderer_Objects::ClearCaches() {
     persistent_dat_path_.clear();
     logged_draw_buildings_.clear();
 
+    // Lightmaps are keyed by taskId, which is only unique WITHIN a level — task
+    // 1104 in level1 and task 1104 in level6 are unrelated. Without clearing
+    // these on a level switch, a previous level's baked lightmap (and its bake
+    // pose) would resolve for the new level's same-numbered task, falsely
+    // flagging it "moved/rotated since bake" and binding the wrong texture.
+    // (indoor_ambient_by_task_ is rebuilt per level load, so it is NOT cleared
+    //  here — it's repopulated right after, and clearing it would also be fine.)
+    ClearAllLightmaps();
+    indoor_ambient_by_task_.clear();
+    Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Cleared per-task lightmap caches on level switch");
+}
+
+// Free every baked lightmap's GL textures and drop the per-task bake/stale
+// state. Used both on level switch (above) and by the Escape-menu Lightmaps
+// checkbox when toggled OFF (so OFF actually hides calculated lightmaps).
+// Does NOT clear indoor_ambient_by_task_, which is level-load metadata.
+void Renderer_Objects::ClearAllLightmaps() {
+    for (auto& pair : lightmap_textures_by_task_) {
+        for (GLuint tex : pair.second) {
+            if (tex != 0) glDeleteTextures(1, &tex);
+        }
+    }
+    lightmap_textures_by_task_.clear();
+    lightmap_bake_pose_by_task_.clear();
+    stale_lightmap_logged_.clear();
 }
 
 // ─── Shutdown ─────────────────────────────────────────────────────────────────
@@ -672,7 +697,11 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 // flat blue as some other building's interior ambient).
                 const bool hasRealTaskId = obj.taskId != "-1";
                 const std::vector<GLuint>* lightmaps = hasRealTaskId ? GetLightmapForTask(obj.taskId) : nullptr;
-                bool hasWorkingLightmap = lightmaps_enabled_ && lightmaps && !lightmaps->empty();
+                // Display is NOT gated on the global "Lightmaps" checkbox: any baked
+                // lightmap present is shown (so the per-object Calculate button works
+                // even with the checkbox off). The checkbox governs bulk calculate
+                // (ON) and bulk clear (OFF, which empties these maps so nothing shows).
+                bool hasWorkingLightmap = lightmaps && !lightmaps->empty();
                 if (hasWorkingLightmap) {
                     bool stale = IsLightmapStale(obj.taskId, obj.pos, obj.rot);
                     hasWorkingLightmap = !stale;

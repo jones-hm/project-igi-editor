@@ -8,6 +8,7 @@
 
 #include <string>
 #include <vector>
+#include <glm/glm.hpp>
 
 namespace igi1conv {
 
@@ -49,6 +50,13 @@ bool ResAppend(const std::string& srcRes,
 
 // `igi1conv res pack <dir> <out.res>`.
 bool ResPack(const std::string& dir, const std::string& outRes, std::string& err);
+
+// `igi1conv res repack <orig.res> <dir> -o <out.res>` — rebuild origRes into
+// outRes, replacing each entry whose basename matches a file in `dir` with that
+// file's bytes while preserving the original entry NAMES verbatim. Used to write
+// edited lightmaps back into lightmaps.res with game-valid nested entry names.
+bool ResRepack(const std::string& origRes, const std::string& dir,
+               const std::string& outRes, std::string& err);
 
 // `igi1conv dat export <f.dat> [-o <out.json>] [--text]` — returns the JSON
 // path written. If outJson is empty, a temp file is used.
@@ -120,6 +128,17 @@ std::vector<std::string> ParseLightmapResolveStdout(const std::string& stdoutTex
 
 // `igi1conv olm to-png <input.olm> -o <out.png>`.
 bool OlmToPng(const std::string& olmPath, const std::string& outPng, std::string& err);
+
+// `igi1conv lightmap recalc ...` — re-light a moved/rotated object's baked
+// .olm files in place by modulating them per-channel by the new sun angle
+// (preserving the original shadow detail). rotOrig/rotNew are Euler radians
+// (x,y,z); sunDir/sunColor/ambient are world-space vec3s. Returns true on
+// success (at least one .olm rewritten).
+bool LightmapRecalc(const std::string& modelId, const std::string& qscPath,
+                    const std::string& taskId, const std::string& mefPath,
+                    const glm::dvec3& rotOrig, const glm::dvec3& rotNew,
+                    const glm::vec3& sunDir, const glm::vec3& sunColor,
+                    const glm::vec3& ambient, std::string& err);
 
 // `igi1conv fnt export <f.fnt> -o <out.png>`.
 bool FntExportPng(const std::string& fntPath, const std::string& outPng, std::string& err);

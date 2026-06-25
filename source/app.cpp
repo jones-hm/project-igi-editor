@@ -457,6 +457,7 @@ void App::Frame(float delta_seconds) {
 			.auto_save_interval_seconds_ = auto_save_interval_seconds_,
 			.music_on_ = music_playing_,
 			.lightmaps_on_ = Config::Get().enableLightmaps,
+			.selected_lightmap_stale_ = SelectedLightmapIsStale(),
 			.anim_status_  = BuildAnimStatusString(),
 			.anim_playing_ = !animPlaybacks_.empty(),
 			.anim_debug_visible_ = show_anim_debug_,

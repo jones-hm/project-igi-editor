@@ -515,6 +515,7 @@ public:
 		int    auto_save_interval_seconds_ = 300;
 		bool   music_on_                 = false; // Escape-menu Music checkbox state
 		bool   lightmaps_on_             = false; // Escape-menu Lightmaps checkbox state
+		bool   selected_lightmap_stale_  = false; // selected obj has a baked lightmap but was moved/rotated since (label: Recalculate)
 
 		// Animation state
 		std::string anim_status_;           // summary text of animations playing
@@ -678,6 +679,20 @@ public:
 		objects_.SetLightmapForTask(taskId, std::move(textures), bakedPos, bakedRot);
 	}
 	void ClearLightmapForTask(const std::string& taskId) { objects_.ClearLightmapForTask(taskId); }
+	void ClearAllLightmaps() { objects_.ClearAllLightmaps(); }
+	bool HasLightmapForTask(const std::string& taskId) const { return objects_.HasLightmapForTask(taskId); }
+	bool IsLightmapStale(const std::string& taskId, const glm::dvec3& pos, const glm::dvec3& rot) const {
+		return objects_.IsLightmapStale(taskId, pos, rot);
+	}
+	bool GetLightmapBakePose(const std::string& taskId, glm::dvec3& pos, glm::dvec3& rot) const {
+		return objects_.GetLightmapBakePose(taskId, pos, rot);
+	}
+	std::string GetModelFilePath(const std::string& modelId, bool isBuilding) {
+		return objects_.GetModelFilePath(modelId, isBuilding);
+	}
+	glm::vec3 GetSunDir() const { return objects_.GetSunDir(); }
+	glm::vec3 GetSunFrontColor() const { return objects_.GetSunFrontColor(); }
+	glm::vec3 GetSunBackColor() const { return objects_.GetSunBackColor(); }
 	void SetLightmapsEnabled(bool enabled) { objects_.SetLightmapsEnabled(enabled); }
 	void SetSunLight(const glm::vec3& dir, const glm::vec3& frontColor, const glm::vec3& backColor) {
 		objects_.SetSunLight(dir, frontColor, backColor);

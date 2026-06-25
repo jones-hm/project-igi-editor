@@ -432,9 +432,113 @@ void App::CalculateLightmapForSelectedObject() {
 		return;
 	}
 	status_message_ = "Lightmap calculated: " + std::to_string(uploaded) + " texture(s) applied";
-	if (!Config::Get().enableLightmaps) {
-		status_message_ += " (enable 'Lightmaps' in the Escape menu to see it)";
+}
+
+bool App::SelectedLightmapIsStale() const {
+	const auto& objects = level_.GetLevelObjects().GetObjects();
+	if (selected_object_index_ < 0 || selected_object_index_ >= (int)objects.size()) return false;
+	const auto& obj = objects[selected_object_index_];
+	if ((obj.type != "Building" && obj.type != "EditRigidObj") || obj.taskId == "-1") return false;
+	return renderer_.HasLightmapForTask(obj.taskId) &&
+	       renderer_.IsLightmapStale(obj.taskId, obj.pos, obj.rot);
+}
+
+void App::RecalculateLightmapForSelectedObject() {
+	auto& objects = level_.GetLevelObjects().GetObjects();
+	if (selected_object_index_ < 0 || selected_object_index_ >= (int)objects.size()) {
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc: no object selected.");
+		return;
 	}
+	LevelObject& obj = objects[selected_object_index_];
+	if (obj.type != "Building" && obj.type != "EditRigidObj") {
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc: \"" + obj.type + "\" objects don't carry lightmap bindings.");
+		return;
+	}
+	if (obj.taskId == "-1") {
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc: taskId=-1 has no resolvable binding.");
+		status_message_ = "Recalc: this object has no real task id";
+		return;
+	}
+
+	// Recalc re-lights an EXISTING bake by the orientation delta, so it needs the
+	// pos/rot recorded when that bake was applied. With no prior bake there's
+	// nothing to modulate — fall back to an initial static Calculate instead.
+	glm::dvec3 bakedPos, bakedRot;
+	if (!renderer_.GetLightmapBakePose(obj.taskId, bakedPos, bakedRot)) {
+		Logger::Get().Log(LogLevel::INFO, "[Lightmap] Recalc: no prior bake for taskId=" +
+			obj.taskId + " — doing an initial Calculate instead.");
+		CalculateLightmapForSelectedObject();
+		return;
+	}
+
+	std::string mefPath = renderer_.GetModelFilePath(obj.modelId, obj.isBuilding);
+	if (mefPath.empty()) {
+		status_message_ = "Recalc: model .mef not found for " + obj.modelId;
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc: no .mef for model " + obj.modelId);
+		return;
+	}
+
+	const std::string levelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
+		std::to_string(level_.GetLevelNo());
+	const std::string qvmPath = levelDir + "\\objects.qvm";
+	const std::string qscPath = levelDir + "\\objects_lightmap_tmp.qsc";
+
+	status_message_ = "Recalculating lightmap (sun)...";
+	DrawProgressOverlay("Recalculating Lightmap", 10, "preparing");
+
+	std::string unpackErr;
+	if (!EnsureLightmapsUnpacked(levelDir, unpackErr)) {
+		status_message_ = "Recalc: failed to unpack lightmaps.res: " + unpackErr;
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc unpack failed: " + unpackErr);
+		return;
+	}
+
+	DrawProgressOverlay("Recalculating Lightmap", 30, "decompiling objects.qvm");
+	std::string decompileErr;
+	if (!igi1conv::QvmDecompile(qvmPath, qscPath, decompileErr)) {
+		status_message_ = "Recalc: " + decompileErr;
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc decompile failed: " + decompileErr);
+		return;
+	}
+
+	const glm::vec3 sunDir   = renderer_.GetSunDir();
+	const glm::vec3 sunColor = renderer_.GetSunFrontColor();
+	const glm::vec3 ambient  = renderer_.GetSunBackColor();
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Recalc taskId=" + obj.taskId + " model=" + obj.modelId +
+		" rotOrig=(" + std::to_string(bakedRot.x) + "," + std::to_string(bakedRot.y) + "," + std::to_string(bakedRot.z) + ")" +
+		" rotNew=(" + std::to_string(obj.rot.x) + "," + std::to_string(obj.rot.y) + "," + std::to_string(obj.rot.z) + ")" +
+		" mef=" + mefPath);
+
+	DrawProgressOverlay("Recalculating Lightmap", 55, "re-lighting .olm files");
+	std::string recalcErr;
+	bool ok = igi1conv::LightmapRecalc(obj.modelId, qscPath, obj.taskId, mefPath,
+		bakedRot, obj.rot, sunDir, sunColor, ambient, recalcErr);
+	if (!ok) {
+		std::error_code ec; std::filesystem::remove(qscPath, ec);
+		status_message_ = "Recalc: " + recalcErr;
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc CLI failed: " + recalcErr);
+		return;
+	}
+
+	// Re-read the rewritten .olm files and re-upload — ResolveAndApplyLightmap
+	// records the CURRENT pos/rot as the new bake pose, so the object is no
+	// longer flagged stale.
+	DrawProgressOverlay("Recalculating Lightmap", 80, "reloading textures");
+	size_t uploaded = ResolveAndApplyLightmap(obj, qscPath);
+
+	std::error_code qscEc;
+	std::filesystem::remove(qscPath, qscEc);
+
+	DrawProgressOverlay("Recalculating Lightmap", 100, "done");
+	if (uploaded == 0) {
+		status_message_ = "Recalc: no lightmap textures resolved";
+		return;
+	}
+	recalculated_task_ids_.insert(obj.taskId);
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Recalc complete for taskId=" + obj.taskId +
+		" (" + std::to_string(uploaded) + " texture(s)); queued for write-back on Save.");
+	status_message_ = "Lightmap recalculated: " + std::to_string(uploaded) +
+		" texture(s) — Save Level to apply in-game";
 }
 
 // Escape-menu "Lightmaps" checkbox, turned ON: resolve + apply baked lightmaps for

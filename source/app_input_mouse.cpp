@@ -191,7 +191,12 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 									if (w.comp >= 0) ToggleAnimationForObject(selected_object_index_, w.comp);
 									return;
 								} else if (w.kind == K::LightmapButton) {
-									CalculateLightmapForSelectedObject();
+									// Stale (moved/rotated since bake) -> recalc against the
+									// sun for the new orientation; otherwise initial calculate.
+									if (SelectedLightmapIsStale())
+										RecalculateLightmapForSelectedObject();
+									else
+										CalculateLightmapForSelectedObject();
 									return;
 								} else if (w.kind == K::NoteBox) {
 									prop_edit_obj_index_ = tIdx;

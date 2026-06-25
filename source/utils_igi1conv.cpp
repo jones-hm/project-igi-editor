@@ -179,6 +179,28 @@ bool OlmToPng(const std::string& olmPath, const std::string& outPng, std::string
     return Run("olm to-png \"" + olmPath + "\" -o \"" + outPng + "\"", err);
 }
 
+bool LightmapRecalc(const std::string& modelId, const std::string& qscPath,
+                    const std::string& taskId, const std::string& mefPath,
+                    const glm::dvec3& rotOrig, const glm::dvec3& rotNew,
+                    const glm::vec3& sunDir, const glm::vec3& sunColor,
+                    const glm::vec3& ambient, std::string& err) {
+    // Fixed-precision, locale-independent "x,y,z" formatting for the CLI flags.
+    auto vec3 = [](double x, double y, double z) {
+        char buf[96];
+        std::snprintf(buf, sizeof(buf), "%.6f,%.6f,%.6f", x, y, z);
+        return std::string(buf);
+    };
+    std::string args =
+        "lightmap recalc --model \"" + modelId + "\" --qsc \"" + qscPath +
+        "\" --task-id " + taskId + " --mef \"" + mefPath + "\"" +
+        " --rot-orig " + vec3(rotOrig.x, rotOrig.y, rotOrig.z) +
+        " --rot-new "  + vec3(rotNew.x, rotNew.y, rotNew.z) +
+        " --sun-dir "  + vec3(sunDir.x, sunDir.y, sunDir.z) +
+        " --sun-color " + vec3(sunColor.x, sunColor.y, sunColor.z) +
+        " --ambient "  + vec3(ambient.x, ambient.y, ambient.z);
+    return Run(args, err);
+}
+
 // ─── res ───────────────────────────────────────────────────────────────────
 
 std::vector<std::string> ResList(const std::string& resPath, std::string& err) {
@@ -228,6 +250,11 @@ bool ResAppend(const std::string& srcRes,
 
 bool ResPack(const std::string& dir, const std::string& outRes, std::string& err) {
     return Run("res pack \"" + dir + "\" \"" + outRes + "\"", err);
+}
+
+bool ResRepack(const std::string& origRes, const std::string& dir,
+               const std::string& outRes, std::string& err) {
+    return Run("res repack \"" + origRes + "\" \"" + dir + "\" -o \"" + outRes + "\"", err);
 }
 
 // ─── dat / mtp / graph ────────────────────────────────────────────────────
