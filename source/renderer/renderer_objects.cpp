@@ -665,8 +665,10 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 }
                 bool mixedMesh = hasTextured && hasUntextured;
                 const std::vector<GLuint>* lightmaps = GetLightmapForTask(obj.taskId);
-                if (lightmaps && !lightmaps->empty()) {
+                bool hasWorkingLightmap = lightmaps_enabled_ && lightmaps && !lightmaps->empty();
+                if (hasWorkingLightmap) {
                     bool stale = IsLightmapStale(obj.taskId, obj.pos, obj.rot);
+                    hasWorkingLightmap = !stale;
                     bool wasLogged = stale_lightmap_logged_.count(obj.taskId) != 0;
                     if (stale && !wasLogged) {
                         Logger::Get().Log(LogLevel::INFO, "[Lightmap] taskId=" + obj.taskId +
@@ -675,6 +677,17 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     } else if (!stale && wasLogged) {
                         stale_lightmap_logged_.erase(obj.taskId);
                     }
+                }
+                // A building without a working calculated lightmap falls back to dynamic
+                // sun lighting — but its own LightmapInfo task's "Indoors ambient light"
+                // (dim, e.g. 0.08) is what should light its interior, not the full outdoor
+                // sun/ambient, which made every interior look as bright as outdoors.
+                const glm::vec3* indoorAmbient = GetIndoorAmbientForTask(obj.taskId);
+                glm::vec3 dynDirlight = sun_front_color_;
+                glm::vec3 dynAmbient = sun_back_color_;
+                if (indoorAmbient && !hasWorkingLightmap) {
+                    dynDirlight = glm::vec3(0.0f);
+                    dynAmbient = *indoorAmbient;
                 }
                 for (size_t si = 0; si < mesh.subMeshes.size(); ++si) {
                     const auto& sub = mesh.subMeshes[si];
@@ -719,8 +732,8 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                         // clear and see-through. The earlier flat-gray override (dirlight 0 /
                         // ambient 0.45) darkened panes into murky panels — reverted to the
                         // pre-3986cd9 "before" look the user asked to restore.
-                        glUniform3f(loc_dirlight, sun_front_color_.r, sun_front_color_.g, sun_front_color_.b);
-                        glUniform3f(loc_ambient,  sun_back_color_.r,  sun_back_color_.g,  sun_back_color_.b);
+                        glUniform3f(loc_dirlight, dynDirlight.r, dynDirlight.g, dynDirlight.b);
+                        glUniform3f(loc_ambient,  dynAmbient.r,  dynAmbient.g,  dynAmbient.b);
                         glUniform1i(loc_useTex, 1);
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, sub.textureID);
@@ -732,8 +745,8 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                         if (color.r >= 0.99f && color.g >= 0.99f && color.b >= 0.99f) {
                             color = glm::vec3(r, g, b);
                         }
-                        glUniform3f(loc_dirlight, color.r * sun_front_color_.r, color.g * sun_front_color_.g, color.b * sun_front_color_.b);
-                        glUniform3f(loc_ambient,  color.r * sun_back_color_.r,  color.g * sun_back_color_.g,  color.b * sun_back_color_.b);
+                        glUniform3f(loc_dirlight, color.r * dynDirlight.r, color.g * dynDirlight.g, color.b * dynDirlight.b);
+                        glUniform3f(loc_ambient,  color.r * dynAmbient.r,  color.g * dynAmbient.g,  color.b * dynAmbient.b);
                         glUniform1i(loc_useTex, 0);
                     }
 
@@ -742,8 +755,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     // Lightmaps checkbox is on, and the object hasn't been moved/rotated
                     // since the bake (a stale bake would show the WRONG orientation's
                     // lighting, so it falls back to dynamic shading until recalculated).
-                    if (lightmaps_enabled_ && lightmaps && si < lightmaps->size() && (*lightmaps)[si] != 0 &&
-                        !IsLightmapStale(obj.taskId, obj.pos, obj.rot)) {
+                    if (hasWorkingLightmap && si < lightmaps->size() && (*lightmaps)[si] != 0) {
                         glActiveTexture(GL_TEXTURE1);
                         glBindTexture(GL_TEXTURE_2D, (*lightmaps)[si]);
                         glUniform1i(loc_lightmap, 1);

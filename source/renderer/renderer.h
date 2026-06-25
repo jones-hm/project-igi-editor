@@ -683,6 +683,9 @@ public:
 		objects_.SetSunLight(dir, frontColor, backColor);
 	}
 	void SetGlobalGamma(float gamma) { objects_.SetGlobalGamma(gamma); }
+	void SetIndoorAmbientForTask(const std::string& taskId, const glm::vec3& rgb) {
+		objects_.SetIndoorAmbientForTask(taskId, rgb);
+	}
 	void ClearSuppressedAttas() { objects_.ClearSuppressedAttas(); }
 	bool SuppressAttachmentInMef(const std::string& parentModelId, const std::string& attModelId, const glm::vec3& localPos) {
 		return objects_.SuppressAttachmentInMef(parentModelId, attModelId, localPos);

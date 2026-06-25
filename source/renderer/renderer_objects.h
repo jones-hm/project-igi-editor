@@ -137,6 +137,20 @@ public:
     // our raw linear lighting looks noticeably flatter/darker than in-game.
     void SetGlobalGamma(float gamma) { global_gamma_ = gamma; }
 
+    // A Building/EditRigidObj's own LightmapInfo task declares "Indoors ambient
+    // light" — much dimmer than the outdoor Dirlight ambient (e.g. 0.08 vs 0.3),
+    // since interiors aren't meant to receive full outdoor sun. Used as the
+    // dynamic-light fallback (ambient only, no direct sun term) for a building's
+    // submeshes whenever it doesn't have an active (non-stale) calculated
+    // lightmap bound — without this, interiors looked as bright as the outdoors.
+    void SetIndoorAmbientForTask(const std::string& taskId, const glm::vec3& rgb) {
+        indoor_ambient_by_task_[taskId] = rgb;
+    }
+    const glm::vec3* GetIndoorAmbientForTask(const std::string& taskId) const {
+        auto it = indoor_ambient_by_task_.find(taskId);
+        return it != indoor_ambient_by_task_.end() ? &it->second : nullptr;
+    }
+
 private:
     int current_level_ = 1;
     bool lightmaps_enabled_ = false;
@@ -144,6 +158,7 @@ private:
     glm::vec3 sun_front_color_ = glm::vec3(0.6f, 0.6f, 0.6f);
     glm::vec3 sun_back_color_  = glm::vec3(0.4f, 0.4f, 0.4f);
     float global_gamma_ = 1.0f;
+    std::map<std::string, glm::vec3> indoor_ambient_by_task_; // taskId -> LightmapInfo's "Indoors ambient light"
     std::map<std::string, std::pair<glm::dvec3, glm::dvec3>> lightmap_bake_pose_by_task_; // taskId -> (pos, rot)
     std::unordered_set<std::string> stale_lightmap_logged_; // dedupe the "fell back to dynamic" log per taskId
     std::map<std::string, Mesh> mesh_cache_;

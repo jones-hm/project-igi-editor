@@ -348,6 +348,30 @@ void App::LoadLevel(int level_no) {
 			renderer_.SetGlobalGamma(gamma);
 		}
 
+		// Each Building/EditRigidObj's nested LightmapInfo task (Task_DeclareParameters(
+		// "LightmapInfo","Texture scale","Real32","Passes","Int32","Hemicube resolution",
+		// "Int32","Dirlight resolution","Int32","Gamma","Real32","Max radiosity per square
+		// meter","Real32","Indoors ambient light","RGB","Filename","String16")) declares
+		// its own dim "Indoors ambient light" (observed 0.08 vs the outdoor ~0.3 ambient) —
+		// interiors are never meant to receive full outdoor sun. argTokens: [0]=taskId,
+		// [1]="LightmapInfo", [2]=name, [3]=TextureScale, [4]=Passes, [5]=HemicubeRes,
+		// [6]=DirlightRes, [7]=Gamma, [8]=MaxRadiosity, [9-11]=IndoorsAmbientRGB, [12]=Filename.
+		for (const auto& obj : objects) {
+			if (obj.type != "Building" && obj.type != "EditRigidObj") continue;
+			for (int ci : obj.childrenIndices) {
+				if (ci < 0 || ci >= (int)objects.size()) continue;
+				const auto& kf = objects[ci];
+				if (kf.type != "LightmapInfo" || kf.argTokens.size() < 12) continue;
+				try {
+					glm::vec3 indoorAmbient(std::stof(kf.argTokens[9]), std::stof(kf.argTokens[10]), std::stof(kf.argTokens[11]));
+					renderer_.SetIndoorAmbientForTask(obj.taskId, indoorAmbient);
+				} catch (const std::exception& e) {
+					Logger::Get().Log(LogLevel::WARNING, std::string("[App] LightmapInfo indoors-ambient unparsable for taskId=") + obj.taskId + ": " + e.what());
+				}
+				break;
+			}
+		}
+
 		// Log all loaded objects for verification script
 		for (const auto& obj : objects) {
 			if (obj.isSplineWaypoint || !obj.segmentModelId.empty()) {

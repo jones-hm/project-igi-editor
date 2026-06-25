@@ -370,6 +370,11 @@ void App::CalculateLightmapForSelectedObject() {
 		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] \"" + obj.type + "\" objects don't carry lightmap bindings.");
 		return;
 	}
+	if (obj.isAttaProxy) {
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] ATTA proxy objects (taskId=-1) aren't real QSC tasks — no lightmap binding to resolve.");
+		status_message_ = "Lightmap: ATTA proxy objects don't carry lightmap bindings";
+		return;
+	}
 
 	// igi1conv resolves a binding's .olm directory as a SIBLING of the --qsc
 	// path's own directory (lightmaps/lightmaps_unpacked next to objects.qsc).
@@ -427,7 +432,12 @@ void App::CalculateLightmapsForAllObjects() {
 	auto& objects = level_.GetLevelObjects().GetObjects();
 	std::vector<int> targets;
 	for (int i = 0; i < (int)objects.size(); ++i) {
-		if (objects[i].type == "Building" || objects[i].type == "EditRigidObj") targets.push_back(i);
+		const auto& o = objects[i];
+		// ATTA proxies are also type "EditRigidObj" but have taskId="-1" (never a
+		// real QSC task — see CreateAttaProxy), so igi1conv has nothing to resolve
+		// a binding against and exits with an error for every one of them.
+		if (o.isAttaProxy) continue;
+		if (o.type == "Building" || o.type == "EditRigidObj") targets.push_back(i);
 	}
 	if (targets.empty()) {
 		Logger::Get().Log(LogLevel::INFO, "[Lightmap] No Building/EditRigidObj objects in this level.");
