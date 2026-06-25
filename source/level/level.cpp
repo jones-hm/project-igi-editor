@@ -465,17 +465,19 @@ void Level::LoadFogInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loa
 
 			if (a->type_ == QSC::arg_s::type_t::DBL) {
 				switch (arg_idx) {
+				// GlobalLightKeyframe arg layout (0-based, bool FALSE at 0):
+				// [0]=PushButton, [1-3]=Ambient terrain RGB, [4-6]=Fog terrain RGB,
+				// [7]=Fog density, [8]=Link setting
+				case 4:
+					fog_color.r = (float)a->dbl_ / 255.0f;
+					break;
+				case 5:
+					fog_color.g = (float)a->dbl_ / 255.0f;
+					break;
+				case 6:
+					fog_color.b = (float)a->dbl_ / 255.0f;
+					break;
 				case 7:
-					fog_color.r = (float)a->dbl_;
-					break;
-				case 8:
-					fog_color.g = (float)a->dbl_;
-					break;
-				case 9:
-					fog_color.b = (float)a->dbl_;
-					break;
-				case 10:
-					// tune this
 					fog_far = (1.0f / (float)a->dbl_) * 7200.0f;
 					break;
 				}
@@ -484,7 +486,7 @@ void Level::LoadFogInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loa
 			a = a->next_;
 			arg_idx++;
 
-			if (arg_idx > 10) {
+			if (arg_idx >= 8) {
 				break;
 			}
 		}
@@ -508,77 +510,77 @@ void Level::LoadSkydomeInfo(const QSC* qsc_objects, IRenderResLoader* render_res
 		while (a) {
 
 			if (a->type_ == QSC::arg_s::type_t::DBL) {
+				// FlatSky arg layout (0-based, no leading bool):
+				// [0]=FogAmount, [1]=ZPos, [2]=Distance,
+				// [3-5]=FogColor RGB, [6]=SnapBool(skip), [7]=Angle,
+				// [8-10]=TopColor RGB, [11-13]=MidColor1 RGB,
+				// [14-16]=MidColor2 RGB, [17-19]=BotColor1 RGB, [20-22]=BotColor2 RGB
+				// Note: args 0-2 (fog_amount, z_pos, distance) are intentionally not
+				// parsed so the flat-sky layer stays invisible; the editor uses the
+				// skydome gradient for the sky background instead.
 				switch (arg_idx) {
 				case 3:
-					flat_sky_fog_amount_ = (float)a->dbl_;
-					break;
-				case 4:
-					flat_sky_z_pos_ = (float)a->dbl_;
-					break;
-				case 5:
-					flat_sky_distance_ = (float)a->dbl_;
-					break;
-				case 6:
 					flat_sky_fog_color.r = (float)a->dbl_;
 					break;
-				case 7:
+				case 4:
 					flat_sky_fog_color.g = (float)a->dbl_;
 					break;
-				case 8:
+				case 5:
 					flat_sky_fog_color.b = (float)a->dbl_;
 					break;
-				case 10:
+				// arg 6 = SkyDome Snap Colours (bool8) — not DBL, skipped automatically
+				case 7:
 					sd.angle_ = glm::radians((float)a->dbl_);
 					break;
-				case 11:
+				case 8:
 					sd.top_color1_[0] = (float)a->dbl_;
 					sd.top_color2_[0] = (float)a->dbl_;
 					break;
-				case 12:
+				case 9:
 					sd.top_color1_[1] = (float)a->dbl_;
 					sd.top_color2_[1] = (float)a->dbl_;
 					break;
-				case 13:
+				case 10:
 					sd.top_color1_[2] = (float)a->dbl_;
 					sd.top_color2_[2] = (float)a->dbl_;
 					break;
-				case 14:
+				case 11:
 					sd.middle_color1_[0] = (float)a->dbl_;
 					break;
-				case 15:
+				case 12:
 					sd.middle_color1_[1] = (float)a->dbl_;
 					break;
-				case 16:
+				case 13:
 					sd.middle_color1_[2] = (float)a->dbl_;
 					break;
-				case 17:
+				case 14:
 					sd.middle_color2_[0] = (float)a->dbl_;
 					break;
-				case 18:
+				case 15:
 					sd.middle_color2_[1] = (float)a->dbl_;
 					break;
-				case 19:
+				case 16:
 					sd.middle_color2_[2] = (float)a->dbl_;
 					break;
-				case 20:
+				case 17:
 					sd.bottom_color1_[0] = (float)a->dbl_;
 					break;
-				case 21:
+				case 18:
 					sd.bottom_color1_[1] = (float)a->dbl_;
 					break;
-				case 22:
+				case 19:
 					sd.bottom_color1_[2] = (float)a->dbl_;
 					break;
-				case 23:
+				case 20:
 					sd.bottom_color2_[0] = (float)a->dbl_;
 					break;
-				case 24:
+				case 21:
 					sd.bottom_color2_[1] = (float)a->dbl_;
 					break;
-				case 25:
+				case 22:
 					sd.bottom_color2_[2] = (float)a->dbl_;
 					break;
-				}	// end swith
+				}
 			}
 
 			a = a->next_;

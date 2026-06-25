@@ -300,8 +300,8 @@ void App::LoadLevel(int level_no) {
 						if (resolved && time >= bestTime) continue;
 						double beta  = std::stod(kf.argTokens[3]);
 						double gamma = std::stod(kf.argTokens[4]);
-						glm::vec3 front(std::stof(kf.argTokens[5]), std::stof(kf.argTokens[6]), std::stof(kf.argTokens[7]));
-						glm::vec3 back (std::stof(kf.argTokens[8]), std::stof(kf.argTokens[9]), std::stof(kf.argTokens[10]));
+						glm::vec3 front(std::stof(kf.argTokens[5]) / 255.0f, std::stof(kf.argTokens[6]) / 255.0f, std::stof(kf.argTokens[7]) / 255.0f);
+						glm::vec3 back (std::stof(kf.argTokens[8]) / 255.0f, std::stof(kf.argTokens[9]) / 255.0f, std::stof(kf.argTokens[10]) / 255.0f);
 						// Beta is the angle FROM THE ZENITH (straight up), not from the
 						// horizon — beta=30 deg observed in this level's daytime keyframe
 						// must mean a near-overhead sun (60 deg elevation) for roofs to be

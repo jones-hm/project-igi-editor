@@ -373,19 +373,14 @@ void App::CalculateLightmapForSelectedObject() {
 		return;
 	}
 	LevelObject& obj = objects[selected_object_index_];
-	if (obj.type != "Building" && obj.type != "EditRigidObj") {
+	if (obj.type != "Building" && obj.type != "EditRigidObj" && obj.type != "EditObj") {
 		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] \"" + obj.type + "\" objects don't carry lightmap bindings.");
 		return;
 	}
-	if (obj.taskId == "-1") {
-		// taskId="-1" covers ATTA proxies AND any nested/non-addressable task — neither
-		// is a real QSC task igi1conv can disambiguate a binding against, and "-1" is
-		// shared by many unrelated objects, so resolving here would mis-bind whichever
-		// object's lightmap is cached under that literal string.
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] taskId=-1 (ATTA proxy / nested task) isn't a real QSC task — no lightmap binding to resolve.");
-		status_message_ = "Lightmap: this object has no real task id to bind a lightmap to";
-		return;
-	}
+	// Note: taskId="-1" (nested/ATTA tasks, real placed objects with no unique
+	// QSC task id) is NOT rejected here — ResolveAndApplyLightmap below resolves
+	// those by authored position instead (LightmapResolveByPos) and keys them by
+	// a stable position-derived id (LightmapTaskKey), so Calculate works for them.
 
 	// igi1conv resolves a binding's .olm directory as a SIBLING of the --qsc
 	// path's own directory (lightmaps/lightmaps_unpacked next to objects.qsc).
@@ -421,6 +416,17 @@ void App::CalculateLightmapForSelectedObject() {
 		" taskId=" + obj.taskId + " qsc=" + qscPath);
 	DrawProgressOverlay("Calculating Lightmap", 60, "resolving + converting .olm bindings");
 	size_t uploaded = ResolveAndApplyLightmap(obj, qscPath);
+
+	// Also calculate lightmaps for all children (Door, Generator, etc. that have their own .olm bindings)
+	const std::vector<int>& children = obj.childrenIndices;
+	for (size_t ci = 0; ci < children.size(); ++ci) {
+		int idx = children[ci];
+		if (idx < 0 || idx >= (int)objects.size()) continue;
+		LevelObject& child = objects[idx];
+		DrawProgressOverlay("Calculating Lightmap", 70 + static_cast<int>(20 * (ci + 1) / (children.size() + 1)),
+			("child: " + child.name).c_str());
+		uploaded += ResolveAndApplyLightmap(child, qscPath);
+	}
 
 	std::error_code qscEc;
 	std::filesystem::remove(qscPath, qscEc);
@@ -470,17 +476,27 @@ void App::CalculateLightmapsForAllObjects() {
 	std::vector<int> targets;
 	for (int i = 0; i < (int)objects.size(); ++i) {
 		const auto& o = objects[i];
-		// taskId="-1" covers ATTA proxies AND any nested/non-addressable task (the
-		// QSC convention shared by DirlightKeyframe/LightmapInfo/etc.) — never a real
-		// QSC task igi1conv can resolve a binding against, and not unique, so a
-		// "successful" resolve here would mis-bind whichever object's lightmap ends
-		// up cached under that literal "-1" string to every other "-1" object too.
-		if (o.taskId == "-1") continue;
-		if (o.type == "Building" || o.type == "EditRigidObj") targets.push_back(i);
+		if (o.type == "Building" || o.type == "EditRigidObj" || o.type == "EditObj") targets.push_back(i);
 	}
 	if (targets.empty()) {
-		Logger::Get().Log(LogLevel::INFO, "[Lightmap] No Building/EditRigidObj objects in this level.");
+		Logger::Get().Log(LogLevel::INFO, "[Lightmap] No Building/EditRigidObj/EditObj objects in this level.");
 		return;
+	}
+
+	// Expand targets to include children of each Building/EditRigidObj — Door,
+	// Generator, etc. may have their own .olm lightmap bindings.
+	{
+		std::unordered_set<int> inTargets(targets.begin(), targets.end());
+		std::vector<int> toAdd;
+		for (int pi : targets) {
+			for (int ci : objects[pi].childrenIndices) {
+				if (ci >= 0 && ci < (int)objects.size() && !inTargets.count(ci)) {
+					toAdd.push_back(ci);
+					inTargets.insert(ci);
+				}
+			}
+		}
+		targets.insert(targets.end(), toAdd.begin(), toAdd.end());
 	}
 
 	const std::string levelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
