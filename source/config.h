@@ -82,6 +82,8 @@ struct ConfigData {
 
     // [Renderer]
     bool enableLOD; // Portal/attachment distance culling for buildings
+    bool enableLightmaps; // Apply calculated "Calculate Lightmap" textures during render (Escape menu checkbox)
+    bool musicEnabled; // Escape-menu Music checkbox preference — persists across level loads/game launches
 
     // NEW: Advanced QED Settings
     int consoleAutoActivate;

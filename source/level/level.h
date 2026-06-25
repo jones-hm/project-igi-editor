@@ -52,7 +52,6 @@ public:
 
 	const LevelObjects&		GetLevelObjects() const { return level_objects_; }
 	LevelObjects&			GetLevelObjects() { return level_objects_; }
-	const std::string&		GetQscPath() const { return qsc_path_; }
 
 
 

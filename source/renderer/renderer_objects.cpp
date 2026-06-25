@@ -13,9 +13,11 @@ bool Renderer_Objects::IsSkippedModelId(const std::string& modelId) {
     return modelId == "colbox" || modelId == "colbox2" || modelId == "colbox4" || modelId == "colbox66";
 }
 
-void Renderer_Objects::SetLightmapForTask(const std::string& taskId, std::vector<GLuint> textures) {
+void Renderer_Objects::SetLightmapForTask(const std::string& taskId, std::vector<GLuint> textures,
+                                          const glm::dvec3& bakedPos, const glm::dvec3& bakedRot) {
     ClearLightmapForTask(taskId);
     lightmap_textures_by_task_[taskId] = std::move(textures);
+    lightmap_bake_pose_by_task_[taskId] = { bakedPos, bakedRot };
 }
 
 void Renderer_Objects::ClearLightmapForTask(const std::string& taskId) {
@@ -25,11 +27,23 @@ void Renderer_Objects::ClearLightmapForTask(const std::string& taskId) {
         if (tex != 0) glDeleteTextures(1, &tex);
     }
     lightmap_textures_by_task_.erase(it);
+    lightmap_bake_pose_by_task_.erase(taskId);
 }
 
 const std::vector<GLuint>* Renderer_Objects::GetLightmapForTask(const std::string& taskId) const {
     auto it = lightmap_textures_by_task_.find(taskId);
     return it != lightmap_textures_by_task_.end() ? &it->second : nullptr;
+}
+
+bool Renderer_Objects::IsLightmapStale(const std::string& taskId, const glm::dvec3& curPos, const glm::dvec3& curRot) const {
+    auto it = lightmap_bake_pose_by_task_.find(taskId);
+    if (it == lightmap_bake_pose_by_task_.end()) return false;
+    constexpr double kPosEpsilon = 1.0;   // world units (post kMefNativeScale-equivalent raw QSC units)
+    constexpr double kRotEpsilon = 0.01;  // radians
+    const glm::dvec3& bakedPos = it->second.first;
+    const glm::dvec3& bakedRot = it->second.second;
+    return glm::length(curPos - bakedPos) > kPosEpsilon ||
+           glm::length(curRot - bakedRot) > kRotEpsilon;
 }
 
 // ─── Shader Sources ───────────────────────────────────────────────────────────
@@ -74,6 +88,7 @@ in vec3 v_fragPos;
 
 uniform vec3 u_dirlight;   // directional light RGB
 uniform vec3 u_ambient;    // ambient light RGB
+uniform vec3 u_lightDir;   // direction toward the sun (world space, from level Dirlight)
 uniform sampler2D u_texture;
 uniform int u_useTexture;
 uniform sampler2D u_lightmap;
@@ -83,12 +98,13 @@ uniform vec4 u_baseColor;  // Base color when no texture
 uniform vec3 u_tint; // per-object multiplicative tint (default white); magenta = missing-in-res warning
 uniform float u_glassMin;  // glass sheen floor: clean (low-alpha) glass renders at
                            // least this opaque so the pane is visible. 0 = not glass.
+uniform float u_gamma;     // level GlobalLight "Texture filter gamma" (1.0 = no curve)
 
 out vec4 fragColor;
 
 void main() {
     vec3 N = normalize(v_normal);
-    vec3 lightDir = normalize(vec3(0.5, 1.0, 0.5));
+    vec3 lightDir = normalize(u_lightDir);
     float diff = max(dot(N, lightDir), 0.0);
 
     vec3 viewDir = normalize(vec3(0.0, 1.0, 1.0));
@@ -99,8 +115,12 @@ void main() {
 
     vec4 texColor = (u_useTexture != 0) ? texture(u_texture, v_uv) : u_baseColor;
 
+    // The baked .olm lightmap already encodes full scene lighting (ambient +
+    // direct + shadow), so it REPLACES the dynamic light term for this
+    // submesh rather than multiplying with it — multiplying both compounds
+    // shadowed areas into solid black.
     if (u_useLightmap != 0) {
-        texColor.rgb *= texture(u_lightmap, v_uv2).rgb;
+        light = texture(u_lightmap, v_uv2).rgb;
     }
 
     float finalAlpha = (u_useTexture != 0 ? texColor.a : 1.0) * u_alpha;
@@ -113,7 +133,9 @@ void main() {
         light += vec3(spec * 1.5);
     }
 
-    fragColor = vec4(light * texColor.rgb * u_tint, finalAlpha);
+    vec3 litColor = light * texColor.rgb * u_tint;
+    litColor = pow(max(litColor, 0.0), vec3(u_gamma));
+    fragColor = vec4(litColor, finalAlpha);
 
     // Alpha-test cutout for foliage / fences / grilles only (alpha >= 0.9). Glass
     // (lower alpha or u_glassMin set) is NEVER cut out — it blends so you can see
@@ -425,6 +447,10 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     GLint loc_model    = glGetUniformLocation(shader_program_, "u_model");
     GLint loc_dirlight = glGetUniformLocation(shader_program_, "u_dirlight");
     GLint loc_ambient  = glGetUniformLocation(shader_program_, "u_ambient");
+    GLint loc_lightDir = glGetUniformLocation(shader_program_, "u_lightDir");
+    glUniform3f(loc_lightDir, sun_dir_.x, sun_dir_.y, sun_dir_.z);
+    GLint loc_gamma = glGetUniformLocation(shader_program_, "u_gamma");
+    glUniform1f(loc_gamma, global_gamma_);
     GLint loc_useTex   = glGetUniformLocation(shader_program_, "u_useTexture");
     GLint loc_tex      = glGetUniformLocation(shader_program_, "u_texture");
     GLint loc_lightmap    = glGetUniformLocation(shader_program_, "u_lightmap");
@@ -639,6 +665,17 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 }
                 bool mixedMesh = hasTextured && hasUntextured;
                 const std::vector<GLuint>* lightmaps = GetLightmapForTask(obj.taskId);
+                if (lightmaps && !lightmaps->empty()) {
+                    bool stale = IsLightmapStale(obj.taskId, obj.pos, obj.rot);
+                    bool wasLogged = stale_lightmap_logged_.count(obj.taskId) != 0;
+                    if (stale && !wasLogged) {
+                        Logger::Get().Log(LogLevel::INFO, "[Lightmap] taskId=" + obj.taskId +
+                            " moved/rotated since its bake — falling back to dynamic sun lighting until recalculated.");
+                        stale_lightmap_logged_.insert(obj.taskId);
+                    } else if (!stale && wasLogged) {
+                        stale_lightmap_logged_.erase(obj.taskId);
+                    }
+                }
                 for (size_t si = 0; si < mesh.subMeshes.size(); ++si) {
                     const auto& sub = mesh.subMeshes[si];
                     if (sub.VAO == 0 || sub.vertexCount == 0) continue;
@@ -682,8 +719,8 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                         // clear and see-through. The earlier flat-gray override (dirlight 0 /
                         // ambient 0.45) darkened panes into murky panels — reverted to the
                         // pre-3986cd9 "before" look the user asked to restore.
-                        glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
-                        glUniform3f(loc_ambient,  0.4f, 0.4f, 0.4f);
+                        glUniform3f(loc_dirlight, sun_front_color_.r, sun_front_color_.g, sun_front_color_.b);
+                        glUniform3f(loc_ambient,  sun_back_color_.r,  sun_back_color_.g,  sun_back_color_.b);
                         glUniform1i(loc_useTex, 1);
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, sub.textureID);
@@ -695,14 +732,18 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                         if (color.r >= 0.99f && color.g >= 0.99f && color.b >= 0.99f) {
                             color = glm::vec3(r, g, b);
                         }
-                        glUniform3f(loc_dirlight, color.r * 0.6f, color.g * 0.6f, color.b * 0.6f);
-                        glUniform3f(loc_ambient,  color.r * 0.4f, color.g * 0.4f, color.b * 0.4f);
+                        glUniform3f(loc_dirlight, color.r * sun_front_color_.r, color.g * sun_front_color_.g, color.b * sun_front_color_.b);
+                        glUniform3f(loc_ambient,  color.r * sun_back_color_.r,  color.g * sun_back_color_.g,  color.b * sun_back_color_.b);
                         glUniform1i(loc_useTex, 0);
                     }
 
                     // Lightmap: bind texture unit 1 for this exact placement, if the
-                    // "Calculate Light Mapping" button has been run on it.
-                    if (lightmaps && si < lightmaps->size() && (*lightmaps)[si] != 0) {
+                    // "Calculate Light Mapping" button has been run on it, the Escape-menu
+                    // Lightmaps checkbox is on, and the object hasn't been moved/rotated
+                    // since the bake (a stale bake would show the WRONG orientation's
+                    // lighting, so it falls back to dynamic shading until recalculated).
+                    if (lightmaps_enabled_ && lightmaps && si < lightmaps->size() && (*lightmaps)[si] != 0 &&
+                        !IsLightmapStale(obj.taskId, obj.pos, obj.rot)) {
                         glActiveTexture(GL_TEXTURE1);
                         glBindTexture(GL_TEXTURE_2D, (*lightmaps)[si]);
                         glUniform1i(loc_lightmap, 1);

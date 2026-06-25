@@ -110,12 +110,42 @@ public:
     // modelId across every placement of a building, so storing these on
     // SubMesh would make two placements of the same model show whichever
     // lightmap was calculated last. The draw loop looks this up per-object.
-    void SetLightmapForTask(const std::string& taskId, std::vector<GLuint> textures);
+    // taskId -> {textures, pos/rot at calculation time}. The pos/rot are recorded
+    // so the draw loop can detect a moved/rotated object and drop its now-stale
+    // bake back to dynamic lighting instead of rendering the wrong-orientation bake.
+    void SetLightmapForTask(const std::string& taskId, std::vector<GLuint> textures,
+                            const glm::dvec3& bakedPos, const glm::dvec3& bakedRot);
     void ClearLightmapForTask(const std::string& taskId);
     const std::vector<GLuint>* GetLightmapForTask(const std::string& taskId) const;
+    // Returns false if taskId has no recorded bake pose (treated as not stale).
+    bool IsLightmapStale(const std::string& taskId, const glm::dvec3& curPos, const glm::dvec3& curRot) const;
+
+    // Escape-menu "Lightmaps" checkbox — when false, calculated lightmaps are
+    // never bound during render regardless of SetLightmapForTask state.
+    void SetLightmapsEnabled(bool enabled) { lightmaps_enabled_ = enabled; }
+    bool LightmapsEnabled() const { return lightmaps_enabled_; }
+
+    // Real level sun direction/color, parsed from the level's Dirlight/DirlightKeyframe
+    // QSC task. Replaces the previous hardcoded shader light direction/colors so
+    // dynamic-lit (non-lightmapped, or stale-lightmap) faces match the game.
+    void SetSunLight(const glm::vec3& dir, const glm::vec3& frontColor, const glm::vec3& backColor) {
+        sun_dir_ = dir; sun_front_color_ = frontColor; sun_back_color_ = backColor;
+    }
+
+    // The level's GlobalLight "Texture filter gamma" (e.g. 0.675) — the game applies
+    // this as a post-lighting pow() curve; gamma < 1 brightens mid-tones. Without it
+    // our raw linear lighting looks noticeably flatter/darker than in-game.
+    void SetGlobalGamma(float gamma) { global_gamma_ = gamma; }
 
 private:
     int current_level_ = 1;
+    bool lightmaps_enabled_ = false;
+    glm::vec3 sun_dir_ = glm::vec3(0.5f, 1.0f, 0.5f);
+    glm::vec3 sun_front_color_ = glm::vec3(0.6f, 0.6f, 0.6f);
+    glm::vec3 sun_back_color_  = glm::vec3(0.4f, 0.4f, 0.4f);
+    float global_gamma_ = 1.0f;
+    std::map<std::string, std::pair<glm::dvec3, glm::dvec3>> lightmap_bake_pose_by_task_; // taskId -> (pos, rot)
+    std::unordered_set<std::string> stale_lightmap_logged_; // dedupe the "fell back to dynamic" log per taskId
     std::map<std::string, Mesh> mesh_cache_;
     std::map<std::string, GLuint> texture_cache_;
     std::map<std::string, std::vector<std::string>> model_texture_map_cache_;

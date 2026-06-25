@@ -239,6 +239,7 @@ private:
 	void StopLevelMusic();
 	void CheckMusicLoop(); // call every frame: manually restarts playback since MCI "repeat" is unreliable for waveaudio
 	void ToggleMusic();    // Escape-menu Music checkbox: stop if playing, else (re)start current level's music
+	void ToggleLightmaps(); // Escape-menu Lightmaps checkbox: enable/disable applying calculated lightmaps during render
 	void UpdateAnimations(float dtSec);
 	std::string BuildAnimStatusString();
 	int FindHumanAiTaskId(int objIndex) const;
@@ -253,6 +254,8 @@ private:
 	// No-op (with a logged warning) if no object is selected or the selected
 	// object's task type doesn't carry lightmap bindings.
 	void CalculateLightmapForSelectedObject();
+	void CalculateLightmapsForAllObjects(); // Escape-menu Lightmaps checkbox ON: every Building/EditRigidObj in the level
+	size_t ResolveAndApplyLightmap(LevelObject& obj, const std::string& qscPath); // shared resolve+convert+upload core
 	// Fills the property panel's "Animation Control" section state for the
 	// currently selected object (boneHierarchy stays -1 when not applicable).
 	void ComputePropAnimUiState(int& boneHierarchy, std::vector<int>& ids, int& activeId, bool& isPlaying);

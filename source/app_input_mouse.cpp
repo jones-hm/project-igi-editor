@@ -310,7 +310,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			if (pause_mode_) {
 				// *** Layout MUST match renderer_draw.cpp pause menu exactly ***
 				const int menu_w = 460;
-				const int menu_h = 560;
+				const int menu_h = 600; // +40 vs. original 560 to fit the new Lightmaps row
 				const int menu_x = (window_state_.viewport_width_  - menu_w) / 2;
 				const int screen_menu_top = (window_state_.viewport_height_ - menu_h) / 2;
 
@@ -326,6 +326,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					int AUTOSAVE_ROW = btn_idx++;
 					int SEARCH_ROW = btn_idx++;
 					int MUSIC_ROW = btn_idx++;
+					int LIGHTMAPS_ROW = btn_idx++;
 					int TERRAIN_HEADER_ROW = btn_idx++;
 					int TERRAIN_TEX_ROW = -1, TERRAIN_HGT_ROW = -1, TERRAIN_DSC_ROW = -1;
 					if (pause_terrain_expanded_) {
@@ -400,6 +401,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					}
 					else if (btn_hit2(SEARCH_ROW)) { clicked_input = 1; }
 					else if (btn_hit2(MUSIC_ROW)) { ToggleMusic(); }
+					else if (btn_hit2(LIGHTMAPS_ROW)) { ToggleLightmaps(); }
 					else if (btn_hit2(TERRAIN_HEADER_ROW)) { pause_terrain_expanded_ = !pause_terrain_expanded_; }
 					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_TEX_ROW)) { ToggleTerrainModOption(1); }
 					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_HGT_ROW)) { ToggleTerrainModOption(2); }

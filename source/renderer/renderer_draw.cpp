@@ -1407,7 +1407,7 @@ void Renderer::Draw(const draw_params_s &params,
 
     if (task_tree_view.pause_mode_) {
       const int menu_w = 460;
-      const int menu_h = 560;
+      const int menu_h = 600; // +40 vs. original 560 to fit the new Lightmaps row
       const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
       const int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
       const int viewport_h = params.view_define_->viewport_height_;
@@ -1478,6 +1478,8 @@ void Renderer::Draw(const draw_params_s &params,
       btn_labels.push_back("Model Search");
       const int MUSIC_ROW = btn_labels.size();
       btn_labels.push_back("Music");
+      const int LIGHTMAPS_ROW = btn_labels.size();
+      btn_labels.push_back("Lightmaps");
       const int TERRAIN_HEADER_ROW = btn_labels.size();
 
       bool exp = task_tree_view.pause_terrain_expanded_;
@@ -1619,6 +1621,23 @@ void Renderer::Draw(const draw_params_s &params,
           snprintf(musicbuf, sizeof(musicbuf), "[%c] Music", task_tree_view.music_on_ ? 'X' : ' ');
           int tw = (int)strlen(musicbuf) * 6;
           draw_text_sys(menu_x + (menu_w - tw) / 2, screen_btn_y, musicbuf,
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+
+        } else if (i == LIGHTMAPS_ROW) {
+          // Lightmaps on/off checkbox: "[X] Lightmaps" / "[ ] Lightmaps", centered, hover-highlighted.
+          if (hovered) {
+            glEnable(GL_BLEND);
+            glColor4f(0.0f, 0.8f, 0.0f, 0.35f);
+            glBegin(GL_QUADS);
+            glVertex2i(menu_x, gl_btn_y - 15); glVertex2i(menu_x + menu_w, gl_btn_y - 15);
+            glVertex2i(menu_x + menu_w, gl_btn_y + 15); glVertex2i(menu_x, gl_btn_y + 15);
+            glEnd();
+            glDisable(GL_BLEND);
+          }
+          char lmbuf[24];
+          snprintf(lmbuf, sizeof(lmbuf), "[%c] Lightmaps", task_tree_view.lightmaps_on_ ? 'X' : ' ');
+          int lmtw = (int)strlen(lmbuf) * 6;
+          draw_text_sys(menu_x + (menu_w - lmtw) / 2, screen_btn_y, lmbuf,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
         } else if (i == TERRAIN_HEADER_ROW) {
@@ -1782,16 +1801,21 @@ void Renderer::Draw(const draw_params_s &params,
           const TaskSchema& schema = *scp;
           int vh = params.view_define_->viewport_height_;
 
-          // Gather editable child-task sections (weapon/ammo/AI sub-tasks). Only
-          // shown when the task actually has children; appended to the layout so
-          // their fields are real editable widgets (routed to the child object).
+          // Gather editable child-task sections (weapon/ammo/AI sub-tasks). Scoped to
+          // AI/soldier-family selections only — every other object type (Building,
+          // EditRigidObj, etc.) shows ONLY its own fields. Without this gate, ANY
+          // selected object with schema-having children (e.g. a Building's nested
+          // LightmapInfo) pulled those children's fields into the panel too, even
+          // though they're not meant to be edited inline for non-AI objects.
           std::vector<std::pair<int,const TaskSchema*>> child_schemas; // (child obj idx, schema)
-          for (int ci : obj.childrenIndices) {
-              if (ci < 0 || ci >= (int)objects.size()) continue;
-              const auto& child = objects[ci];
-              if (child.deleted) continue;
-              const TaskSchema* cscp = GetSchema(child.type);
-              if (cscp && !cscp->empty()) child_schemas.push_back({ci, cscp});
+          if (task_tree_view.selected_obj_is_ai) {
+            for (int ci : obj.childrenIndices) {
+                if (ci < 0 || ci >= (int)objects.size()) continue;
+                const auto& child = objects[ci];
+                if (child.deleted) continue;
+                const TaskSchema* cscp = GetSchema(child.type);
+                if (cscp && !cscp->empty()) child_schemas.push_back({ci, cscp});
+            }
           }
 
           bool showLightmapButton = (obj.type == "Building" || obj.type == "EditRigidObj");

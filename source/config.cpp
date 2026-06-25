@@ -121,6 +121,8 @@ void Config::CreateDefault() {
     data_.enableLogging = true;
     data_.debugLogging = false;
     data_.enableLOD = true;
+    data_.enableLightmaps = false;
+    data_.musicEnabled = true;
     data_.consoleAutoActivate = 2;
     data_.searchType = 133577004;
     data_.invertMouse = false;
@@ -214,6 +216,8 @@ void Config::Load() {
                 else if (key == "Logs" || key == "Enable" || key == "SaveConfigOnExit") data_.enableLogging = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Debug") data_.debugLogging = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Lod") data_.enableLOD = (val == "TRUE" || val == "true" || val == "1");
+                else if (key == "Lightmaps") data_.enableLightmaps = (val == "TRUE" || val == "true" || val == "1");
+                else if (key == "Music") data_.musicEnabled = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "ConsoleAutoActivate") data_.consoleAutoActivate = std::stoi(val);
                 else if (key == "SearchType") data_.searchType = std::stoll(val);
                 else if (key == "InvertMouse") data_.invertMouse = (val == "TRUE" || val == "true" || val == "1");
@@ -382,6 +386,8 @@ void Config::Save() {
         file << "QEDRunEvent(" << (data_.runEvent ? "TRUE" : "FALSE") << ");\n";
         file << "QEDCameraLock(" << (data_.cameraLock ? "TRUE" : "FALSE") << ");\n";
         file << "QEDBackup(" << (data_.enableBackup ? "TRUE" : "FALSE") << ");\n";
+        file << "QEDLightmaps(" << (data_.enableLightmaps ? "TRUE" : "FALSE") << ");\n";
+        file << "QEDMusic(" << (data_.musicEnabled ? "TRUE" : "FALSE") << ");\n";
         file << "QEDUseEditorFont(" << (data_.useEditorFont ? "TRUE" : "FALSE") << ");\n";
         file << "QEDSystemFontSize(" << data_.systemFontSize << ");\n";
         file << "QEDFindTaskName(\"" << data_.findTaskName << "\");\n";

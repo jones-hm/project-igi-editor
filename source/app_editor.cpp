@@ -292,30 +292,45 @@ void App::LoadAIScriptForSelected() {
 	ai_script_text_ = QVM_DecompileToString(qvm);
 }
 
-void App::CalculateLightmapForSelectedObject() {
-	auto& objects = level_.GetLevelObjects().GetObjects();
-	if (selected_object_index_ < 0 || selected_object_index_ >= (int)objects.size()) {
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] No object selected.");
-		return;
-	}
-	LevelObject& obj = objects[selected_object_index_];
-	if (obj.type != "Building" && obj.type != "EditRigidObj") {
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] \"" + obj.type + "\" objects don't carry lightmap bindings.");
-		return;
-	}
+// igi1conv's resolver expects lightmaps/lightmaps_unpacked/ to already exist next
+// to objects.qsc; older levels only ship the packed lightmaps.res. Unpack it
+// ourselves first so resolve doesn't fail with "no .olm files on disk".
+static bool EnsureLightmapsUnpacked(const std::string& levelDir, std::string& err) {
+	const std::string lightmapsDir = levelDir + "\\lightmaps";
+	const std::string unpackedDir = lightmapsDir + "\\lightmaps_unpacked";
+	const std::string packedRes = lightmapsDir + "\\lightmaps.res";
+	bool unpackedHasFiles = std::filesystem::exists(unpackedDir) &&
+		!std::filesystem::is_empty(unpackedDir);
+	if (unpackedHasFiles || !std::filesystem::exists(packedRes)) return true;
 
-	const std::string qscPath = level_.GetQscPath();
-	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Resolving lightmap for model=" + obj.modelId +
-		" taskId=" + obj.taskId + " qsc=" + qscPath);
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] " + unpackedDir +
+		" missing/empty — unpacking " + packedRes);
+	std::filesystem::create_directories(unpackedDir);
+	size_t unpackedCount = 0;
+	bool unpackOk = RES_ForEachEntry(packedRes,
+		[&](const std::string& name, const uint8_t* data, size_t size) {
+			std::ofstream out(unpackedDir + "\\" + name, std::ios::binary);
+			if (out) {
+				out.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(size));
+				++unpackedCount;
+			}
+		}, err);
+	if (!unpackOk) return false;
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Unpacked " + std::to_string(unpackedCount) +
+		" file(s) into " + unpackedDir);
+	return true;
+}
 
+// Resolves + converts + uploads the lightmap textures for one Building/EditRigidObj,
+// given an already-decompiled objects.qsc sitting next to the real lightmaps/ dir.
+// Returns the number of textures uploaded (0 = no binding / all conversions failed).
+size_t App::ResolveAndApplyLightmap(LevelObject& obj, const std::string& qscPath) {
 	std::string err;
 	std::vector<std::string> olmPaths = igi1conv::LightmapResolve(obj.modelId, qscPath, obj.taskId, err);
 	if (olmPaths.empty()) {
-		status_message_ = "Lightmap: " + err;
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] resolve failed: " + err);
-		return;
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] resolve failed for taskId=" + obj.taskId + ": " + err);
+		return 0;
 	}
-	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Resolved " + std::to_string(olmPaths.size()) + " .olm file(s).");
 
 	std::vector<GLuint> textures;
 	textures.reserve(olmPaths.size());
@@ -337,10 +352,127 @@ void App::CalculateLightmapForSelectedObject() {
 		textures.push_back(tex);
 	}
 
-	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Uploaded " + std::to_string(textures.size()) +
-		" lightmap texture(s) for taskId=" + obj.taskId);
-	status_message_ = "Lightmap calculated: " + std::to_string(textures.size()) + " texture(s) applied";
-	renderer_.SetLightmapForTask(obj.taskId, std::move(textures));
+	size_t uploaded = std::count_if(textures.begin(), textures.end(), [](GLuint t) { return t != 0; });
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Uploaded " + std::to_string(uploaded) + "/" +
+		std::to_string(textures.size()) + " lightmap texture(s) for taskId=" + obj.taskId);
+	renderer_.SetLightmapForTask(obj.taskId, std::move(textures), obj.pos, obj.rot);
+	return uploaded;
+}
+
+void App::CalculateLightmapForSelectedObject() {
+	auto& objects = level_.GetLevelObjects().GetObjects();
+	if (selected_object_index_ < 0 || selected_object_index_ >= (int)objects.size()) {
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] No object selected.");
+		return;
+	}
+	LevelObject& obj = objects[selected_object_index_];
+	if (obj.type != "Building" && obj.type != "EditRigidObj") {
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] \"" + obj.type + "\" objects don't carry lightmap bindings.");
+		return;
+	}
+
+	// igi1conv resolves a binding's .olm directory as a SIBLING of the --qsc
+	// path's own directory (lightmaps/lightmaps_unpacked next to objects.qsc).
+	// The editor's live qsc_path_ is a decompiled WORKING COPY under
+	// editor\qed\temp\, not the real level directory, so passing it directly
+	// makes igi1conv look for (and fail to find/unpack) lightmaps/ in the wrong
+	// place. Decompile a fresh copy straight into the real level directory
+	// instead, so the relative lookup resolves correctly, then delete it.
+	const std::string levelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
+		std::to_string(level_.GetLevelNo());
+	const std::string qvmPath = levelDir + "\\objects.qvm";
+	const std::string qscPath = levelDir + "\\objects_lightmap_tmp.qsc";
+
+	status_message_ = "Lightmap: calculating...";
+	DrawProgressOverlay("Calculating Lightmap", 10, "resolving binding");
+
+	std::string unpackErr;
+	if (!EnsureLightmapsUnpacked(levelDir, unpackErr)) {
+		status_message_ = "Lightmap: failed to unpack lightmaps.res: " + unpackErr;
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] unpack failed: " + unpackErr);
+		return;
+	}
+
+	DrawProgressOverlay("Calculating Lightmap", 30, "decompiling objects.qvm");
+	std::string decompileErr;
+	if (!igi1conv::QvmDecompile(qvmPath, qscPath, decompileErr)) {
+		status_message_ = "Lightmap: " + decompileErr;
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] decompile failed: " + decompileErr);
+		return;
+	}
+
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Resolving lightmap for model=" + obj.modelId +
+		" taskId=" + obj.taskId + " qsc=" + qscPath);
+	DrawProgressOverlay("Calculating Lightmap", 60, "resolving + converting .olm bindings");
+	size_t uploaded = ResolveAndApplyLightmap(obj, qscPath);
+
+	std::error_code qscEc;
+	std::filesystem::remove(qscPath, qscEc);
+
+	DrawProgressOverlay("Calculating Lightmap", 100, "done");
+	if (uploaded == 0) {
+		status_message_ = "Lightmap: no lightmap textures resolved for this object";
+		return;
+	}
+	status_message_ = "Lightmap calculated: " + std::to_string(uploaded) + " texture(s) applied";
+	if (!Config::Get().enableLightmaps) {
+		status_message_ += " (enable 'Lightmaps' in the Escape menu to see it)";
+	}
+}
+
+// Escape-menu "Lightmaps" checkbox, turned ON: resolve + apply baked lightmaps for
+// EVERY Building/EditRigidObj in the level (matches the game's always-on behavior),
+// instead of requiring the per-object "Calculate Lightmap" button for each one.
+void App::CalculateLightmapsForAllObjects() {
+	auto& objects = level_.GetLevelObjects().GetObjects();
+	std::vector<int> targets;
+	for (int i = 0; i < (int)objects.size(); ++i) {
+		if (objects[i].type == "Building" || objects[i].type == "EditRigidObj") targets.push_back(i);
+	}
+	if (targets.empty()) {
+		Logger::Get().Log(LogLevel::INFO, "[Lightmap] No Building/EditRigidObj objects in this level.");
+		return;
+	}
+
+	const std::string levelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
+		std::to_string(level_.GetLevelNo());
+	const std::string qvmPath = levelDir + "\\objects.qvm";
+	const std::string qscPath = levelDir + "\\objects_lightmap_tmp.qsc";
+
+	status_message_ = "Lightmaps: calculating for " + std::to_string(targets.size()) + " object(s)...";
+	DrawProgressOverlay("Calculating Lightmaps", 0, "unpacking lightmaps.res");
+
+	std::string unpackErr;
+	if (!EnsureLightmapsUnpacked(levelDir, unpackErr)) {
+		status_message_ = "Lightmaps: failed to unpack lightmaps.res: " + unpackErr;
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] unpack failed: " + unpackErr);
+		return;
+	}
+
+	DrawProgressOverlay("Calculating Lightmaps", 2, "decompiling objects.qvm");
+	std::string decompileErr;
+	if (!igi1conv::QvmDecompile(qvmPath, qscPath, decompileErr)) {
+		status_message_ = "Lightmaps: " + decompileErr;
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] decompile failed: " + decompileErr);
+		return;
+	}
+
+	size_t objectsWithLightmaps = 0;
+	for (size_t n = 0; n < targets.size(); ++n) {
+		LevelObject& obj = objects[targets[n]];
+		DrawProgressOverlay("Calculating Lightmaps",
+			2 + static_cast<int>(98 * (n + 1) / targets.size()),
+			(std::to_string(n + 1) + "/" + std::to_string(targets.size()) + ": " + obj.name).c_str());
+		if (ResolveAndApplyLightmap(obj, qscPath) > 0) ++objectsWithLightmaps;
+	}
+
+	std::error_code qscEc;
+	std::filesystem::remove(qscPath, qscEc);
+
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Calculated lightmaps for " +
+		std::to_string(objectsWithLightmaps) + "/" + std::to_string(targets.size()) + " object(s).");
+	status_message_ = "Lightmaps calculated: " + std::to_string(objectsWithLightmaps) + "/" +
+		std::to_string(targets.size()) + " object(s)";
 }
 
 // Commit the active text/numeric box (prop_text_buf_) back to the object and
@@ -619,7 +751,34 @@ void App::Undo() {
 	for (auto& o : level_.GetLevelObjects().GetObjects())
 		if (o.isAttaProxy) o.modified = true;
 	FlushAttaProxiesToMef();
+
+	// ATTA proxies have taskId=-1 and are deliberately never serialized to QSC
+	// (see CreateAttaProxy comment) — SaveAndReloadObjects() re-parses objects_
+	// from that QSC, which silently drops every ATTA proxy. Capture them here and
+	// re-append after the reload, or undoing/redoing an ATTA move makes the
+	// proxy (and anything selected on it) vanish from the scene.
+	std::vector<LevelObject> attaProxies;
+	for (const auto& o : level_.GetLevelObjects().GetObjects())
+		if (o.isAttaProxy) attaProxies.push_back(o);
+	std::string selectedAttaKey;
+	if (selected_object_index_ >= 0 && selected_object_index_ < (int)level_.GetLevelObjects().GetObjects().size()) {
+		const auto& sel = level_.GetLevelObjects().GetObjects()[selected_object_index_];
+		if (sel.isAttaProxy) selectedAttaKey = sel.attaParentModelId + ":" + std::to_string(sel.attaRecordIndex);
+	}
+
 	SaveAndReloadObjects();
+
+	{
+		auto& reloaded = level_.GetLevelObjects().GetObjects();
+		for (auto& proxy : attaProxies) {
+			proxy.parentIndex = -1; // QSC-relative parent index no longer applies post-reload
+			std::string key = proxy.attaParentModelId + ":" + std::to_string(proxy.attaRecordIndex);
+			int newIdx = (int)reloaded.size();
+			reloaded.push_back(proxy);
+			if (key == selectedAttaKey) selected_object_index_ = newIdx;
+		}
+	}
+
 	// The objects vector was just replaced with the snapshot; if a visible
 	// graph overlay's task id is present in the restored list, the AIGraph
 	// task's pos is now the canonical one and the overlay must follow it.
@@ -666,7 +825,30 @@ void App::Redo() {
 	for (auto& o : level_.GetLevelObjects().GetObjects())
 		if (o.isAttaProxy) o.modified = true;
 	FlushAttaProxiesToMef();
+
+	// Same ATTA-proxy survival fix as Undo — see comment there.
+	std::vector<LevelObject> attaProxies;
+	for (const auto& o : level_.GetLevelObjects().GetObjects())
+		if (o.isAttaProxy) attaProxies.push_back(o);
+	std::string selectedAttaKey;
+	if (selected_object_index_ >= 0 && selected_object_index_ < (int)level_.GetLevelObjects().GetObjects().size()) {
+		const auto& sel = level_.GetLevelObjects().GetObjects()[selected_object_index_];
+		if (sel.isAttaProxy) selectedAttaKey = sel.attaParentModelId + ":" + std::to_string(sel.attaRecordIndex);
+	}
+
 	SaveAndReloadObjects();
+
+	{
+		auto& reloaded = level_.GetLevelObjects().GetObjects();
+		for (auto& proxy : attaProxies) {
+			proxy.parentIndex = -1;
+			std::string key = proxy.attaParentModelId + ":" + std::to_string(proxy.attaRecordIndex);
+			int newIdx = (int)reloaded.size();
+			reloaded.push_back(proxy);
+			if (key == selectedAttaKey) selected_object_index_ = newIdx;
+		}
+	}
+
 	// Same graph-overlay live-sync as Undo — see comment there.
 	SyncGraphOverlayOffsetFromAIGraph();
 	status_message_ = "Redo";
@@ -872,6 +1054,10 @@ void App::LaunchGame() {
 	// ── Toggle ON: save level and launch the game ──────────────────────────────
 	Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Game is not running — launching level " +
 	                  std::to_string(level_.GetLevelNo()));
+
+	// Stop the editor's own level music before handing off — igi.exe plays its
+	// own copy of the same track, so leaving ours running doubles it up.
+	StopLevelMusic();
 
 	SaveCurrentLevel();
 	Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Level saved");

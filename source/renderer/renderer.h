@@ -514,6 +514,7 @@ public:
 		bool   auto_save_enabled_        = false;
 		int    auto_save_interval_seconds_ = 300;
 		bool   music_on_                 = false; // Escape-menu Music checkbox state
+		bool   lightmaps_on_             = false; // Escape-menu Lightmaps checkbox state
 
 		// Animation state
 		std::string anim_status_;           // summary text of animations playing
@@ -672,10 +673,16 @@ public:
 	static constexpr int kAttaPickBase = Renderer_Objects::kAttaPickBase;
 	bool GetAttaPickEntry(int entry, AttaPickEntry& out) const { return objects_.GetAttaPickEntry(entry, out); }
 	void SuppressAtta(const std::string& key) { objects_.SuppressAtta(key); }
-	void SetLightmapForTask(const std::string& taskId, std::vector<GLuint> textures) {
-		objects_.SetLightmapForTask(taskId, std::move(textures));
+	void SetLightmapForTask(const std::string& taskId, std::vector<GLuint> textures,
+	                        const glm::dvec3& bakedPos, const glm::dvec3& bakedRot) {
+		objects_.SetLightmapForTask(taskId, std::move(textures), bakedPos, bakedRot);
 	}
 	void ClearLightmapForTask(const std::string& taskId) { objects_.ClearLightmapForTask(taskId); }
+	void SetLightmapsEnabled(bool enabled) { objects_.SetLightmapsEnabled(enabled); }
+	void SetSunLight(const glm::vec3& dir, const glm::vec3& frontColor, const glm::vec3& backColor) {
+		objects_.SetSunLight(dir, frontColor, backColor);
+	}
+	void SetGlobalGamma(float gamma) { objects_.SetGlobalGamma(gamma); }
 	void ClearSuppressedAttas() { objects_.ClearSuppressedAttas(); }
 	bool SuppressAttachmentInMef(const std::string& parentModelId, const std::string& attModelId, const glm::vec3& localPos) {
 		return objects_.SuppressAttachmentInMef(parentModelId, attModelId, localPos);

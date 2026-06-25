@@ -89,11 +89,26 @@ void App::StopLevelMusic() {
 void App::ToggleMusic() {
     if (music_playing_) {
         StopLevelMusic();
+        Config::Get().musicEnabled = false;
+        Config::Save();
         Logger::Get().Log(LogLevel::INFO, "[Music] Toggled OFF via Escape menu");
     } else {
         int lvl = (last_loaded_level_ >= 0) ? last_loaded_level_ : 1;
         PlayLevelMusic(lvl);
+        Config::Get().musicEnabled = true;
+        Config::Save();
         Logger::Get().Log(LogLevel::INFO, "[Music] Toggled ON via Escape menu (level " + std::to_string(lvl) + ")");
+    }
+}
+
+void App::ToggleLightmaps() {
+    Config::Get().enableLightmaps = !Config::Get().enableLightmaps;
+    Config::Save();
+    renderer_.SetLightmapsEnabled(Config::Get().enableLightmaps);
+    Logger::Get().Log(LogLevel::INFO, std::string("[Lightmap] Toggled ") +
+        (Config::Get().enableLightmaps ? "ON" : "OFF") + " via Escape menu");
+    if (Config::Get().enableLightmaps) {
+        CalculateLightmapsForAllObjects();
     }
 }
 
@@ -248,6 +263,91 @@ void App::LoadLevel(int level_no) {
 			}
 		}
 
+		// Resolve the level's real sun direction/color from its Dirlight/DirlightKeyframe
+		// task (Task_DeclareParameters("DirlightKeyframe","Beta","Angle","Gamma","Angle",
+		// "Front Color","RGB","Back Color","RGB","Time","Real32")) so dynamic lighting
+		// (the fallback for non-lightmapped faces, and for objects whose lightmap bake
+		// has gone stale after a move/rotate) matches the game instead of the old
+		// hardcoded vec3(0.5,1.0,0.5)/0.6/0.4 guess. World up is Z (VEC3_Z_DIR), so Beta
+		// is elevation and Gamma is azimuth around Z. The editor doesn't simulate
+		// time-of-day, so among the FIRST Dirlight task's keyframes we pick the one with
+		// the SMALLEST "Time" value (not document order) — levels can list a below-
+		// horizon/night keyframe first (observed: beta=153 deg, greenish front color,
+		// Time=100) alongside a daytime one (beta=30 deg, warm front color, Time=12);
+		// picking by lowest Time consistently lands on the daytime keyframe instead of
+		// tinting every object green.
+		{
+			glm::vec3 sunDir(0.5f, 1.0f, 0.5f);
+			glm::vec3 sunFront(0.6f, 0.6f, 0.6f);
+			glm::vec3 sunBack(0.4f, 0.4f, 0.4f);
+			for (const auto& dl : objects) {
+				if (dl.type != "Dirlight") continue;
+				bool resolved = false;
+				double bestTime = std::numeric_limits<double>::max();
+				for (int ci : dl.childrenIndices) {
+					if (ci < 0 || ci >= (int)objects.size()) continue;
+					const auto& kf = objects[ci];
+					if (kf.type != "DirlightKeyframe" || kf.argTokens.size() < 12) continue;
+					try {
+						double time = std::stod(kf.argTokens[11]);
+						if (resolved && time >= bestTime) continue;
+						double beta  = std::stod(kf.argTokens[3]);
+						double gamma = std::stod(kf.argTokens[4]);
+						glm::vec3 front(std::stof(kf.argTokens[5]), std::stof(kf.argTokens[6]), std::stof(kf.argTokens[7]));
+						glm::vec3 back (std::stof(kf.argTokens[8]), std::stof(kf.argTokens[9]), std::stof(kf.argTokens[10]));
+						// Beta is the angle FROM THE ZENITH (straight up), not from the
+						// horizon — beta=30 deg observed in this level's daytime keyframe
+						// must mean a near-overhead sun (60 deg elevation) for roofs to be
+						// brightly lit like they are in-game. Treating beta as elevation-
+						// from-horizon instead (sin(beta) on the up axis) under-lit every
+						// upward-facing normal — roofs looked dark in the editor that
+						// weren't dark in-game. cos(beta) on the up axis fixes that.
+						glm::vec3 dir = glm::normalize(glm::vec3(
+							std::sin(beta) * std::cos(gamma),
+							std::sin(beta) * std::sin(gamma),
+							std::cos(beta)));
+						bestTime = time;
+						sunFront = front;
+						sunBack = back;
+						sunDir = dir;
+						Logger::Get().Log(LogLevel::INFO, "[App] Dirlight '" +
+							(dl.name.empty() ? dl.taskId : dl.name) + "' keyframe time=" + std::to_string(time) +
+							" beta=" + std::to_string(beta) + " gamma=" + std::to_string(gamma) +
+							" dir=(" + std::to_string(sunDir.x) + "," + std::to_string(sunDir.y) + "," + std::to_string(sunDir.z) + ")" +
+							" front=(" + std::to_string(sunFront.r) + "," + std::to_string(sunFront.g) + "," + std::to_string(sunFront.b) + ")");
+						resolved = true;
+					} catch (const std::exception& e) {
+						Logger::Get().Log(LogLevel::WARNING, std::string("[App] DirlightKeyframe args unparsable (") + e.what() + "), using default sun");
+					}
+				}
+				if (resolved) break; // first Dirlight task only
+			}
+			renderer_.SetSunLight(sunDir, sunFront, sunBack);
+		}
+
+		// The level's GlobalLight task (Task_DeclareParameters("GlobalLight",
+		// "Radiosity intensity","Real32","Texture filter ambient colour","RGB",
+		// "Texture filter scale","RGB","Texture filter gamma","Real32")) declares a
+		// post-lighting gamma curve the game applies to every lit object (observed
+		// 0.675 in level1) that this editor never applied — our raw linear lighting
+		// looks flatter/darker than in-game without it. argTokens: [0]=taskId,
+		// [1]="GlobalLight", [2]=name, [3]=Radiosity, [4-6]=ambient colour RGB,
+		// [7-9]=scale RGB, [10]=gamma.
+		{
+			float gamma = 1.0f;
+			for (const auto& gl : objects) {
+				if (gl.type != "GlobalLight" || gl.argTokens.size() < 11) continue;
+				try {
+					gamma = std::stof(gl.argTokens[10]);
+					Logger::Get().Log(LogLevel::INFO, "[App] GlobalLight gamma resolved: " + std::to_string(gamma));
+				} catch (const std::exception& e) {
+					Logger::Get().Log(LogLevel::WARNING, std::string("[App] GlobalLight gamma unparsable (") + e.what() + "), using 1.0");
+				}
+				break;
+			}
+			renderer_.SetGlobalGamma(gamma);
+		}
+
 		// Log all loaded objects for verification script
 		for (const auto& obj : objects) {
 			if (obj.isSplineWaypoint || !obj.segmentModelId.empty()) {
@@ -358,7 +458,7 @@ void App::LoadLevel(int level_no) {
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 		drawLoadBar(100, "done");
 
-		PlayLevelMusic(level_no);
+		if (Config::Get().musicEnabled) PlayLevelMusic(level_no);
 	}
 	catch (const std::exception& e) {
 		std::string errorMsg = "Error loading level " + std::to_string(level_no) + ":\n" + std::string(e.what());

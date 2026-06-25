@@ -95,6 +95,8 @@ bool App::Init(int argc, char** argv) {
 
 	ConfigData& cfg = Config::Get();
 
+	renderer_.SetLightmapsEnabled(cfg.enableLightmaps);
+
 	auto_save_enabled_ = cfg.auto_save_enabled;
 	auto_save_interval_seconds_ = cfg.auto_save_interval_seconds;
 	auto_save_last_time_ms_ = Sys_Milliseconds();
@@ -337,6 +339,7 @@ void App::OnIdle() {
 				UnregisterHotKey(editor_hwnd_, HOTKEY_ID_TOGGLE_GAME);
 			}
 			Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Global hotkey unregistered — editor restored");
+			if (Config::Get().musicEnabled) PlayLevelMusic(level_.GetLevelNo());
 			return;
 		}
 	}
@@ -453,6 +456,7 @@ void App::Frame(float delta_seconds) {
 			.auto_save_enabled_        = auto_save_enabled_,
 			.auto_save_interval_seconds_ = auto_save_interval_seconds_,
 			.music_on_ = music_playing_,
+			.lightmaps_on_ = Config::Get().enableLightmaps,
 			.anim_status_  = BuildAnimStatusString(),
 			.anim_playing_ = !animPlaybacks_.empty(),
 			.anim_debug_visible_ = show_anim_debug_,
