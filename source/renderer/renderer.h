@@ -305,11 +305,20 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
             for (size_t i = start; i < L.widgets.size(); ++i) L.widgets[i].objIndex = objIndex;
     };
 
-    // Parent: type header + note box + fields.
+    // Parent: type header + note box + [lightmap button] + fields.
     y += kRowH;            // "QTasktype: <type>"
     y += kRowH;            // "QTask Note (QTaskNote):"
     L.widgets.push_back({WidgetKind::NoteBox, kLeft + kPad, y, kLeft + kWidth - kPad, y + kBoxH, -1, 0});
     y += kBoxH + 6;
+
+    // Lightmap button immediately after the note box — always visible regardless
+    // of how many child sections the object has below.
+    if (showLightmapButton) {
+        L.widgets.push_back({WidgetKind::LightmapButton, kLeft + kPad, y,
+                             kLeft + kWidth - kPad, y + kBoxH, -1, 0});
+        y += kBoxH + 4;
+    }
+
     emitFields(schema, is_ai, -1);
 
     // Children: a header label, then the SAME field widgets as a parent (routed
@@ -360,14 +369,6 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
                              kLeft + kPad, y, kLeft + kWidth - kPad, y + scriptH,
                              kAIScriptTextField, 0});
         y += scriptH + 6;
-    }
-
-    // "Calculate Light Mapping" button — Building/EditRigidObj only.
-    if (showLightmapButton) {
-        y += kRowH;  // gap line, consistent with the other button sections
-        L.widgets.push_back({WidgetKind::LightmapButton, kLeft + kPad, y,
-                             kLeft + kWidth - kPad, y + kBoxH, -1, 0});
-        y += kBoxH + 4;
     }
 
     L.panel_h = (y + kPad) - kTop;

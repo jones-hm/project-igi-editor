@@ -158,6 +158,12 @@ public:
     // our raw linear lighting looks noticeably flatter/darker than in-game.
     void SetGlobalGamma(float gamma) { global_gamma_ = gamma; }
 
+    // Atmospheric fog color and far-clip distance (from GlobalLightKeyframe).
+    // Used by the object shader to match the game's warm haze over buildings.
+    void SetFogParams(const glm::vec3& color, float far_dist) {
+        fog_color_ = color; fog_far_ = far_dist;
+    }
+
 private:
     int current_level_ = 1;
     bool lightmaps_enabled_ = false;
@@ -165,6 +171,8 @@ private:
     glm::vec3 sun_front_color_ = glm::vec3(0.6f, 0.6f, 0.6f);
     glm::vec3 sun_back_color_  = glm::vec3(0.4f, 0.4f, 0.4f);
     float global_gamma_ = 1.0f;
+    glm::vec3 fog_color_ = glm::vec3(0.15f, 0.15f, 0.15f);
+    float fog_far_ = 30000.0f;
     std::map<std::string, std::pair<glm::dvec3, glm::dvec3>> lightmap_bake_pose_by_task_; // taskId -> (pos, rot)
     std::map<std::string, Mesh> mesh_cache_;
     std::map<std::string, GLuint> texture_cache_;

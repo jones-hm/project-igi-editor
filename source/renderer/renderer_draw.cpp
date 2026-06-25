@@ -2304,7 +2304,16 @@ void Renderer::Draw(const draw_params_s &params,
           // widget objIndex / resolveEdit / resolveDrag, so weapons/AI/EditRigidObj
           // children get pads, sliders and boxes exactly like a top-level task.
           int wi = 1;                        // widget 0 is the parent note box
-          int y  = L.widgets[0].y2 + 6;
+          // Lightmap button at widget 1 (Building/EditRigidObj) — draw it before
+          // the scrollable field sections so it stays near the top.
+          if (wi < (int)L.widgets.size() &&
+              L.widgets[wi].kind == PropPanel::WidgetKind::LightmapButton) {
+              const auto& bw = L.widgets[wi++];
+              quad(bw.x1, bw.y1, bw.x2, bw.y2, 0.0f, 0.0f, 0.0f, 0.40f);
+              border(bw.x1, bw.y1, bw.x2, bw.y2, 1.0f, 1.0f, 1.0f);
+              draw_text(bw.x1 + 6, bw.y1 + 12, "Calculate Light Mapping", 1.0f, 0.9f, 0.2f);
+          }
+          int y  = L.widgets[wi - 1].y2 + 6;
           renderFields(obj, schema, sel, wi, y);
           for (const auto& [ci, cscp] : child_schemas) {
               if (wi < (int)L.widgets.size() &&
@@ -2375,10 +2384,6 @@ void Renderer::Draw(const draw_params_s &params,
                   draw_edit_box(w, PropPanel::kAIScriptTextField,
                                 task_tree_view.ai_script_text_, true,
                                 task_tree_view.ai_script_vscroll_, 0);
-              } else if (w.kind == K::LightmapButton) {
-                  quad(w.x1, w.y1, w.x2, w.y2, 0.0f, 0.0f, 0.0f, 0.40f);
-                  border(w.x1, w.y1, w.x2, w.y2, 1.0f, 1.0f, 1.0f);
-                  draw_text(w.x1 + 6, w.y1 + 12, "Calculate Light Mapping", 1.0f, 0.9f, 0.2f);
               }
               y = w.y2 + 6;
           }

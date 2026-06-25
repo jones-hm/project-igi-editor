@@ -105,6 +105,11 @@ void Renderer::SetupFog(const glm::vec4 &color, float fog_far) {
 
   GL_BufferData(ubo_fog_, GL_UNIFORM_BUFFER, sizeof(ubo_fog), &ubo_fog,
                 GL_STATIC_DRAW);
+
+  // Propagate fog to object shader (warm atmospheric haze) and skydome
+  // (blend horizon with fog color so sky matches the game's hazy look).
+  objects_.SetFogParams(glm::vec3(color), fog_far);
+  skydome_.SetFogColor(glm::vec3(color));
 }
 
 void Renderer::SetupSkydome(const skydome_define_s &d) {

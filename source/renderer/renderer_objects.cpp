@@ -100,6 +100,9 @@ uniform vec3 u_tint; // per-object multiplicative tint (default white); magenta 
 uniform float u_glassMin;  // glass sheen floor: clean (low-alpha) glass renders at
                            // least this opaque so the pane is visible. 0 = not glass.
 uniform float u_gamma;     // level GlobalLight "Texture filter gamma" (1.0 = no curve)
+uniform vec3 u_fogColor;   // atmospheric fog color from GlobalLightKeyframe
+uniform float u_fogFar;    // fog far-clip distance derived from fog density
+uniform vec3 u_cameraPos;  // world-space camera position for fog distance calc
 
 out vec4 fragColor;
 
@@ -136,6 +139,14 @@ void main() {
 
     vec3 litColor = light * texColor.rgb * u_tint;
     litColor = pow(max(litColor, 0.0), vec3(u_gamma));
+
+    // Atmospheric fog: same linear formula as terrain_fog.frag.
+    // fog_near = fog_far * 0.333 so fog starts at 1/3 of the far distance.
+    float fogDist = length(v_fragPos - u_cameraPos);
+    float fog_near = u_fogFar * 0.333333;
+    float fog_a = 1.0 - clamp((u_fogFar - fogDist) / (u_fogFar - fog_near), 0.0, 1.0);
+    litColor = mix(litColor, u_fogColor, fog_a);
+
     fragColor = vec4(litColor, finalAlpha);
 
     // Alpha-test cutout for foliage / fences / grilles only (alpha >= 0.9). Glass
@@ -467,11 +478,15 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     GLint loc_model    = glGetUniformLocation(shader_program_, "u_model");
     GLint loc_dirlight = glGetUniformLocation(shader_program_, "u_dirlight");
     GLint loc_ambient  = glGetUniformLocation(shader_program_, "u_ambient");
-    // Fixed light direction for the dynamic (non-lightmapped) path — even,
-    // bright, all-sides lighting. The parsed level sun (sun_dir_) is used ONLY
-    // for the lightmap re-light scale + recalc CLI, never as the render light.
+    // Use the level's actual sun direction so dynamic-lit (non-lightmapped) objects
+    // face the same light source as the game. Falls back to a sensible default if
+    // the level hasn't set a sun direction yet.
     GLint loc_lightDir = glGetUniformLocation(shader_program_, "u_lightDir");
-    glUniform3f(loc_lightDir, 0.5f, 1.0f, 0.5f);
+    {
+        glm::vec3 sdir = (glm::length(sun_dir_) > 0.01f)
+            ? glm::normalize(sun_dir_) : glm::vec3(0.5f, 1.0f, 0.5f);
+        glUniform3f(loc_lightDir, sdir.x, sdir.y, sdir.z);
+    }
     GLint loc_gamma = glGetUniformLocation(shader_program_, "u_gamma");
     glUniform1f(loc_gamma, global_gamma_);
     GLint loc_lightmap_scale = glGetUniformLocation(shader_program_, "u_lightmapScale");
@@ -487,6 +502,14 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     glUniform1f(loc_glass_min_, 0.0f); // default: not glass
     glUniform4f(loc_baseColor, 1.0f, 1.0f, 1.0f, 1.0f); // default: white
     glUniform3f(loc_tint, 1.0f, 1.0f, 1.0f); // default: no tint
+
+    // Atmospheric fog — same warm haze the game applies to geometry.
+    GLint loc_fogColor  = glGetUniformLocation(shader_program_, "u_fogColor");
+    GLint loc_fogFar    = glGetUniformLocation(shader_program_, "u_fogFar");
+    GLint loc_cameraPos = glGetUniformLocation(shader_program_, "u_cameraPos");
+    glUniform3f(loc_fogColor,  fog_color_.x, fog_color_.y, fog_color_.z);
+    glUniform1f(loc_fogFar,    fog_far_);
+    glUniform3f(loc_cameraPos, camera_pos.x, camera_pos.y, camera_pos.z);
 
     EnsurePortalDistancesLoaded();
 
@@ -710,13 +733,11 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 const bool haveBakePose = hasWorkingLightmap &&
                     GetLightmapBakePose(lmKey, bakedPos, bakedRot);
 
-                // Objects WITHOUT a lightmap use fixed, bright, even lighting — the clean
-                // default look (lit from all sides). dirlight 0.6 / ambient 0.4 with the
-                // fixed light direction set once before this loop (NOT the level sun,
-                // which can be low/dark). Untextured submeshes get neutral gray, never a
-                // per-object hash color (which tinted buildings blue/green).
-                const glm::vec3 kDefDirlight(0.6f, 0.6f, 0.6f);
-                const glm::vec3 kDefAmbient(0.4f, 0.4f, 0.4f);
+                // Use the level's actual sun colors so non-lightmapped objects pick up
+                // the same warm/cool tint as the game. Scale front by 0.65 so even a
+                // fully-lit face stays within [0,1] when summed with the back (ambient).
+                const glm::vec3 kDefDirlight = sun_front_color_ * 0.65f;
+                const glm::vec3 kDefAmbient  = sun_back_color_;
 
                 // Precompute the per-channel modulation lambda for lightmapped submeshes.
                 auto blockScale = [&](const glm::vec3& nLocal) -> glm::vec3 {

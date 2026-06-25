@@ -476,7 +476,7 @@ void App::LoadLevel(int level_no) {
 				std::to_string(level_no) + "\\lightmaps\\lightmaps.res";
 			if (std::filesystem::exists(lmRes)) {
 				Logger::Get().Log(LogLevel::INFO, "[Lightmap] Auto-loading baked lightmaps for level " + std::to_string(level_no));
-				CalculateLightmapsForAllObjects();
+				// CalculateLightmapsForAllObjects(); // Removed because it blocks main thread for 3-5 mins
 			}
 		}
 	}
