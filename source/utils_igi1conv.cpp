@@ -175,6 +175,17 @@ std::vector<std::string> LightmapResolve(const std::string& modelId, const std::
     return ParseLightmapResolveStdout(out, err);
 }
 
+std::vector<std::string> LightmapResolveByPos(const std::string& modelId, const std::string& qscPath,
+                                              double x, double y, double z, std::string& err) {
+    char pos[96];
+    std::snprintf(pos, sizeof(pos), "%.6f,%.6f,%.6f", x, y, z);
+    std::string args = "lightmap resolve --model \"" + modelId + "\" --qsc \"" + qscPath +
+                       "\" --pos " + pos;
+    std::string out;
+    if (!RunCaptureStdout(args, out, err)) return {};
+    return ParseLightmapResolveStdout(out, err);
+}
+
 bool OlmToPng(const std::string& olmPath, const std::string& outPng, std::string& err) {
     return Run("olm to-png \"" + olmPath + "\" -o \"" + outPng + "\"", err);
 }

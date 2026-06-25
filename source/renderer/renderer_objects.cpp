@@ -93,6 +93,7 @@ uniform sampler2D u_texture;
 uniform int u_useTexture;
 uniform sampler2D u_lightmap;
 uniform int u_useLightmap; // 0 = no calculated lightmap for this submesh
+uniform vec3 u_lightmapScale; // live per-block re-light factor (1,1,1 = unmoved bake)
 uniform float u_alpha;     // material alpha (1.0 = opaque, <1.0 = transparent)
 uniform vec4 u_baseColor;  // Base color when no texture
 uniform vec3 u_tint; // per-object multiplicative tint (default white); magenta = missing-in-res warning
@@ -117,10 +118,10 @@ void main() {
 
     // The baked .olm lightmap already encodes full scene lighting (ambient +
     // direct + shadow), so it REPLACES the dynamic light term for this
-    // submesh rather than multiplying with it — multiplying both compounds
-    // shadowed areas into solid black.
+    // submesh. u_lightmapScale re-lights it live for the object's current
+    // orientation (1,1,1 when the object hasn't moved since the bake).
     if (u_useLightmap != 0) {
-        light = texture(u_lightmap, v_uv2).rgb;
+        light = texture(u_lightmap, v_uv2).rgb * u_lightmapScale;
     }
 
     float finalAlpha = (u_useTexture != 0 ? texColor.a : 1.0) * u_alpha;
@@ -326,19 +327,14 @@ void Renderer_Objects::ClearCaches() {
     // Lightmaps are keyed by taskId, which is only unique WITHIN a level — task
     // 1104 in level1 and task 1104 in level6 are unrelated. Without clearing
     // these on a level switch, a previous level's baked lightmap (and its bake
-    // pose) would resolve for the new level's same-numbered task, falsely
-    // flagging it "moved/rotated since bake" and binding the wrong texture.
-    // (indoor_ambient_by_task_ is rebuilt per level load, so it is NOT cleared
-    //  here — it's repopulated right after, and clearing it would also be fine.)
+    // pose) would bind to the new level's same-numbered task.
     ClearAllLightmaps();
-    indoor_ambient_by_task_.clear();
     Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Cleared per-task lightmap caches on level switch");
 }
 
-// Free every baked lightmap's GL textures and drop the per-task bake/stale
-// state. Used both on level switch (above) and by the Escape-menu Lightmaps
-// checkbox when toggled OFF (so OFF actually hides calculated lightmaps).
-// Does NOT clear indoor_ambient_by_task_, which is level-load metadata.
+// Free every baked lightmap's GL textures and drop the per-task bake state.
+// Used on level switch (above) and by the Escape-menu Lightmaps checkbox when
+// toggled OFF (so OFF reverts to the default bright look).
 void Renderer_Objects::ClearAllLightmaps() {
     for (auto& pair : lightmap_textures_by_task_) {
         for (GLuint tex : pair.second) {
@@ -347,7 +343,6 @@ void Renderer_Objects::ClearAllLightmaps() {
     }
     lightmap_textures_by_task_.clear();
     lightmap_bake_pose_by_task_.clear();
-    stale_lightmap_logged_.clear();
 }
 
 // ─── Shutdown ─────────────────────────────────────────────────────────────────
@@ -472,10 +467,14 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     GLint loc_model    = glGetUniformLocation(shader_program_, "u_model");
     GLint loc_dirlight = glGetUniformLocation(shader_program_, "u_dirlight");
     GLint loc_ambient  = glGetUniformLocation(shader_program_, "u_ambient");
+    // Fixed light direction for the dynamic (non-lightmapped) path — even,
+    // bright, all-sides lighting. The parsed level sun (sun_dir_) is used ONLY
+    // for the lightmap re-light scale + recalc CLI, never as the render light.
     GLint loc_lightDir = glGetUniformLocation(shader_program_, "u_lightDir");
-    glUniform3f(loc_lightDir, sun_dir_.x, sun_dir_.y, sun_dir_.z);
+    glUniform3f(loc_lightDir, 0.5f, 1.0f, 0.5f);
     GLint loc_gamma = glGetUniformLocation(shader_program_, "u_gamma");
     glUniform1f(loc_gamma, global_gamma_);
+    GLint loc_lightmap_scale = glGetUniformLocation(shader_program_, "u_lightmapScale");
     GLint loc_useTex   = glGetUniformLocation(shader_program_, "u_useTexture");
     GLint loc_tex      = glGetUniformLocation(shader_program_, "u_texture");
     GLint loc_lightmap    = glGetUniformLocation(shader_program_, "u_lightmap");
@@ -695,36 +694,50 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 // object's lightmap/indoor-ambient happened to be registered under "-1"
                 // to every other "-1" object too (e.g. unrelated crates turning the same
                 // flat blue as some other building's interior ambient).
-                const bool hasRealTaskId = obj.taskId != "-1";
-                const std::vector<GLuint>* lightmaps = hasRealTaskId ? GetLightmapForTask(obj.taskId) : nullptr;
+                // Lightmaps are keyed by LightmapTaskKey (task id, or authored position
+                // for non-unique "-1" tasks) — the same key the apply path stores under.
                 // Display is NOT gated on the global "Lightmaps" checkbox: any baked
                 // lightmap present is shown (so the per-object Calculate button works
-                // even with the checkbox off). The checkbox governs bulk calculate
-                // (ON) and bulk clear (OFF, which empties these maps so nothing shows).
+                // even with the checkbox off). The checkbox governs bulk calculate (ON)
+                // and bulk clear (OFF). A baked lightmap stays bound even after the
+                // object is moved/rotated — never deleted — and is modulated LIVE per
+                // submesh by u_lightmapScale (below), so lighting adjusts smoothly as you
+                // drag an object, with no "stale" fallback and no subprocess.
+                const std::string lmKey = LightmapTaskKey(obj);
+                const std::vector<GLuint>* lightmaps = GetLightmapForTask(lmKey);
                 bool hasWorkingLightmap = lightmaps && !lightmaps->empty();
-                if (hasWorkingLightmap) {
-                    bool stale = IsLightmapStale(obj.taskId, obj.pos, obj.rot);
-                    hasWorkingLightmap = !stale;
-                    bool wasLogged = stale_lightmap_logged_.count(obj.taskId) != 0;
-                    if (stale && !wasLogged) {
-                        Logger::Get().Log(LogLevel::INFO, "[Lightmap] taskId=" + obj.taskId +
-                            " moved/rotated since its bake — falling back to dynamic sun lighting until recalculated.");
-                        stale_lightmap_logged_.insert(obj.taskId);
-                    } else if (!stale && wasLogged) {
-                        stale_lightmap_logged_.erase(obj.taskId);
-                    }
-                }
-                // A building without a working calculated lightmap falls back to dynamic
-                // sun lighting — but its own LightmapInfo task's "Indoors ambient light"
-                // (dim, e.g. 0.08) is what should light its interior, not the full outdoor
-                // sun/ambient, which made every interior look as bright as outdoors.
-                const glm::vec3* indoorAmbient = hasRealTaskId ? GetIndoorAmbientForTask(obj.taskId) : nullptr;
-                glm::vec3 dynDirlight = sun_front_color_;
-                glm::vec3 dynAmbient = sun_back_color_;
-                if (indoorAmbient && !hasWorkingLightmap) {
-                    dynDirlight = glm::vec3(0.0f);
-                    dynAmbient = *indoorAmbient;
-                }
+                glm::dvec3 bakedPos, bakedRot;
+                const bool haveBakePose = hasWorkingLightmap &&
+                    GetLightmapBakePose(lmKey, bakedPos, bakedRot);
+
+                // Objects WITHOUT a lightmap use fixed, bright, even lighting — the clean
+                // default look (lit from all sides). dirlight 0.6 / ambient 0.4 with the
+                // fixed light direction set once before this loop (NOT the level sun,
+                // which can be low/dark). Untextured submeshes get neutral gray, never a
+                // per-object hash color (which tinted buildings blue/green).
+                const glm::vec3 kDefDirlight(0.6f, 0.6f, 0.6f);
+                const glm::vec3 kDefAmbient(0.4f, 0.4f, 0.4f);
+
+                // Precompute the per-channel modulation lambda for lightmapped submeshes.
+                auto blockScale = [&](const glm::vec3& nLocal) -> glm::vec3 {
+                    if (!haveBakePose) return glm::vec3(1.0f);
+                    auto eul = [](const glm::dvec3& e) {
+                        glm::mat4 m(1.0f);
+                        m = glm::rotate(m, (float)e.z, glm::vec3(0,0,1));
+                        m = glm::rotate(m, (float)e.x, glm::vec3(1,0,0));
+                        m = glm::rotate(m, (float)e.y, glm::vec3(0,1,0));
+                        return glm::mat3(m);
+                    };
+                    glm::vec3 nO = glm::normalize(eul(bakedRot) * nLocal);
+                    glm::vec3 nN = glm::normalize(eul(obj.rot)  * nLocal);
+                    glm::vec3 sd = glm::length(sun_dir_) > 1e-6f ? glm::normalize(sun_dir_) : glm::vec3(0,0,1);
+                    auto L = [&](const glm::vec3& n){ return sun_back_color_ + sun_front_color_ * std::max(glm::dot(n, sd), 0.0f); };
+                    glm::vec3 lo = L(nO), ln = L(nN);
+                    const float eps = 1e-3f, maxF = 4.0f;
+                    return glm::vec3(std::min(ln.x/std::max(lo.x,eps),maxF),
+                                     std::min(ln.y/std::max(lo.y,eps),maxF),
+                                     std::min(ln.z/std::max(lo.z,eps),maxF));
+                };
                 for (size_t si = 0; si < mesh.subMeshes.size(); ++si) {
                     const auto& sub = mesh.subMeshes[si];
                     if (sub.VAO == 0 || sub.vertexCount == 0) continue;
@@ -762,40 +775,38 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     }
 
                     if (sub.textureID > 0) {
-                        // Textured submesh: neutral lighting so the texture looks natural.
-                        // Windows/glass keep their transparency (alpha 0.4 above) but render
-                        // with the SAME normal lighting as everything else, so glass stays
-                        // clear and see-through. The earlier flat-gray override (dirlight 0 /
-                        // ambient 0.45) darkened panes into murky panels — reverted to the
-                        // pre-3986cd9 "before" look the user asked to restore.
-                        glUniform3f(loc_dirlight, dynDirlight.r, dynDirlight.g, dynDirlight.b);
-                        glUniform3f(loc_ambient,  dynAmbient.r,  dynAmbient.g,  dynAmbient.b);
+                        // Textured submesh: fixed neutral-bright lighting so the texture
+                        // reads naturally and the object is lit evenly from all sides.
+                        glUniform3f(loc_dirlight, kDefDirlight.r, kDefDirlight.g, kDefDirlight.b);
+                        glUniform3f(loc_ambient,  kDefAmbient.r,  kDefAmbient.g,  kDefAmbient.b);
                         glUniform1i(loc_useTex, 1);
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, sub.textureID);
                         glUniform1i(loc_tex, 0);
                     } else {
-                        // Untextured submesh: use material baseColorFactor if available,
-                        // otherwise fall back to the hash-based color.
+                        // Untextured submesh: material baseColorFactor if set, else neutral
+                        // GRAY (not the per-object hash color, which tinted buildings blue).
                         glm::vec3 color(sub.baseColorFactor.r, sub.baseColorFactor.g, sub.baseColorFactor.b);
                         if (color.r >= 0.99f && color.g >= 0.99f && color.b >= 0.99f) {
-                            color = glm::vec3(r, g, b);
+                            color = glm::vec3(0.6f, 0.6f, 0.6f);
                         }
-                        glUniform3f(loc_dirlight, color.r * dynDirlight.r, color.g * dynDirlight.g, color.b * dynDirlight.b);
-                        glUniform3f(loc_ambient,  color.r * dynAmbient.r,  color.g * dynAmbient.g,  color.b * dynAmbient.b);
+                        glUniform3f(loc_dirlight, color.r * kDefDirlight.r, color.g * kDefDirlight.g, color.b * kDefDirlight.b);
+                        glUniform3f(loc_ambient,  color.r * kDefAmbient.r,  color.g * kDefAmbient.g,  color.b * kDefAmbient.b);
                         glUniform1i(loc_useTex, 0);
                     }
 
-                    // Lightmap: bind texture unit 1 for this exact placement, if the
-                    // "Calculate Light Mapping" button has been run on it, the Escape-menu
-                    // Lightmaps checkbox is on, and the object hasn't been moved/rotated
-                    // since the bake (a stale bake would show the WRONG orientation's
-                    // lighting, so it falls back to dynamic shading until recalculated).
+                    // Lightmap: bind unit 1 if this submesh has a baked lightmap. It is
+                    // applied as a STATIC bake, scaled LIVE by u_lightmapScale = how much
+                    // this block's surface now faces the sun vs at bake time — so moving/
+                    // rotating the object adjusts its lighting smoothly instead of deleting
+                    // the lightmap. When unmoved the scale is 1.0 (the original bake).
                     if (hasWorkingLightmap && si < lightmaps->size() && (*lightmaps)[si] != 0) {
+                        glm::vec3 scale = blockScale(sub.avgNormal);
                         glActiveTexture(GL_TEXTURE1);
                         glBindTexture(GL_TEXTURE_2D, (*lightmaps)[si]);
                         glUniform1i(loc_lightmap, 1);
                         glUniform1i(loc_useLightmap, 1);
+                        glUniform3f(loc_lightmap_scale, scale.r, scale.g, scale.b);
                     } else {
                         glUniform1i(loc_useLightmap, 0);
                     }

@@ -191,12 +191,11 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 									if (w.comp >= 0) ToggleAnimationForObject(selected_object_index_, w.comp);
 									return;
 								} else if (w.kind == K::LightmapButton) {
-									// Stale (moved/rotated since bake) -> recalc against the
-									// sun for the new orientation; otherwise initial calculate.
-									if (SelectedLightmapIsStale())
-										RecalculateLightmapForSelectedObject();
-									else
-										CalculateLightmapForSelectedObject();
+									// Resolve + apply this object's baked lightmap. Moving the
+									// object afterward adjusts it live, so there's no separate
+									// "recalculate" action — the game-facing .olm rewrite for
+									// moved objects happens automatically on Save.
+									CalculateLightmapForSelectedObject();
 									return;
 								} else if (w.kind == K::NoteBox) {
 									prop_edit_obj_index_ = tIdx;

@@ -515,7 +515,6 @@ public:
 		int    auto_save_interval_seconds_ = 300;
 		bool   music_on_                 = false; // Escape-menu Music checkbox state
 		bool   lightmaps_on_             = false; // Escape-menu Lightmaps checkbox state
-		bool   selected_lightmap_stale_  = false; // selected obj has a baked lightmap but was moved/rotated since (label: Recalculate)
 
 		// Animation state
 		std::string anim_status_;           // summary text of animations playing
@@ -698,9 +697,6 @@ public:
 		objects_.SetSunLight(dir, frontColor, backColor);
 	}
 	void SetGlobalGamma(float gamma) { objects_.SetGlobalGamma(gamma); }
-	void SetIndoorAmbientForTask(const std::string& taskId, const glm::vec3& rgb) {
-		objects_.SetIndoorAmbientForTask(taskId, rgb);
-	}
 	void ClearSuppressedAttas() { objects_.ClearSuppressedAttas(); }
 	bool SuppressAttachmentInMef(const std::string& parentModelId, const std::string& attModelId, const glm::vec3& localPos) {
 		return objects_.SuppressAttachmentInMef(parentModelId, attModelId, localPos);

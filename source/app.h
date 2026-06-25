@@ -254,23 +254,14 @@ private:
 	// No-op (with a logged warning) if no object is selected or the selected
 	// object's task type doesn't carry lightmap bindings.
 	void CalculateLightmapForSelectedObject();
-	// "Recalculate Light Mapping": re-light the selected object's baked lightmap
-	// against the level sun for its CURRENT orientation (used after it has been
-	// moved/rotated). Falls back to an initial Calculate if no prior bake exists.
-	void RecalculateLightmapForSelectedObject();
-	// True when the selected Building/EditRigidObj has a baked lightmap that has
-	// gone stale (object moved/rotated since the bake) — drives the property
-	// panel button label (Calculate vs Recalculate) and the click dispatch.
-	bool SelectedLightmapIsStale() const;
 	void CalculateLightmapsForAllObjects(); // Escape-menu Lightmaps checkbox ON: every Building/EditRigidObj in the level
 	size_t ResolveAndApplyLightmap(LevelObject& obj, const std::string& qscPath); // shared resolve+convert+upload core
-	// Task ids whose .olm lightmaps were recalculated this session and must be
-	// repacked into lightmaps.res on Save (so the game shows the new lighting).
-	std::set<std::string> recalculated_task_ids_;
-	// On Save: if any lightmaps were recalculated, repack the modified
-	// lightmaps_unpacked/ back into lightmaps.res (name-preserving) so igi.exe
-	// uses the new lighting. The original lightmaps.res is already captured in
-	// the per-level full-folder backup (Reset Level restores it).
+	// Bake the current orientation's re-light into one object's .olm files (game
+	// write-back). Returns true if files were rewritten. Used by Save write-back.
+	bool RecalcLightmapToOlm(LevelObject& obj, const std::string& qscPath);
+	// On Save: for every lightmapped object moved/rotated since its bake, re-light
+	// its .olm files and repack lightmaps.res (name-preserving) so igi.exe shows
+	// the new lighting. The original lightmaps.res is in the per-level backup.
 	void WriteBackRecalculatedLightmaps();
 	// Fills the property panel's "Animation Control" section state for the
 	// currently selected object (boneHierarchy stays -1 when not applicable).

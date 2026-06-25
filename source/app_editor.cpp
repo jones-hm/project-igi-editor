@@ -295,7 +295,7 @@ void App::LoadAIScriptForSelected() {
 // igi1conv's resolver expects lightmaps/lightmaps_unpacked/ to already exist next
 // to objects.qsc; older levels only ship the packed lightmaps.res. Unpack it
 // ourselves first so resolve doesn't fail with "no .olm files on disk".
-static bool EnsureLightmapsUnpacked(const std::string& levelDir, std::string& err) {
+bool EnsureLightmapsUnpacked(const std::string& levelDir, std::string& err) {
 	const std::string lightmapsDir = levelDir + "\\lightmaps";
 	const std::string unpackedDir = lightmapsDir + "\\lightmaps_unpacked";
 	const std::string packedRes = lightmapsDir + "\\lightmaps.res";
@@ -333,37 +333,36 @@ static bool EnsureLightmapsUnpacked(const std::string& levelDir, std::string& er
 // given an already-decompiled objects.qsc sitting next to the real lightmaps/ dir.
 // Returns the number of textures uploaded (0 = no binding / all conversions failed).
 size_t App::ResolveAndApplyLightmap(LevelObject& obj, const std::string& qscPath) {
+	// taskId="-1" (nested/ATTA tasks) can't be disambiguated by task id — resolve
+	// by the object's authored position instead. The stored lightmap is keyed the
+	// same way (LightmapTaskKey) so the renderer finds it.
+	const bool byPos = (obj.taskId.empty() || obj.taskId == "-1");
+	const std::string key = LightmapTaskKey(obj);
 	std::string err;
-	std::vector<std::string> olmPaths = igi1conv::LightmapResolve(obj.modelId, qscPath, obj.taskId, err);
+	std::vector<std::string> olmPaths = byPos
+		? igi1conv::LightmapResolveByPos(obj.modelId, qscPath, obj.original_pos.x, obj.original_pos.y, obj.original_pos.z, err)
+		: igi1conv::LightmapResolve(obj.modelId, qscPath, obj.taskId, err);
 	if (olmPaths.empty()) {
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] resolve failed for taskId=" + obj.taskId + ": " + err);
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] resolve failed for " + key + ": " + err);
 		return 0;
 	}
 
+	// Decode each .olm straight to a GL texture in-process (no per-file subprocess).
 	std::vector<GLuint> textures;
 	textures.reserve(olmPaths.size());
 	for (const auto& olmPath : olmPaths) {
-		std::string pngPath = igi1conv::MakeTempPath(".lightmap.png");
-		std::string convErr;
-		if (!igi1conv::OlmToPng(olmPath, pngPath, convErr)) {
-			Logger::Get().Log(LogLevel::ERR, "[Lightmap] olm to-png failed for " + olmPath + ": " + convErr);
-			textures.push_back(0);
-			continue;
-		}
 		std::string loadErr;
-		GLuint tex = LoadPngAsTexture(pngPath, loadErr);
-		std::error_code ec;
-		std::filesystem::remove(pngPath, ec);
+		GLuint tex = LoadOlmAsTexture(olmPath, loadErr);
 		if (tex == 0) {
-			Logger::Get().Log(LogLevel::ERR, "[Lightmap] PNG load failed for " + olmPath + ": " + loadErr);
+			Logger::Get().Log(LogLevel::ERR, "[Lightmap] .olm load failed for " + olmPath + ": " + loadErr);
 		}
 		textures.push_back(tex);
 	}
 
 	size_t uploaded = std::count_if(textures.begin(), textures.end(), [](GLuint t) { return t != 0; });
 	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Uploaded " + std::to_string(uploaded) + "/" +
-		std::to_string(textures.size()) + " lightmap texture(s) for taskId=" + obj.taskId);
-	renderer_.SetLightmapForTask(obj.taskId, std::move(textures), obj.pos, obj.rot);
+		std::to_string(textures.size()) + " lightmap texture(s) for " + key);
+	renderer_.SetLightmapForTask(key, std::move(textures), obj.pos, obj.rot);
 	return uploaded;
 }
 
@@ -434,111 +433,33 @@ void App::CalculateLightmapForSelectedObject() {
 	status_message_ = "Lightmap calculated: " + std::to_string(uploaded) + " texture(s) applied";
 }
 
-bool App::SelectedLightmapIsStale() const {
-	const auto& objects = level_.GetLevelObjects().GetObjects();
-	if (selected_object_index_ < 0 || selected_object_index_ >= (int)objects.size()) return false;
-	const auto& obj = objects[selected_object_index_];
-	if ((obj.type != "Building" && obj.type != "EditRigidObj") || obj.taskId == "-1") return false;
-	return renderer_.HasLightmapForTask(obj.taskId) &&
-	       renderer_.IsLightmapStale(obj.taskId, obj.pos, obj.rot);
-}
-
-void App::RecalculateLightmapForSelectedObject() {
-	auto& objects = level_.GetLevelObjects().GetObjects();
-	if (selected_object_index_ < 0 || selected_object_index_ >= (int)objects.size()) {
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc: no object selected.");
-		return;
-	}
-	LevelObject& obj = objects[selected_object_index_];
-	if (obj.type != "Building" && obj.type != "EditRigidObj") {
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc: \"" + obj.type + "\" objects don't carry lightmap bindings.");
-		return;
-	}
-	if (obj.taskId == "-1") {
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc: taskId=-1 has no resolvable binding.");
-		status_message_ = "Recalc: this object has no real task id";
-		return;
-	}
-
-	// Recalc re-lights an EXISTING bake by the orientation delta, so it needs the
-	// pos/rot recorded when that bake was applied. With no prior bake there's
-	// nothing to modulate — fall back to an initial static Calculate instead.
+// Bake the current orientation's live re-light into this object's .olm files (on
+// disk, in lightmaps_unpacked) so the GAME shows what the editor shows. Returns
+// true if .olm files were rewritten. Used by the Save write-back to update every
+// object that was moved/rotated since its lightmap was applied. Requires a real
+// (non "-1") task id — the converter's recalc disambiguates by task id.
+bool App::RecalcLightmapToOlm(LevelObject& obj, const std::string& qscPath) {
+	if (obj.taskId.empty() || obj.taskId == "-1") return false; // recalc CLI needs a real task id
+	const std::string key = LightmapTaskKey(obj);
 	glm::dvec3 bakedPos, bakedRot;
-	if (!renderer_.GetLightmapBakePose(obj.taskId, bakedPos, bakedRot)) {
-		Logger::Get().Log(LogLevel::INFO, "[Lightmap] Recalc: no prior bake for taskId=" +
-			obj.taskId + " — doing an initial Calculate instead.");
-		CalculateLightmapForSelectedObject();
-		return;
-	}
+	if (!renderer_.GetLightmapBakePose(key, bakedPos, bakedRot)) return false;
+	if (glm::length(obj.rot - bakedRot) < 0.01 && glm::length(obj.pos - bakedPos) < 1.0) return false; // unmoved
 
 	std::string mefPath = renderer_.GetModelFilePath(obj.modelId, obj.isBuilding);
 	if (mefPath.empty()) {
-		status_message_ = "Recalc: model .mef not found for " + obj.modelId;
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc: no .mef for model " + obj.modelId);
-		return;
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Write-back: no .mef for model " + obj.modelId);
+		return false;
 	}
-
-	const std::string levelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
-		std::to_string(level_.GetLevelNo());
-	const std::string qvmPath = levelDir + "\\objects.qvm";
-	const std::string qscPath = levelDir + "\\objects_lightmap_tmp.qsc";
-
-	status_message_ = "Recalculating lightmap (sun)...";
-	DrawProgressOverlay("Recalculating Lightmap", 10, "preparing");
-
-	std::string unpackErr;
-	if (!EnsureLightmapsUnpacked(levelDir, unpackErr)) {
-		status_message_ = "Recalc: failed to unpack lightmaps.res: " + unpackErr;
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc unpack failed: " + unpackErr);
-		return;
-	}
-
-	DrawProgressOverlay("Recalculating Lightmap", 30, "decompiling objects.qvm");
-	std::string decompileErr;
-	if (!igi1conv::QvmDecompile(qvmPath, qscPath, decompileErr)) {
-		status_message_ = "Recalc: " + decompileErr;
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc decompile failed: " + decompileErr);
-		return;
-	}
-
-	const glm::vec3 sunDir   = renderer_.GetSunDir();
-	const glm::vec3 sunColor = renderer_.GetSunFrontColor();
-	const glm::vec3 ambient  = renderer_.GetSunBackColor();
-	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Recalc taskId=" + obj.taskId + " model=" + obj.modelId +
-		" rotOrig=(" + std::to_string(bakedRot.x) + "," + std::to_string(bakedRot.y) + "," + std::to_string(bakedRot.z) + ")" +
-		" rotNew=(" + std::to_string(obj.rot.x) + "," + std::to_string(obj.rot.y) + "," + std::to_string(obj.rot.z) + ")" +
-		" mef=" + mefPath);
-
-	DrawProgressOverlay("Recalculating Lightmap", 55, "re-lighting .olm files");
 	std::string recalcErr;
 	bool ok = igi1conv::LightmapRecalc(obj.modelId, qscPath, obj.taskId, mefPath,
-		bakedRot, obj.rot, sunDir, sunColor, ambient, recalcErr);
+		bakedRot, obj.rot, renderer_.GetSunDir(), renderer_.GetSunFrontColor(), renderer_.GetSunBackColor(), recalcErr);
 	if (!ok) {
-		std::error_code ec; std::filesystem::remove(qscPath, ec);
-		status_message_ = "Recalc: " + recalcErr;
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Recalc CLI failed: " + recalcErr);
-		return;
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Write-back recalc failed for taskId=" + obj.taskId + ": " + recalcErr);
+		return false;
 	}
-
-	// Re-read the rewritten .olm files and re-upload — ResolveAndApplyLightmap
-	// records the CURRENT pos/rot as the new bake pose, so the object is no
-	// longer flagged stale.
-	DrawProgressOverlay("Recalculating Lightmap", 80, "reloading textures");
-	size_t uploaded = ResolveAndApplyLightmap(obj, qscPath);
-
-	std::error_code qscEc;
-	std::filesystem::remove(qscPath, qscEc);
-
-	DrawProgressOverlay("Recalculating Lightmap", 100, "done");
-	if (uploaded == 0) {
-		status_message_ = "Recalc: no lightmap textures resolved";
-		return;
-	}
-	recalculated_task_ids_.insert(obj.taskId);
-	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Recalc complete for taskId=" + obj.taskId +
-		" (" + std::to_string(uploaded) + " texture(s)); queued for write-back on Save.");
-	status_message_ = "Lightmap recalculated: " + std::to_string(uploaded) +
-		" texture(s) — Save Level to apply in-game";
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Write-back recalc baked taskId=" + obj.taskId +
+		" (" + obj.modelId + ") into .olm for the game");
+	return true;
 }
 
 // Escape-menu "Lightmaps" checkbox, turned ON: resolve + apply baked lightmaps for

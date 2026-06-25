@@ -199,6 +199,16 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
         sub.alphaMode = hasAlpha ? 2 : 0;
         sub.materialSlot = materialSlot;
 
+        // Average local-space normal (normal is floats [3..5] of each 10-float vertex) —
+        // used to re-light this block's baked lightmap when the object is rotated.
+        {
+            glm::vec3 acc(0.0f);
+            for (size_t v = 0; v + 5 < verts.size(); v += 10) {
+                acc += glm::vec3(verts[v + 3], verts[v + 4], verts[v + 5]);
+            }
+            sub.avgNormal = (glm::length(acc) > 1e-6f) ? glm::normalize(acc) : glm::vec3(0.0f, 0.0f, 1.0f);
+        }
+
         glGenVertexArrays(1, &sub.VAO);
         glGenBuffers(1, &sub.VBO);
         glBindVertexArray(sub.VAO);

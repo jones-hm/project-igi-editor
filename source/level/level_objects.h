@@ -74,6 +74,20 @@ struct LevelObject {
     int modelIdArgIdx = -1; // Index of the modelId argument in argTokens
 };
 
+// Stable per-placement key for a lightmap binding. Most objects use their unique
+// Task_New id. Nested / ATTA tasks all share the literal taskId "-1" (not unique),
+// so those key off their ORIGINAL authored position instead (which the QSC binding
+// is resolved against and which does NOT change when the object is moved in-editor,
+// keeping the key stable across edits). Used by both the apply path (App) and the
+// render path (Renderer_Objects) so they agree on where each lightmap is stored.
+inline std::string LightmapTaskKey(const LevelObject& obj) {
+    if (!obj.taskId.empty() && obj.taskId != "-1") return obj.taskId;
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "pos:%.1f,%.1f,%.1f",
+                  obj.original_pos.x, obj.original_pos.y, obj.original_pos.z);
+    return std::string(buf);
+}
+
 
 struct qtask_object_s : qtask_s {
     char model_id_[32];

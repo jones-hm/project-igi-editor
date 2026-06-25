@@ -11,6 +11,9 @@ struct SubMesh {
     int    alphaMode   = 0; // 0=OPAQUE, 1=MASK, 2=BLEND
     glm::vec4 baseColorFactor = glm::vec4(1.0f);
     int    materialSlot = -1;
+    // Average LOCAL-space face normal of this submesh (model space, pre-transform).
+    // Used to re-light a baked lightmap live when the object is rotated/moved.
+    glm::vec3 avgNormal = glm::vec3(0.0f, 0.0f, 1.0f);
 };
 
 struct Mesh {

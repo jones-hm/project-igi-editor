@@ -2378,12 +2378,7 @@ void Renderer::Draw(const draw_params_s &params,
               } else if (w.kind == K::LightmapButton) {
                   quad(w.x1, w.y1, w.x2, w.y2, 0.0f, 0.0f, 0.0f, 0.40f);
                   border(w.x1, w.y1, w.x2, w.y2, 1.0f, 1.0f, 1.0f);
-                  // A baked lightmap that's gone stale (object moved/rotated)
-                  // shows "Recalculate" in amber-red; otherwise "Calculate".
-                  if (task_tree_view.selected_lightmap_stale_)
-                      draw_text(w.x1 + 6, w.y1 + 12, "Recalculate Light Mapping", 1.0f, 0.55f, 0.1f);
-                  else
-                      draw_text(w.x1 + 6, w.y1 + 12, "Calculate Light Mapping", 1.0f, 0.9f, 0.2f);
+                  draw_text(w.x1 + 6, w.y1 + 12, "Calculate Light Mapping", 1.0f, 0.9f, 0.2f);
               }
               y = w.y2 + 6;
           }

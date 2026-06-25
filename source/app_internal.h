@@ -28,6 +28,7 @@
 #include "renderer/res_writer.h"
 #include "renderer/gl_helper.h"
 #include "renderer/png_loader.h"
+#include "renderer/olm_texture.h"
 #include "utils_igi1conv.h"
 #include "level/task_schema.h"
 using namespace TaskSchemaNS;
@@ -38,6 +39,11 @@ using namespace TaskSchemaNS;
 #include <unordered_map>
 #include <atomic>
 
+
+// Ensure <levelDir>/lightmaps/lightmaps_unpacked/ is populated (unpacking
+// lightmaps.res if needed). Defined in app_editor.cpp; used there and by the
+// Save write-back in app_level.cpp.
+bool EnsureLightmapsUnpacked(const std::string& levelDir, std::string& err);
 
 // ── game-process monitor + global-hotkey id (shared: core + app_editor) ──
 struct GameMonitorParam {

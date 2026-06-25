@@ -169,7 +169,6 @@ void App::LoadLevel(int level_no) {
 		selected_object_index_ = -1;
 		hover_object_index_ = -1;
 		status_message_.clear();
-		recalculated_task_ids_.clear(); // pending lightmap write-backs are per-level
 
 		// NOTE: We must NOT purge the previous level's extracted assets here. The
 		// texture/model resolver (FindTextureFile step 6 + lazy cross-level extraction)
@@ -356,35 +355,6 @@ void App::LoadLevel(int level_no) {
 			renderer_.SetGlobalGamma(gamma);
 		}
 
-		// Each Building/EditRigidObj's nested LightmapInfo task (Task_DeclareParameters(
-		// "LightmapInfo","Texture scale","Real32","Passes","Int32","Hemicube resolution",
-		// "Int32","Dirlight resolution","Int32","Gamma","Real32","Max radiosity per square
-		// meter","Real32","Indoors ambient light","RGB","Filename","String16")) declares
-		// its own dim "Indoors ambient light" (observed 0.08 vs the outdoor ~0.3 ambient) —
-		// interiors are never meant to receive full outdoor sun. argTokens: [0]=taskId,
-		// [1]="LightmapInfo", [2]=name, [3]=TextureScale, [4]=Passes, [5]=HemicubeRes,
-		// [6]=DirlightRes, [7]=Gamma, [8]=MaxRadiosity, [9-11]=IndoorsAmbientRGB, [12]=Filename.
-		for (const auto& obj : objects) {
-			if (obj.type != "Building" && obj.type != "EditRigidObj") continue;
-			// taskId="-1" marks a nested/non-addressable task (see CreateAttaProxy and
-			// the QSC convention used by DirlightKeyframe/LightmapInfo/etc.) — it is NOT
-			// unique, so registering indoor ambient under that literal string would have
-			// every other "-1" object (unrelated crates, poles, trees...) inherit it too.
-			if (obj.taskId == "-1") continue;
-			for (int ci : obj.childrenIndices) {
-				if (ci < 0 || ci >= (int)objects.size()) continue;
-				const auto& kf = objects[ci];
-				if (kf.type != "LightmapInfo" || kf.argTokens.size() < 12) continue;
-				try {
-					glm::vec3 indoorAmbient(std::stof(kf.argTokens[9]), std::stof(kf.argTokens[10]), std::stof(kf.argTokens[11]));
-					renderer_.SetIndoorAmbientForTask(obj.taskId, indoorAmbient);
-				} catch (const std::exception& e) {
-					Logger::Get().Log(LogLevel::WARNING, std::string("[App] LightmapInfo indoors-ambient unparsable for taskId=") + obj.taskId + ": " + e.what());
-				}
-				break;
-			}
-		}
-
 		// Log all loaded objects for verification script
 		for (const auto& obj : objects) {
 			if (obj.isSplineWaypoint || !obj.segmentModelId.empty()) {
@@ -496,6 +466,19 @@ void App::LoadLevel(int level_no) {
 		drawLoadBar(100, "done");
 
 		if (Config::Get().musicEnabled) PlayLevelMusic(level_no);
+
+		// Auto-load all baked lightmaps on every level start (whether or not the
+		// Escape-menu checkbox is on) so the level looks lit by default, like the
+		// game. The checkbox is a runtime toggle: OFF clears them (default bright
+		// look), ON re-calculates. Only runs when the level ships a lightmaps.res.
+		{
+			const std::string lmRes = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
+				std::to_string(level_no) + "\\lightmaps\\lightmaps.res";
+			if (std::filesystem::exists(lmRes)) {
+				Logger::Get().Log(LogLevel::INFO, "[Lightmap] Auto-loading baked lightmaps for level " + std::to_string(level_no));
+				CalculateLightmapsForAllObjects();
+			}
+		}
 	}
 	catch (const std::exception& e) {
 		std::string errorMsg = "Error loading level " + std::to_string(level_no) + ":\n" + std::string(e.what());
@@ -510,55 +493,71 @@ void App::LoadLevel(int level_no) {
 }
 
 void App::WriteBackRecalculatedLightmaps() {
-	if (recalculated_task_ids_.empty()) return;
-
 	const std::string levelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
 		std::to_string(level_.GetLevelNo());
 	const std::string lightmapsDir = levelDir + "\\lightmaps";
 	const std::string unpackedDir = lightmapsDir + "\\lightmaps_unpacked";
 	const std::string resPath = lightmapsDir + "\\lightmaps.res";
+	if (!std::filesystem::exists(resPath)) return;
 
-	if (!std::filesystem::exists(resPath) || !std::filesystem::exists(unpackedDir)) {
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Write-back skipped: missing " +
-			resPath + " or " + unpackedDir);
+	// Find lightmapped objects that were moved/rotated since their bake.
+	auto& objects = level_.GetLevelObjects().GetObjects();
+	std::vector<int> moved;
+	for (int i = 0; i < (int)objects.size(); ++i) {
+		const auto& o = objects[i];
+		if (o.type != "Building" && o.type != "EditRigidObj") continue;
+		if (o.taskId.empty() || o.taskId == "-1") continue;
+		if (!renderer_.HasLightmapForTask(LightmapTaskKey(o))) continue;
+		if (renderer_.IsLightmapStale(LightmapTaskKey(o), o.pos, o.rot)) moved.push_back(i);
+	}
+	if (moved.empty()) return; // nothing to bake into the game
+
+	std::string unpackErr;
+	if (!EnsureLightmapsUnpacked(levelDir, unpackErr)) {
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Write-back: unpack failed: " + unpackErr);
+		return;
+	}
+	const std::string qvmPath = levelDir + "\\objects.qvm";
+	const std::string qscPath = levelDir + "\\objects_lightmap_tmp.qsc";
+	std::string decompileErr;
+	if (!igi1conv::QvmDecompile(qvmPath, qscPath, decompileErr)) {
+		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Write-back: decompile failed: " + decompileErr);
 		return;
 	}
 
-	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Writing back " +
-		std::to_string(recalculated_task_ids_.size()) + " recalculated lightmap(s) into " + resPath);
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Write-back: re-lighting " +
+		std::to_string(moved.size()) + " moved object(s) into .olm");
+	int baked = 0;
+	for (size_t n = 0; n < moved.size(); ++n) {
+		DrawProgressOverlay("Saving lightmaps", static_cast<int>(90 * (n + 1) / moved.size()),
+			"re-lighting moved objects");
+		if (RecalcLightmapToOlm(objects[moved[n]], qscPath)) ++baked;
+	}
+	std::error_code qscEc; std::filesystem::remove(qscPath, qscEc);
+	if (baked == 0) return;
 
-	// Repack into a temp .res first (name-preserving: each modified .olm in
-	// lightmaps_unpacked replaces its same-named entry; everything else verbatim),
-	// then atomically swap it in. The pristine lightmaps.res is in the per-level
-	// backup, so Reset Level restores the originals.
+	// Name-preserving repack into a temp .res, then atomically swap it in.
+	// Pristine lightmaps.res is in the per-level backup (Reset Level restores it).
 	const std::string tmpRes = lightmapsDir + "\\lightmaps_new.res";
 	std::string err;
 	if (!igi1conv::ResRepack(resPath, unpackedDir, tmpRes, err)) {
-		status_message_ = "Lightmap write-back failed: " + err;
 		Logger::Get().Log(LogLevel::ERR, "[Lightmap] res repack failed: " + err);
 		std::error_code ec; std::filesystem::remove(tmpRes, ec);
 		return;
 	}
-
 	std::error_code ec;
 	std::filesystem::rename(tmpRes, resPath, ec);
 	if (ec) {
-		// rename can fail across a lock; fall back to copy+remove.
-		std::filesystem::copy_file(tmpRes, resPath,
-			std::filesystem::copy_options::overwrite_existing, ec);
+		std::filesystem::copy_file(tmpRes, resPath, std::filesystem::copy_options::overwrite_existing, ec);
 		std::error_code ec2; std::filesystem::remove(tmpRes, ec2);
 	}
 	if (ec) {
-		status_message_ = "Lightmap write-back: could not replace lightmaps.res";
 		Logger::Get().Log(LogLevel::ERR, "[Lightmap] Could not replace " + resPath + ": " + ec.message());
 		return;
 	}
-
-	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Wrote recalculated lightmaps into " + resPath +
-		" (" + std::to_string(recalculated_task_ids_.size()) + " object(s)) — game will use the new lighting");
-	status_message_ += "  |  lightmaps written to game (" +
-		std::to_string(recalculated_task_ids_.size()) + " obj)";
-	recalculated_task_ids_.clear();
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Wrote " + std::to_string(baked) +
+		" re-lit lightmap(s) into " + resPath + " — game will show the new lighting");
+	status_message_ += "  |  lightmaps written to game (" + std::to_string(baked) + " obj)";
 }
 
 void App::SetGameLevel(int level_no) {

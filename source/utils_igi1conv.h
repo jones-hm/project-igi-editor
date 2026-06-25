@@ -120,6 +120,14 @@ std::vector<std::string> LightmapResolve(const std::string& modelId,
                                          const std::string& taskId,
                                          std::string& err);
 
+// Same as LightmapResolve but disambiguates by nearest authored position
+// (`--pos X,Y,Z`) instead of task id — used for nested/ATTA objects whose
+// taskId is the non-unique literal "-1".
+std::vector<std::string> LightmapResolveByPos(const std::string& modelId,
+                                              const std::string& qscPath,
+                                              double x, double y, double z,
+                                              std::string& err);
+
 // Pure parser for `lightmap resolve`'s stdout — exposed for unit testing
 // without spawning a process. Extracts the indented .olm file paths
 // following the "N .olm file(s):" line. Returns empty with `err` set if the
