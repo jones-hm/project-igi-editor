@@ -1,5 +1,83 @@
 # Changelogs
 
+## 3.9.0-pre — Fog Controls & Foreign Model Extraction Fixes
+
+### ✨ New Features
+- **Fog Intensity control (0–200%).** A new spinner row in Terrain Options adjusts `QEDFogIntensity` live via `Renderer::SetFogIntensity()`, which writes `g_fog_intensity` into the terrain fog UBO. The shader uses it to scale `effective_far = g_fog_far / intensity`, making the fog band expand/contract visibly at typical view distances. Default: 10%.
+- **Fog On/Off toggle.** A `[X] Fog` / `[ ] Fog` checkbox in Terrain Options enables/disables fog rendering immediately. Toggling from OFF at 0% intensity auto-jumps to 100% so the user sees an effect.
+- **Default config saner defaults.** `enableFog=TRUE`, `fogIntensity=10`, `musicEnabled=TRUE`, `enableLightmaps=FALSE` — the editor now starts with fog visible at a mild level, music playing, and lightmaps off (matching the clean developer-look default).
+- **Debug commands for headless testing.** `add-model model=<id>` loads and adds a foreign model; `set-fog val=<0..200>` sets intensity; `capture-model level=<n> model=<id>` captures 10 screenshots around the model. Commands read from `editor/tools/debug-command.txt` polled every 200ms.
+- **Multi-level test harness.** `run_test_levels.ps1` runs levels 1, 3, 10, 8 in sequence, each loading a model, adding it as foreign, and capturing 10 screenshots.
+
+### 🐛 Bug Fixes
+- **Fixed: `Failed to load resource: 'LOCAL:textures/429_02_1.tex'` fatal on foreign model addition.** The texture-gathering loop only called `FindTextureFile` (disk scan), missing textures that exist only inside another level's `.res`. Added a `FindTextureData()` fallback that lazy-loads the host level's `.res` and extracts missing `.tex` siblings to `editor/textures/level<N>/` before packing them into the current level's `textures.res`.
+- **Fixed: Foreign model `.mef` files extracted to `content/models/level<N>/` (a path the renderer never reads).** Changed loose-file copy destination from `content/` to `editor/` for both models and textures, matching the existing `editor/` convention from commit `7f08808`.
+- **Fixed: In-memory `.res` indexes stale after `AddEntriesToRes`.** After packing new model/texture entries into the level's `.res`, the in-memory `res_model_indexes_` / `res_tex_indexes_` maps were not rebuilt, so the renderer couldn't find newly-added assets by name without a level reload. Now calls `RebuildIndex()` after every `AddEntriesToRes`.
+- **Fixed: Fog intensity did not change visually.** The *deployed* shader at `assets/editor/shaders/{41,45}/terrain_fog.frag` was stale — it lacked the `g_fog_intensity` UBO field and always used full intensity. Updated both source and deployed shaders to read `g_fog_intensity` for effective-far math. Also fixed the `ubo_fog_s` struct layout by adding `intensity_` (with correct std140 padding for the vec4-aligned UBO).
+- **Fixed: Family disk scan found ≤1 member for foreign models from other levels.** Added cross-level `.res` lazy-load: if the disk scan of the model's home level fails, load the home level's `.res` in-memory, find all `.mef` / `.tex` siblings in the same directory entry, and extract them to the editor content dir before packing into the current level.
+
+### 🔧 Technical
+- `source/renderer/renderer.cpp` / `renderer.h`: Added `SetFogIntensity()`, `WriteFogUBO()`, `ubo_fog_s::intensity_`.
+- `source/renderer/renderer_objects_atta.cpp`: `AddModelToLevelRes` — cross-level `.res` lazy-load, family sibling extraction, texture `FindTextureData()` fallback, in-memory index rebuild.
+- `source/renderer/renderer_draw.cpp` / `source/app_input_mouse.cpp`: Pause menu Terrain Options — Fog On/Off toggle + Fog Intensity spinner.
+- `source/config.cpp` / `config.h`: `fogIntensity` (int, default 10), `enableFog`, `musicEnabled`, `enableLightmaps`.
+- `source/debug_command_manager.cpp`: New `add-model`, `set-fog`, `capture-model` debug commands.
+- `shaders/{32,41,45}/terrain_fog.frag` + `assets/editor/shaders/{41,45}/terrain_fog.frag`: `g_fog_intensity` UBO and effective-far math.
+- `run_test_levels.ps1`: Multi-level automated test script.
+
+---
+
+## 3.8.0-pre — Developer Mode & Automated Screenshots
+
+### ✨ New Features
+- **Developer mode (`--developer-mode`).** A new CLI flag that enables a background thread polling `editor/tools/debug-command.txt` for commands. Commands are parsed and queued for execution on the main thread each frame, enabling automated testing without user input.
+- **Automated model screenshot pipeline.** `capture-model level=<n> model=<id>` orbits a free camera around the model at 6 cardinal exterior angles (0°/60°/120°/180°/240°/300°) and 4 interior angles (0°/90°/180°/270°) at eye height, saving PNGs directly to `IGI1_ROOT/screenshots/`. The camera is positioned via live coordinate injection into the renderer's viewport floats.
+- **Debug command set expanded:**
+  - `goto level=<n>` — load a specific level (same as Escape-menu Select Level).
+  - `add-model model=<id>` — add a foreign model from another level.
+  - `capture-model level=<n> model=<id> [x=<n> y=<n> z=<n>]` — full screenshot sweep with optional manual position override.
+  - `set-fog val=<0..200>` — set fog intensity percentage.
+  - `wireframe` / `draw-parts` / `delete` — toggle rendering modes and delete selected object.
+
+### 🔧 Technical
+- `source/debug_command_manager.{h,cpp}`: New `DebugCommandManager` class with a watcher thread, command queue, and parser for `key=value` arguments. The main app calls `ProcessCommandQueue()` once per frame to dispatch queued commands with full editor state access.
+- `source/app_editor.cpp`: `ProcessCommandQueue` dispatches each command type to the appropriate `App` method (e.g., `AddModelToLevelRes`, `Capture360Screenshots`, `SetFogIntensityPct`).
+- `source/app_input.cpp`: `Capture360Screenshots` positions the free camera at computed orbit points, forces redraws, and saves framebuffer reads to PNG.
+- `source/app.h`: Exposes `SetDeveloperMode(bool)` and `IsDeveloperMode()`; the polling thread is only spawned when `--developer-mode` is passed and disabled in release builds.
+- Commands are idempotent — repeated `capture-model` calls produce separate numbered screenshots without corrupting level state.
+
+---
+
+## 3.7.0-pre — Lightmap Bake-Apply Pipeline
+
+### ✨ New Features
+- **Full lightmap bake-apply pipeline.** Select an object in the 3D viewport, click **Calculate Light Mapping** in its property panel, and the editor bakes a lightmap texture for it and applies it live. The pipeline: object-selection → UV2 extraction → sun-direction resolve → ray-traced occlusion → PNG encode → GL texture upload → per-taskId binding in the object fragment shader.
+- **Real sun/gamma lighting.** Lightmap calculation respects the level's actual sun vector (read from `TerrainSun` in `objects.qvm`) and applies gamma correction, matching the warmth and direction of in-game lighting.
+- **Live lightmap modulation.** A slider in the Escape-menu Terrain Options section modulates lightmap brightness in real-time — no re-bake required. The UBO `g_lightmap_modulation` uniform is updated instantly.
+- **Fast load, clean default.** Levels load with a clean unlit look by default (`enableLightmaps=FALSE`). Toggling lightmaps on renders the baked atlas immediately. Lookup by taskId avoids stale/wrong textures from previous level loads.
+- **Dynamic sun recalculation.** Changing the sun direction in the property panel triggers an automatic lightmap recalculation for all baked objects, keeping lighting consistent.
+- **Lightmap button widget.** A new `LightmapButton` widget kind renders in the property panel when a bakeable object is selected, providing a "Calculate Light Mapping" click target with hover/active states matching the existing UI widget style.
+
+### 🐛 Bug Fixes
+- **Fixed: Lightmap overlay rendered over ATTA proxy UI elements.** The calculation overlay was competing with the existing ATTA proxy UI overlay. Added proper layering so ATTA proxy circles are drawn on top of lightmap previsualization.
+- **Fixed: `EnsureLightmapsUnpacked` silently wrote 0 files.** The unpack function iterated the level's `.olm` resource but the loop guard was comparing against an uninitialized count. Fixed index bounds and added file-existence logging.
+- **Fixed: `taskId=-1` collision cross-contaminated objects.** Objects without an explicit taskId (defaulting to -1) all shared the same lightmap slot, causing one object's bake to overwrite another's. Now non-unique taskIds fall back to a per-object hash key.
+- **Fixed: ATTA proxy objects included in batch-calculate.** Proxies have no renderable mesh and their UV2 data is garbage. The batch-calculate loop now skips all objects whose modelId resolves to an ATTA proxy (`modelType == 2`).
+- **Fixed: Indoor objects received outdoor-bright lighting.** Objects inside buildings now get a dimmer indoor fallback light value instead of the full outdoor sun, preventing blown-out interiors.
+- **Fixed: Lightmap warmth mismatch with game.** The overbright rendering pass was desaturating colors. Adjusted the tone-mapping curve to match the game's warmer, more saturated lightmap appearance.
+- **Fixed: Light and sky colors not reflected in lightmap.** The `TerrainAmbientLight` and `TerrainSunLight` colors from `objects.qvm` were parsed but not passed to the lightmap calculator. Now both are forwarded to `ComputeLightmapForObject` and affect the baked result.
+
+### 🔧 Technical
+- `source/app_editor.cpp`: `CalculateLightmapForSelectedObject` orchestrates the full pipeline — UV2 extraction, sun direction resolve, `igi1conv.exe` invocation for ray-traced occlusion, result readback, transfer to the renderer. Uses `std::async` for the heavy compute step so the UI stays responsive.
+- `source/renderer/renderer_objects.cpp`: `BindObjectLightmap(taskId)` binds the per-taskId GL texture for the active object shader. `GetLightmapTexture(taskId)` lazily creates/returns the atlas entry.
+- `source/renderer/renderer_draw.cpp`: The Escape-menu Terrain Options row for lightmap modulation. `SetLightmapModulation(value)` writes the UBO uniform.
+- `source/renderer/graph_writer.cpp`: Extended to read/write `TerrainAmbientLight` and `TerrainSunLight` from `objects.qvm`.
+- `source/renderer/olm_texture.cpp`: `.olm` → OpenGL texture loader. Handles the padded 32-bit-per-pixel format the game uses for lightmap atlases.
+- `source/level/level_objects.cpp`: Exposes the current level's `objects.qsc` path for UV2 extraction and sun vector readback.
+- `shaders/{41,45}/object.frag`: New `g_lightmap_modulation` UBO uniform, `g_lightmap_enabled` toggle, and the per-taskId sampler binding `g_lightmap_sampler`.
+
+---
+
 ## 3.6.0-pre — AI Held Weapons & Escape-Menu Music Toggle
 
 ### ✨ New Features
