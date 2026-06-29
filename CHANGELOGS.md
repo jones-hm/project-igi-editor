@@ -1,6 +1,6 @@
 # Changelogs
 
-## 3.6.0 — Animations, Music, Lightmapping & More
+## 3.6.0-pre — Animations, Music, Lightmapping & More
 
 ### ✨ Major Highlights
 
