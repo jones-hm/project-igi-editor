@@ -1,6 +1,6 @@
 # Changelogs
 
-## 3.9.0-pre — Fog Controls & Foreign Model Extraction Fixes
+## 3.9.0-pre — Animations, Music, Lightmapping & More
 
 ### ✨ New Features
 - **Fog Intensity control (0–200%).** A new spinner row in Terrain Options adjusts `QEDFogIntensity` live via `Renderer::SetFogIntensity()`, which writes `g_fog_intensity` into the terrain fog UBO. The shader uses it to scale `effective_far = g_fog_far / intensity`, making the fog band expand/contract visibly at typical view distances. Default: 10%.
