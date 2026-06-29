@@ -48,6 +48,7 @@ public:
   void SetDrawParts(int parts);
   void ToggleTerrainDrawOption(int opt);
   void ToggleTerrainModOption(int opt);
+  void SetFogEnabled(bool enabled);
 
   void ToggleEditMode();
   bool GetEditMode() const;
@@ -263,7 +264,10 @@ private:
 	size_t ResolveAndApplyLightmap(LevelObject& obj, const std::string& qscPath); // shared resolve+convert+upload core
 	// Bake the current orientation's re-light into one object's .olm files (game
 	// write-back). Returns true if files were rewritten. Used by Save write-back.
-	bool RecalcLightmapToOlm(LevelObject& obj, const std::string& qscPath);
+	bool RecalcLightmapToOlm(LevelObject& obj, const std::string& qscPath, bool force = false);
+	// Auto-triggered on manipulation end: recalculates lightmap for the manipulated
+	// object + its ATTA children, reloads into the viewport, and repacks lightmaps.res.
+	void AutoRecalcLightmapForManipulated(int objIndex);
 	// On Save: for every lightmapped object moved/rotated since its bake, re-light
 	// its .olm files and repack lightmaps.res (name-preserving) so igi.exe shows
 	// the new lighting. The original lightmaps.res is in the per-level backup.

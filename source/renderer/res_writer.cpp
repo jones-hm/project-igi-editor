@@ -180,3 +180,83 @@ std::vector<uint8_t> RES_Extract(const std::string& filepath, const std::string&
     Logger::Get().Log(LogLevel::WARNING, "[RES] Resource not found: " + resourceName + " in " + filepath);
     return {};
 }
+
+// ---------------------------------------------------------------------------
+// RES_BuildIndex — read only chunk headers + NAME chunks, build name→offset map
+// ---------------------------------------------------------------------------
+bool RES_BuildIndex(const std::string& filepath,
+                    std::unordered_map<std::string, ResEntryInfo>& out_index,
+                    std::string& error) {
+    std::ifstream file(filepath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) { error = "Cannot open: " + filepath; return false; }
+    size_t fileSize = static_cast<size_t>(file.tellg());
+    if (fileSize < 20) { error = "File too small: " + filepath; return false; }
+
+    auto readAt = [&](size_t at, void* dst, size_t n) -> bool {
+        file.seekg(static_cast<std::streamoff>(at), std::ios::beg);
+        file.read(reinterpret_cast<char*>(dst), static_cast<std::streamsize>(n));
+        return static_cast<size_t>(file.gcount()) == n;
+    };
+
+    uint8_t hdr[20];
+    if (!readAt(0, hdr, 20)) { error = "Header read failed"; return false; }
+    if (ReadFourCC(hdr) != FOURCC_ILFF || ReadFourCC(hdr + 16) != FOURCC_IRES) {
+        error = "Not an IRES file: " + filepath; return false;
+    }
+
+    size_t offset = 20;
+    std::string pendingName;
+    bool haveName = false;
+    size_t unnamed = 0;
+
+    while (offset + 16 <= fileSize) {
+        uint8_t ch[16];
+        if (!readAt(offset, ch, 16)) break;
+        uint32_t fourcc   = ReadFourCC(ch);
+        uint32_t dataSize = ReadU32LE(ch + 4);
+        uint32_t skip     = ReadU32LE(ch + 12);
+        size_t   dataOff  = offset + 16;
+
+        if (dataSize > fileSize || dataOff > fileSize - dataSize) break;
+
+        if (fourcc == FOURCC_NAME) {
+            std::vector<uint8_t> nb(dataSize);
+            if (dataSize > 0) readAt(dataOff, nb.data(), dataSize);
+            size_t len = 0;
+            while (len < dataSize && nb[len] != '\0') len++;
+            pendingName = std::string(reinterpret_cast<const char*>(nb.data()), len);
+            haveName = true;
+        } else if (fourcc == FOURCC_BODY || fourcc == FOURCC_CSTR) {
+            std::string name = haveName ? pendingName
+                                        : "<unnamed_" + std::to_string(unnamed++) + ">";
+            haveName = false;
+            // Flatten to filename part only (same as ExtractRes does)
+            size_t sl = name.rfind('\\');
+            size_t sl2 = name.rfind('/');
+            size_t slash = (sl == std::string::npos) ? sl2
+                         : (sl2 == std::string::npos) ? sl
+                         : std::max(sl, sl2);
+            std::string flatName = (slash != std::string::npos) ? name.substr(slash + 1) : name;
+            out_index[flatName] = { dataOff, dataSize };
+        }
+
+        if (skip == 0) break;
+        offset += skip;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// RES_ReadEntry — seek to a known offset, read exactly info.data_size bytes
+// ---------------------------------------------------------------------------
+std::vector<uint8_t> RES_ReadEntry(const std::string& filepath, const ResEntryInfo& info) {
+    std::vector<uint8_t> buf;
+    if (info.data_size == 0) return buf;
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) return buf;
+    file.seekg(static_cast<std::streamoff>(info.data_offset), std::ios::beg);
+    buf.resize(info.data_size);
+    file.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(info.data_size));
+    if (static_cast<size_t>(file.gcount()) != info.data_size) buf.clear();
+    return buf;
+}

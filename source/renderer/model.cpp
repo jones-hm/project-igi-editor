@@ -347,6 +347,11 @@ Mesh loadObjModel(const std::string& filepath, const std::string& /*unused*/) {
     return mesh;
 }
 
+Mesh loadObjModelFromMemory(const std::vector<uint8_t>& bytes, const std::string& modelId) {
+    const ParsedGeometry geometry = ParseMefFileFromMemory(bytes);
+    return BuildMeshFromGeometry(geometry, modelId);
+}
+
 void renderModel(const Mesh& mesh) {
     if (mesh.subMeshes.empty() && mesh.VAO == 0) return;
 

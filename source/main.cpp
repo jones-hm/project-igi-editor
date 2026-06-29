@@ -314,6 +314,13 @@ static void OnMenu(int menu) {
     break;
   case MENU_DRAW_TERRAIN_OPT_FOG:
     g_app.ToggleTerrainDrawOption(Renderer_Terrain::DRAW_TERRAIN_OPT_FOG);
+    // Sync object renderer fog with the terrain fog toggle and persist to config.
+    {
+        int dOpts = g_app.GetTerrainDrawOptions();
+        bool fogOn = (dOpts & Renderer_Terrain::DRAW_TERRAIN_OPT_FOG) != 0;
+        g_app.SetFogEnabled(fogOn);
+        Config::Get().enableFog = fogOn;
+    }
     g_update_menu_flags |= UPDATE_MENU_TERRAIN_OPTS;
     break;
   case MENU_TERRAIN_TEX_MOD:

@@ -419,31 +419,72 @@ void App::CalculateLightmapForSelectedObject() {
 		return;
 	}
 
+	// Step 1: load the current .olm from disk so bake pose is registered.
 	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Resolving lightmap for model=" + obj.modelId +
 		" taskId=" + obj.taskId + " qsc=" + qscPath);
-	DrawProgressOverlay("Calculating Lightmap", 60, "resolving + converting .olm bindings");
+	DrawProgressOverlay("Calculating Lightmap", 55, "loading current .olm");
 	size_t uploaded = ResolveAndApplyLightmap(obj, qscPath);
-
-	// Also calculate lightmaps for all children (Door, Generator, etc. that have their own .olm bindings)
 	const std::vector<int>& children = obj.childrenIndices;
 	for (size_t ci = 0; ci < children.size(); ++ci) {
 		int idx = children[ci];
 		if (idx < 0 || idx >= (int)objects.size()) continue;
-		LevelObject& child = objects[idx];
-		DrawProgressOverlay("Calculating Lightmap", 70 + static_cast<int>(20 * (ci + 1) / (children.size() + 1)),
-			("child: " + child.name).c_str());
-		uploaded += ResolveAndApplyLightmap(child, qscPath);
+		uploaded += ResolveAndApplyLightmap(objects[idx], qscPath);
 	}
 
-	std::error_code qscEc;
-	std::filesystem::remove(qscPath, qscEc);
-
-	DrawProgressOverlay("Calculating Lightmap", 100, "done");
 	if (uploaded == 0) {
+		std::error_code qscEc; std::filesystem::remove(qscPath, qscEc);
 		status_message_ = "Lightmap: no lightmap textures resolved for this object";
 		return;
 	}
-	status_message_ = "Lightmap calculated: " + std::to_string(uploaded) + " texture(s) applied";
+
+	// Step 2: recalc the .olm files using the object's CURRENT position/rotation
+	// and the live sun direction/colour. This writes updated .olm files to disk.
+	DrawProgressOverlay("Calculating Lightmap", 70, "recalculating .olm with current sun/position");
+	const std::string lightmapsDir = levelDir + "\\lightmaps";
+	const std::string resPath      = lightmapsDir + "\\lightmaps.res";
+	int baked = 0;
+	if (RecalcLightmapToOlm(obj, qscPath, /*force=*/true)) ++baked;
+	for (int ci : obj.childrenIndices) {
+		if (ci >= 0 && ci < (int)objects.size())
+			if (RecalcLightmapToOlm(objects[ci], qscPath, /*force=*/true)) ++baked;
+	}
+
+	// Step 3: reload the freshly baked .olm into the GPU texture.
+	if (baked > 0) {
+		DrawProgressOverlay("Calculating Lightmap", 80, "reloading into viewport");
+		ResolveAndApplyLightmap(obj, qscPath);
+		for (int ci : obj.childrenIndices) {
+			if (ci >= 0 && ci < (int)objects.size())
+				ResolveAndApplyLightmap(objects[ci], qscPath);
+		}
+	}
+
+	// Step 4: repack lightmaps.res so the game also picks up the new .olm.
+	if (baked > 0 && std::filesystem::exists(resPath)) {
+		DrawProgressOverlay("Calculating Lightmap", 90, "repacking lightmaps.res");
+		const std::string unpackedDir = lightmapsDir + "\\lightmaps_unpacked";
+		const std::string tmpRes      = lightmapsDir + "\\lightmaps_new.res";
+		std::string repackErr;
+		if (igi1conv::ResRepack(resPath, unpackedDir, tmpRes, repackErr)) {
+			std::error_code ec;
+			std::filesystem::rename(tmpRes, resPath, ec);
+			if (ec) {
+				std::filesystem::copy_file(tmpRes, resPath, std::filesystem::copy_options::overwrite_existing, ec);
+				std::error_code ec2; std::filesystem::remove(tmpRes, ec2);
+			}
+			if (!ec) Logger::Get().Log(LogLevel::INFO, "[Lightmap] Repacked lightmaps.res with " +
+				std::to_string(baked) + " new .olm(s)");
+		} else {
+			Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Repack failed: " + repackErr);
+		}
+	}
+
+	std::error_code qscEc; std::filesystem::remove(qscPath, qscEc);
+
+	DrawProgressOverlay("Calculating Lightmap", 100, "done");
+	status_message_ = baked > 0
+		? "Lightmap recalculated + saved: " + std::to_string(uploaded) + " texture(s)"
+		: "Lightmap applied: " + std::to_string(uploaded) + " texture(s) (no pose change to bake)";
 }
 
 // Bake the current orientation's live re-light into this object's .olm files (on
@@ -451,14 +492,20 @@ void App::CalculateLightmapForSelectedObject() {
 // true if .olm files were rewritten. Used by the Save write-back to update every
 // object that was moved/rotated since its lightmap was applied. Requires a real
 // (non "-1") task id — the converter's recalc disambiguates by task id.
-bool App::RecalcLightmapToOlm(LevelObject& obj, const std::string& qscPath) {
+bool App::RecalcLightmapToOlm(LevelObject& obj, const std::string& qscPath, bool force) {
 	if (obj.taskId.empty() || obj.taskId == "-1") return false; // recalc CLI needs a real task id
 	const std::string key = LightmapTaskKey(obj);
 	glm::dvec3 bakedPos, bakedRot;
-	if (!renderer_.GetLightmapBakePose(key, bakedPos, bakedRot)) return false;
-	if (glm::length(obj.rot - bakedRot) < 0.01 && glm::length(obj.pos - bakedPos) < 1.0) return false; // unmoved
+	if (!renderer_.GetLightmapBakePose(key, bakedPos, bakedRot)) {
+		// No bake pose yet — treat current pose as both old and new so the
+		// CLI can still recalculate from the object's current position.
+		if (!force) return false;
+		bakedPos = obj.pos;
+		bakedRot = glm::dvec3(obj.rot);
+	}
+	if (!force && glm::length(obj.rot - bakedRot) < 0.01 && glm::length(obj.pos - bakedPos) < 1.0) return false; // unmoved
 
-	std::string mefPath = renderer_.GetModelFilePath(obj.modelId, obj.isBuilding);
+	std::string mefPath = renderer_.GetOrExtractMefTemp(obj.modelId, obj.isBuilding);
 	if (mefPath.empty()) {
 		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Write-back: no .mef for model " + obj.modelId);
 		return false;
@@ -473,6 +520,93 @@ bool App::RecalcLightmapToOlm(LevelObject& obj, const std::string& qscPath) {
 	Logger::Get().Log(LogLevel::INFO, "[Lightmap] Write-back recalc baked taskId=" + obj.taskId +
 		" (" + obj.modelId + ") into .olm for the game");
 	return true;
+}
+
+// Called automatically when the user finishes moving/rotating a lightmapped object.
+// Recalculates the object's lightmap (and all its ATTA children), reloads it into
+// the editor viewport, and repacks lightmaps.res so the game sees the change too.
+void App::AutoRecalcLightmapForManipulated(int objIndex) {
+	auto& objects = level_.GetLevelObjects().GetObjects();
+	if (objIndex < 0 || objIndex >= (int)objects.size()) return;
+
+	LevelObject& obj = objects[objIndex];
+	if (obj.type != "Building" && obj.type != "EditRigidObj") return;
+	if (!renderer_.HasLightmapForTask(LightmapTaskKey(obj))) return;
+	// IsLightmapStale returns false when there's no bake pose (never moved from loaded pose).
+	// Still proceed if the object has been modified since load — use obj.modified as fallback.
+	bool stale = renderer_.IsLightmapStale(LightmapTaskKey(obj), obj.pos, obj.rot);
+	if (!stale && !obj.modified) return; // definitely not moved
+
+	const std::string levelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
+		std::to_string(level_.GetLevelNo());
+	const std::string lightmapsDir  = levelDir + "\\lightmaps";
+	const std::string unpackedDir   = lightmapsDir + "\\lightmaps_unpacked";
+	const std::string resPath       = lightmapsDir + "\\lightmaps.res";
+
+	if (!std::filesystem::exists(resPath)) return; // level has no lightmaps
+
+	status_message_ = "Lightmap: recalculating...";
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] AutoRecalc: unpacking lightmaps.res for " + obj.modelId);
+
+	std::string unpackErr;
+	if (!EnsureLightmapsUnpacked(levelDir, unpackErr)) {
+		status_message_ = "Lightmap recalc: unpack failed: " + unpackErr;
+		Logger::Get().Log(LogLevel::ERR, "[Lightmap] AutoRecalc: unpack failed: " + unpackErr);
+		return;
+	}
+
+	const std::string qvmPath = levelDir + "\\objects.qvm";
+	const std::string qscPath = levelDir + "\\objects_lightmap_tmp.qsc";
+	std::string decompErr;
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] AutoRecalc: decompiling objects.qvm");
+	if (!igi1conv::QvmDecompile(qvmPath, qscPath, decompErr)) {
+		status_message_ = "Lightmap recalc: decompile failed: " + decompErr;
+		Logger::Get().Log(LogLevel::ERR, "[Lightmap] AutoRecalc: decompile failed: " + decompErr);
+		return;
+	}
+
+	// Bake new .olm for the manipulated object + all its ATTA children.
+	int baked = 0;
+	Logger::Get().Log(LogLevel::INFO, "[Lightmap] AutoRecalc: baking .olm for taskId=" + obj.taskId);
+	if (RecalcLightmapToOlm(obj, qscPath, /*force=*/true)) ++baked;
+	for (int ci : obj.childrenIndices) {
+		if (ci >= 0 && ci < (int)objects.size())
+			if (RecalcLightmapToOlm(objects[ci], qscPath, /*force=*/true)) ++baked;
+	}
+
+	// Reload the updated .olm into the GPU texture for immediate visual feedback.
+	ResolveAndApplyLightmap(obj, qscPath);
+	for (int ci : obj.childrenIndices) {
+		if (ci >= 0 && ci < (int)objects.size())
+			ResolveAndApplyLightmap(objects[ci], qscPath);
+	}
+
+	std::error_code qscEc; std::filesystem::remove(qscPath, qscEc);
+
+	if (baked > 0) {
+		// Repack updated .olm files back into lightmaps.res.
+		Logger::Get().Log(LogLevel::INFO, "[Lightmap] AutoRecalc: repacking lightmaps.res (" + std::to_string(baked) + " baked)");
+		const std::string tmpRes = lightmapsDir + "\\lightmaps_new.res";
+		std::string repackErr;
+		if (igi1conv::ResRepack(resPath, unpackedDir, tmpRes, repackErr)) {
+			std::error_code ec;
+			std::filesystem::rename(tmpRes, resPath, ec);
+			if (ec) {
+				std::filesystem::copy_file(tmpRes, resPath, std::filesystem::copy_options::overwrite_existing, ec);
+				std::error_code ec2; std::filesystem::remove(tmpRes, ec2);
+			}
+			if (!ec) {
+				Logger::Get().Log(LogLevel::INFO, "[Lightmap] Auto-recalc: repacked " +
+					std::to_string(baked) + " lightmap(s) into " + resPath);
+				status_message_ = "Lightmap recalculated (" + std::to_string(baked) + " object(s) baked)";
+			}
+		} else {
+			Logger::Get().Log(LogLevel::ERR, "[Lightmap] Auto-recalc: repack failed: " + repackErr);
+			status_message_ = "Lightmap baked but repack failed: " + repackErr;
+		}
+	} else {
+		status_message_ = "Lightmap reloaded (no .olm change needed)";
+	}
 }
 
 // Escape-menu "Lightmaps" checkbox, turned ON: resolve + apply baked lightmaps for
@@ -628,6 +762,10 @@ void App::CommitPropTextEdit() {
 	}
 	obj.argTokens[argIdx] = tokenVal;
 
+	// Capture old transform BEFORE updating so we can compute deltas for children.
+	glm::dvec3 preCommitPos = obj.pos;
+	glm::dvec3 preCommitRot = obj.rot;
+
 	// Sync obj.rot after orientation field commits so the 3D marker updates.
 	bool is_ori_field = (tn == "Real32x9");
 	bool is_gamma_field = ((tn == "Real32" || tn == "Angle" || tn == "Degrees") && (fd.name == "Gamma" || fd.name == "Heading"));
@@ -701,6 +839,14 @@ void App::CommitPropTextEdit() {
 
 	obj.modified = true;
 	level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
+
+	// When pos or rotation is typed in, propagate the transform delta to children.
+	if (is_pos || is_ori_field || is_gamma_field) {
+		glm::dvec3 deltaPos   = obj.pos - preCommitPos;
+		glm::dmat3 deltaWorld = BuildRotMatZXY(obj.rot) * glm::transpose(BuildRotMatZXY(preCommitRot));
+		PropagateTransformToChildren(oi, deltaPos, deltaWorld, preCommitPos);
+		AutoRecalcLightmapForManipulated(oi);
+	}
 
 	// If a soldier's weapon child (Gun*) enum was just edited, re-resolve the parent
 	// soldier's held-weapon model so the weapon shown in the editor updates live —
@@ -843,9 +989,18 @@ void App::Undo() {
 	{
 		auto& reloaded = level_.GetLevelObjects().GetObjects();
 		for (auto& proxy : attaProxies) {
-			proxy.parentIndex = -1; // QSC-relative parent index no longer applies post-reload
 			std::string key = proxy.attaParentModelId + ":" + std::to_string(proxy.attaRecordIndex);
 			int newIdx = (int)reloaded.size();
+			// Re-link to the parent building so it still moves with it after undo.
+			proxy.parentIndex = -1;
+			for (int pi = 0; pi < (int)reloaded.size(); ++pi) {
+				if (reloaded[pi].modelId == proxy.attaParentModelId &&
+				    (reloaded[pi].isBuilding || reloaded[pi].type == "Building")) {
+					proxy.parentIndex = pi;
+					reloaded[pi].childrenIndices.push_back(newIdx);
+					break;
+				}
+			}
 			reloaded.push_back(proxy);
 			if (key == selectedAttaKey) selected_object_index_ = newIdx;
 		}
@@ -913,9 +1068,17 @@ void App::Redo() {
 	{
 		auto& reloaded = level_.GetLevelObjects().GetObjects();
 		for (auto& proxy : attaProxies) {
-			proxy.parentIndex = -1;
 			std::string key = proxy.attaParentModelId + ":" + std::to_string(proxy.attaRecordIndex);
 			int newIdx = (int)reloaded.size();
+			proxy.parentIndex = -1;
+			for (int pi = 0; pi < (int)reloaded.size(); ++pi) {
+				if (reloaded[pi].modelId == proxy.attaParentModelId &&
+				    (reloaded[pi].isBuilding || reloaded[pi].type == "Building")) {
+					proxy.parentIndex = pi;
+					reloaded[pi].childrenIndices.push_back(newIdx);
+					break;
+				}
+			}
 			reloaded.push_back(proxy);
 			if (key == selectedAttaKey) selected_object_index_ = newIdx;
 		}
@@ -928,9 +1091,11 @@ void App::Redo() {
 
 void App::PropagateTransformToChildren(int parentIdx, const glm::dvec3& deltaPos, const glm::dmat3& deltaWorld, const glm::dvec3& pivot) {
 	auto& objects = level_.GetLevelObjects().GetObjects();
+	if (parentIdx < 0 || parentIdx >= (int)objects.size()) return;
 	std::vector<int> children = objects[parentIdx].childrenIndices;
 
 	for (int childIdx : children) {
+		if (childIdx < 0 || childIdx >= (int)objects.size()) continue;
 		LevelObject& child = objects[childIdx];
 
 		// Rotate child's relative position around the parent's old pivot, then translate
@@ -1009,6 +1174,18 @@ void App::PromoteAttaToObject(int entry) {
 	obj.attaInvParentMat    = glm::inverse(e.parentWorldMat);
 
 	int newIdx = (int)objects.size();
+
+	// Link to the parent building so PropagateTransformToChildren moves this
+	// proxy when the parent building is dragged/rotated.
+	for (int pi = 0; pi < (int)objects.size(); ++pi) {
+		if (objects[pi].modelId == e.immediateParentModelId &&
+		    (objects[pi].isBuilding || objects[pi].type == "Building")) {
+			obj.parentIndex = pi;
+			objects[pi].childrenIndices.push_back(newIdx);
+			break;
+		}
+	}
+
 	objects.push_back(obj);
 
 	// Suppress this ATTA record from being re-offered for picking.

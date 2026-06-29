@@ -173,8 +173,12 @@ void App::LoadLevel(int level_no) {
 		// Previous level's extracted disk assets are cleared above (line ~136)
 		// via last_loaded_level_ tracking before this point is reached.
 		// The renderer GL caches are torn down by BeginLoadLevel()/ClearCaches().
+		// BeginLoadLevel also calls ClearResCache(), so LoadResCache must come AFTER it.
 		renderer_.SetLevel(level_no);
+		renderer_.SetRainEffect(false, 0, 0, 0); // reset rain — prevent carryover from previous level
 		renderer_.BeginLoadLevel();
+		// Build in-memory .res index AFTER BeginLoadLevel so ClearCaches() doesn't wipe it.
+		renderer_.LoadResCache(level_no, Utils::GetIGIRootPath());
 		Logger::Get().Log(LogLevel::INFO, "[App] After BeginLoadLevel teardown: renderer meshCache=" +
 			std::to_string(renderer_.GetMeshCacheCount()) + " textureCache=" +
 			std::to_string(renderer_.GetTextureCacheCount()) + " (both should be 0)");
@@ -410,10 +414,16 @@ void App::LoadLevel(int level_no) {
 		{
 			bool rainActive = false;
 			float rainStartM = 0.0f, rainEndM = 0.0f, rainAlpha = 0.0f;
+			bool foundRainEffect = false;
 			for (const auto& re : objects) {
 				if (re.type != "RainEffect" || re.argTokens.size() < 8) continue;
+				foundRainEffect = true;
 				try {
-					bool isRain = (re.argTokens[3] == "TRUE");
+					// IsRain stored as bare TRUE/FALSE in QSC (not quoted)
+					std::string isRainTok = re.argTokens[3];
+					if (!isRainTok.empty() && isRainTok.front() == '"')
+						isRainTok = isRainTok.substr(1, isRainTok.size() - 2);
+					bool isRain = (isRainTok == "TRUE" || isRainTok == "true");
 					std::string isActiveTok = re.argTokens[6];
 					if (isActiveTok.size() >= 2 && isActiveTok.front() == '"' && isActiveTok.back() == '"')
 						isActiveTok = isActiveTok.substr(1, isActiveTok.size() - 2);
@@ -423,13 +433,17 @@ void App::LoadLevel(int level_no) {
 					rainAlpha = std::stof(re.argTokens[7]);
 					rainActive = isRain && isActive;
 					Logger::Get().Log(LogLevel::INFO, "[App] RainEffect resolved: active=" +
-						std::to_string(rainActive) + " start=" + std::to_string(rainStartM) +
+						std::to_string(rainActive) + " isRain=" + isRainTok +
+						" isActive=" + isActiveTok +
+						" start=" + std::to_string(rainStartM) +
 						"m end=" + std::to_string(rainEndM) + "m alpha=" + std::to_string(rainAlpha));
 				} catch (const std::exception& e) {
 					Logger::Get().Log(LogLevel::WARNING, std::string("[App] RainEffect unparsable (") + e.what() + ")");
 				}
 				break; // first RainEffect task only
 			}
+			if (!foundRainEffect)
+				Logger::Get().Log(LogLevel::INFO, "[App] No RainEffect in level — rain disabled");
 			renderer_.SetRainEffect(rainActive, rainStartM, rainEndM, rainAlpha);
 		}
 

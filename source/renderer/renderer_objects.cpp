@@ -92,72 +92,64 @@ in vec2 v_uv;
 in vec2 v_uv2;
 in vec3 v_fragPos;
 
-uniform vec3 u_dirlight;   // directional light RGB
-uniform vec3 u_ambient;    // ambient light RGB
-uniform vec3 u_lightDir;   // direction toward the sun (world space, from level Dirlight)
+uniform vec3  u_dirlight;      // directional light RGB (sun)
+uniform vec3  u_ambient;       // ambient light RGB
+uniform vec3  u_lightDir;      // direction toward the sun (world space)
 uniform sampler2D u_texture;
-uniform int u_useTexture;
+uniform int   u_useTexture;
 uniform sampler2D u_lightmap;
-uniform int u_useLightmap; // 0 = no calculated lightmap for this submesh
-uniform vec3 u_lightmapScale; // live per-block re-light factor (1,1,1 = unmoved bake)
-uniform float u_alpha;     // material alpha (1.0 = opaque, <1.0 = transparent)
-uniform vec4 u_baseColor;  // Base color when no texture
-uniform vec3 u_tint; // per-object multiplicative tint (default white); magenta = missing-in-res warning
-uniform float u_glassMin;  // glass sheen floor: clean (low-alpha) glass renders at
-                           // least this opaque so the pane is visible. 0 = not glass.
-uniform float u_gamma;     // level GlobalLight "Texture filter gamma" (1.0 = no curve)
-uniform vec3 u_fogColor;   // atmospheric fog color from GlobalLightKeyframe
-uniform float u_fogFar;    // fog far-clip distance derived from fog density
-uniform vec3 u_cameraPos;  // world-space camera position for fog distance calc
-
+uniform int   u_useLightmap;   // 0 = no baked lightmap for this submesh
+uniform vec3  u_lightmapScale; // live re-light scale when object was moved since bake
+uniform float u_alpha;
+uniform vec4  u_baseColor;
+uniform vec3  u_tint;
+uniform float u_glassMin;
+uniform float u_gamma;
 out vec4 fragColor;
 
 void main() {
     vec3 N = normalize(v_normal);
     vec3 lightDir = normalize(u_lightDir);
-    float diff = max(dot(N, lightDir), 0.0);
 
+    // Hemisphere ambient: sky (up) is warmer/brighter, ground (down) is dimmer.
+    // This ensures every face — including side walls — always gets meaningful light.
+    float hemiT = dot(N, vec3(0.0, 0.0, 1.0)) * 0.5 + 0.5; // 0=down, 1=up
+    vec3 hemi = mix(u_ambient * 0.75, u_ambient * 1.35, hemiT);
+
+    // Sun: front faces bright, back faces get 40% warm fill (no black backs).
+    float diff     = max(dot(N, lightDir), 0.0);
+    float backFill = max(-dot(N, lightDir), 0.0) * 0.40;
+
+    // Subtle specular
     vec3 viewDir = normalize(vec3(0.0, 1.0, 1.0));
     vec3 halfVec = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(N, halfVec), 0.0), 32.0) * 0.25;
+    float spec = pow(max(dot(N, halfVec), 0.0), 32.0) * 0.08;
 
-    vec3 light = u_ambient + u_dirlight * (diff + spec);
+    vec3 light = hemi + u_dirlight * (diff + backFill + spec);
 
     vec4 texColor = (u_useTexture != 0) ? texture(u_texture, v_uv) : u_baseColor;
-
     float finalAlpha = (u_useTexture != 0 ? texColor.a : 1.0) * u_alpha;
 
-    // Glass: even a perfectly clear pane (texture alpha ~0) must show a faint
-    // reflective sheen, so floor the alpha. Add a subtle specular highlight so the
-    // glass reads as a surface, not an empty hole.
     if (u_glassMin > 0.0) {
         finalAlpha = max(finalAlpha, u_glassMin);
         light += vec3(spec * 1.5);
     }
 
-    // OLM stores ABSOLUTE lighting in [0,1] range. UV2 from MEF uses DirectX
-    // convention (V=0 at top), so flip V for OpenGL (V=0 at bottom).
     vec3 litColor;
     if (u_useLightmap != 0) {
         vec2 olmUV = vec2(v_uv2.x, 1.0 - v_uv2.y);
-        litColor = texColor.rgb * texture(u_lightmap, olmUV).rgb * u_lightmapScale * u_tint;
+        vec3 lm = texture(u_lightmap, olmUV).rgb * u_lightmapScale;
+        // Warm ambient floor: no lightmapped face should be black.
+        // OLM stores absolute lighting; dark faces get lifted to warm minimum.
+        lm = max(lm, u_ambient * 0.90);
+        litColor = texColor.rgb * lm * u_tint;
     } else {
         litColor = light * texColor.rgb * u_tint;
     }
+
     litColor = pow(max(litColor, 0.0), vec3(u_gamma));
-
-    // Atmospheric fog: same linear formula as terrain_fog.frag.
-    // fog_near = fog_far * 0.333 so fog starts at 1/3 of the far distance.
-    float fogDist = length(v_fragPos - u_cameraPos);
-    float fog_near = u_fogFar * 0.333333;
-    float fog_a = 1.0 - clamp((u_fogFar - fogDist) / (u_fogFar - fog_near), 0.0, 1.0);
-    litColor = mix(litColor, u_fogColor, fog_a);
-
     fragColor = vec4(litColor, finalAlpha);
 
-    // Alpha-test cutout for foliage / fences / grilles only (alpha >= 0.9). Glass
-    // (lower alpha or u_glassMin set) is NEVER cut out — it blends so you can see
-    // through it while still seeing the pane.
     if (u_glassMin <= 0.0 && u_alpha >= 0.9 && texColor.a < 0.75) discard;
     if (fragColor.a < 0.01) discard;
 }
@@ -350,6 +342,104 @@ void Renderer_Objects::ClearCaches() {
     ClearAllLightmaps();
     indoor_ambient_by_task_.clear();
     Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Cleared per-task lightmap caches on level switch");
+    ClearResCache();
+}
+
+void Renderer_Objects::ClearResCache() {
+    res_tex_indexes_.clear();
+    res_model_indexes_.clear();
+    for (const auto& p : tmp_mef_paths_) {
+        std::error_code ec;
+        std::filesystem::remove(p, ec);
+    }
+    tmp_mef_paths_.clear();
+    Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] ResCache cleared");
+}
+
+void Renderer_Objects::LoadResCache(int levelNo, const std::string& igi_path) {
+    // APPEND-ONLY: never clear existing indexes. Cross-level lazy calls add new
+    // .res archives without evicting the current level's already-indexed files.
+    const std::string levelName = "level" + std::to_string(levelNo);
+    const std::string missionDir = igi_path + "\\missions\\location0\\" + levelName;
+    const std::string commonDir  = igi_path + "\\missions\\location0\\common";
+
+    // Helper: only add a path if not already in the index list.
+    auto addTex = [&](const std::string& p) {
+        for (const auto& ri : res_tex_indexes_)
+            if (ri.res_path == p) return; // already indexed
+        ResIndex ri;
+        ri.res_path = p;
+        std::string err;
+        if (RES_BuildIndex(p, ri.index, err)) {
+            Logger::Get().Log(LogLevel::INFO, "[ResCache] Indexed " +
+                std::to_string(ri.index.size()) + " entries from " + p);
+            res_tex_indexes_.push_back(std::move(ri));
+        } else if (!err.empty()) {
+            Logger::Get().Log(LogLevel::WARNING, "[ResCache] Texture index failed: " + err);
+        }
+    };
+    auto addModel = [&](const std::string& p) {
+        for (const auto& ri : res_model_indexes_)
+            if (ri.res_path == p) return; // already indexed
+        ResIndex ri;
+        ri.res_path = p;
+        std::string err;
+        if (RES_BuildIndex(p, ri.index, err)) {
+            Logger::Get().Log(LogLevel::INFO, "[ResCache] Indexed " +
+                std::to_string(ri.index.size()) + " entries from " + p);
+            res_model_indexes_.push_back(std::move(ri));
+        } else if (!err.empty()) {
+            Logger::Get().Log(LogLevel::WARNING, "[ResCache] Model index failed: " + err);
+        }
+    };
+
+    // Level-specific comes first so it wins over common on name collisions.
+    addTex  (missionDir + "\\textures\\" + levelName + ".res");
+    addTex  (commonDir  + "\\textures\\location0.res");
+    addModel(missionDir + "\\models\\" + levelName + ".res");
+    addModel(commonDir  + "\\models\\location0.res");
+
+}
+
+// Try to find texture bytes in the in-memory .res index.
+std::vector<uint8_t> Renderer_Objects::FindTextureData(const std::string& textureId) const {
+    // Try exact name + .tex, then common format-suffix variant
+    auto tryId = [&](const std::string& id) -> std::vector<uint8_t> {
+        const std::string fname = id + ".tex";
+        for (const auto& ri : res_tex_indexes_) {
+            auto it = ri.index.find(fname);
+            if (it != ri.index.end())
+                return RES_ReadEntry(ri.res_path, it->second);
+        }
+        return {};
+    };
+    auto bytes = tryId(textureId);
+    if (!bytes.empty()) return bytes;
+    // Try stripped name (remove _argb8888 etc.) as fallback
+    const std::string& id = textureId;
+    size_t us = id.rfind('_');
+    if (us != std::string::npos && us > 0) {
+        // Only strip if the suffix looks like a format tag (all lower alpha/digits)
+        bool isFormat = true;
+        for (size_t i = us + 1; i < id.size(); ++i) {
+            if (!std::islower((unsigned char)id[i]) && !std::isdigit((unsigned char)id[i])) {
+                isFormat = false; break;
+            }
+        }
+        if (isFormat) bytes = tryId(id.substr(0, us));
+    }
+    return bytes;
+}
+
+// Try to find mesh bytes in the in-memory .res index.
+std::vector<uint8_t> Renderer_Objects::FindMeshData(const std::string& modelId) const {
+    const std::string fname = modelId + ".mef";
+    for (const auto& ri : res_model_indexes_) {
+        auto it = ri.index.find(fname);
+        if (it != ri.index.end())
+            return RES_ReadEntry(ri.res_path, it->second);
+    }
+    return {};
 }
 
 // Free every baked lightmap's GL textures and drop the per-task bake state.
@@ -521,13 +611,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     glUniform4f(loc_baseColor, 1.0f, 1.0f, 1.0f, 1.0f); // default: white
     glUniform3f(loc_tint, 1.0f, 1.0f, 1.0f); // default: no tint
 
-    // Atmospheric fog — same warm haze the game applies to geometry.
-    GLint loc_fogColor  = glGetUniformLocation(shader_program_, "u_fogColor");
-    GLint loc_fogFar    = glGetUniformLocation(shader_program_, "u_fogFar");
-    GLint loc_cameraPos = glGetUniformLocation(shader_program_, "u_cameraPos");
-    glUniform3f(loc_fogColor,  fog_color_.x, fog_color_.y, fog_color_.z);
-    glUniform1f(loc_fogFar,    fog_far_);
-    glUniform3f(loc_cameraPos, camera_pos.x, camera_pos.y, camera_pos.z);
+    // Fog is terrain-only — objects/buildings are never fogged.
 
     EnsurePortalDistancesLoaded();
 
@@ -751,19 +835,20 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 const bool haveBakePose = hasWorkingLightmap &&
                     GetLightmapBakePose(lmKey, bakedPos, bakedRot);
 
-                // Use the level's actual sun colors so non-lightmapped objects pick up
-                // the same warm/cool tint as the game. Scale front by 0.65 so even a
-                // fully-lit face stays within [0,1] when summed with the back (ambient).
-                // Exception: buildings whose LightmapInfo declares a dim "Indoors ambient
-                // light" (~0.08) use that as fallback instead of full outdoor sun — so
-                // interiors look dark and warm like the game rather than bright outdoors.
-                glm::vec3 kDefDirlight = sun_front_color_ * 0.65f;
-                glm::vec3 kDefAmbient  = global_ambient_;
+                // Default lighting matches the pre-lightmap look:
+                // Exterior — neutral ambient (0.4) + full sun diffuse from QSC sun color.
+                // Interior — no direct sun, dim ambient only (clearly darker than outside).
+                glm::vec3 kDefDirlight = sun_front_color_;
+                // Warm floor matching the game's feel — no harsh flat daylight
+                // Match the pre-lightmap default: every face was at least 40% ambient.
+                // That commit hardcoded ambient=0.4/dirlight=0.6 so nothing looked dark.
+                glm::vec3 kDefAmbient  = glm::max(global_ambient_, glm::vec3(0.40f, 0.40f, 0.40f));
                 {
                     const glm::vec3* indoorAmb = GetIndoorAmbientForTask(obj.taskId);
                     if (indoorAmb && !hasWorkingLightmap) {
                         kDefDirlight = glm::vec3(0.0f);
-                        kDefAmbient  = *indoorAmb;
+                        // Interior: use authored ambient, clamped well below exterior floor.
+                        kDefAmbient = glm::clamp(*indoorAmb, glm::vec3(0.22f), glm::vec3(0.40f, 0.40f, 0.40f));
                     }
                 }
 

@@ -1052,6 +1052,11 @@ ParsedGeometry ParseMefFile(const std::string& filepath) {
     return ParseMefGeometry(bytes, chunks, filepath);
 }
 
+ParsedGeometry ParseMefFileFromMemory(const std::vector<uint8_t>& bytes) {
+    const std::vector<ChunkInfo> chunks = ParseIlffChunks(bytes, "<memory>");
+    return ParseMefGeometry(bytes, chunks, "<memory>");
+}
+
 std::vector<glm::vec3> ComputeBoneWorldPositionsPublic(const std::vector<BoneInfo>& bones) {
     return ComputeBoneWorldPositions(bones);
 }

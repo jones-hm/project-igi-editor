@@ -500,6 +500,19 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 		else if (GLUT_UP == state) {
 			mouse_state_.left_button_down_ = false;
 			undo_state_pushed_for_manip_ = false; // reset undo guard for next click-drag
+
+			// Auto-recalc lightmap if the user dragged an object and it actually moved.
+			if (edit_dragging_ && selected_object_index_ >= 0) {
+				auto& objects = level_.GetLevelObjects().GetObjects();
+				if (selected_object_index_ < (int)objects.size()) {
+					const auto& obj = objects[selected_object_index_];
+					bool movedPos = glm::length(obj.pos - marker_manip_.start_pos_) > 0.5;
+					bool movedRot = glm::length(obj.rot - glm::dvec3(marker_manip_.start_rot_)) > 0.01;
+					if (movedPos || movedRot)
+						AutoRecalcLightmapForManipulated(selected_object_index_);
+				}
+			}
+
 			edit_dragging_ = false;
 			orbit_active_ = false;
 			graph_node_manip_.active_ = false;

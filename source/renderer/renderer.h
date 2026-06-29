@@ -539,6 +539,7 @@ public:
 
 	void					BeginLoadLevel();
 	void					SetLevel(int level) { objects_.SetLevel(level); }
+	void					LoadResCache(int levelNo, const std::string& igi_path) { objects_.LoadResCache(levelNo, igi_path); }
 
 	// Diagnostics: live object cache occupancy (for level-switch logging).
 	size_t					GetMeshCacheCount() const { return objects_.GetMeshCacheCount(); }
@@ -547,6 +548,7 @@ public:
 	// interface of IRendererLoader
 	void					SetupClearColor(const glm::vec4& color) override;
 	void					SetupFog(const glm::vec4& color, float fog_far) override;
+	void					SetFogEnabled(bool enabled) { objects_.SetFogEnabled(enabled); }
 	void					SetupSkydome(const skydome_define_s& d) override;
 
 	void					LoadFlatSkyLayerTex(int layer_no, const pic_s* pic) override;
@@ -692,6 +694,9 @@ public:
 	}
 	std::string GetModelFilePath(const std::string& modelId, bool isBuilding) {
 		return objects_.GetModelFilePath(modelId, isBuilding);
+	}
+	std::string GetOrExtractMefTemp(const std::string& modelId, bool isBuilding) {
+		return objects_.GetOrExtractMefTemp(modelId, isBuilding);
 	}
 	glm::vec3 GetSunDir() const { return objects_.GetSunDir(); }
 	glm::vec3 GetSunFrontColor() const { return objects_.GetSunFrontColor(); }

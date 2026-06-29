@@ -446,11 +446,14 @@ std::string LevelObjects::SerializeObjectRecursive(const std::vector<LevelObject
     std::function<std::string(int)> serialize = [&](int objectIdx) -> std::string {
         const LevelObject& node = objects[objectIdx];
 
-        // Collect live (non-deleted) children
+        // Collect live (non-deleted, non-proxy) children.
+        // isAttaProxy objects are editor-only virtual nodes — they must never
+        // appear in the QSC because they have no qscFuncName/argTokens.
         std::vector<int> liveChildren;
         for (int childIdx : node.childrenIndices) {
             if (childIdx < 0 || childIdx >= (int)objects.size()) continue;
             if (objects[childIdx].deleted) continue;
+            if (objects[childIdx].isAttaProxy) continue;
             liveChildren.push_back(childIdx);
         }
 

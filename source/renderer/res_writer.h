@@ -6,6 +6,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <cstdint>
 #include <functional>
 
@@ -32,3 +33,24 @@ RESFile RES_Parse(const std::string& filepath);
 
 // Extract a single resource by name (returns empty vector if not found)
 std::vector<uint8_t> RES_Extract(const std::string& filepath, const std::string& resourceName);
+
+// ---------------------------------------------------------------------------
+// Indexed random-access reader — reads only chunk headers to build a name→offset
+// map, then lets callers seek-and-read individual entries without holding the
+// whole archive in memory.  Ideal for the 32-bit process: peak allocation is one
+// entry (~5 MB) rather than the entire archive (200+ MB).
+// ---------------------------------------------------------------------------
+struct ResEntryInfo {
+    size_t data_offset; // byte offset of entry data inside the .res file
+    size_t data_size;   // byte length of entry data
+};
+
+// Build a name→info index from the .res file headers.  Fast: only reads 16-byte
+// chunk headers plus NAME chunks.  Call once after a level load.
+// Returns true if the file is valid.
+bool RES_BuildIndex(const std::string& filepath,
+                    std::unordered_map<std::string, ResEntryInfo>& out_index,
+                    std::string& error);
+
+// Read a single entry by offset/size.  Returns empty on I/O error.
+std::vector<uint8_t> RES_ReadEntry(const std::string& filepath, const ResEntryInfo& info);

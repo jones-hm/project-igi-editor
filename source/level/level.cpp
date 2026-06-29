@@ -91,12 +91,9 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 	char filename[1024];
 	std::string exeDir = GetExeDirectory();
 
-	// Extract textures and models from IGI .res archives (cached per-level)
-	AssetExtractor::EnsureLevelAssets(params.level_no_, Utils::GetIGIRootPath(), exeDir);
-	// Extract textures from all other levels once per session so cross-level
-	// texture references (e.g. model 618 in level 3 whose textures live in level 6)
-	// are available for the FindTextureFile cross-level search.
-	// AssetExtractor::EnsureAllLevelTextures(Utils::GetIGIRootPath(), exeDir);
+	// Textures and models are now loaded directly from .res archives into memory
+	// by Renderer_Objects::LoadResCache (called in app_level.cpp before BeginLoadLevel).
+	// No disk extraction to editor/textures or editor/models is performed.
 
 	// Verify terrain folder exists in game directory
 	try {
@@ -507,7 +504,8 @@ void Level::LoadFogInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loa
 			bestFogColor[2] = curFogColor[2];
 			// Fog density of 0 is a valid "no fog at this keyframe" state
 			// (observed: level3's night keyframe) — keep the far/no-fog default.
-			bestFogFarMeters = (curFogDensity > 0.0f) ? (1.0f / curFogDensity) * 7200.0f : fog_far_meters;
+			// Factor 120: density=0.12 (level1 haze) → fog_far=1000m; density=0.5 → 240m.
+			bestFogFarMeters = (curFogDensity > 0.0f) ? (1.0f / curFogDensity) * 120.0f : fog_far_meters;
 		}
 	}
 

@@ -34,5 +34,6 @@ struct Mesh {
 };
 
 Mesh  loadObjModel(const std::string& filepath, const std::string& texturePath = "");
+Mesh  loadObjModelFromMemory(const std::vector<uint8_t>& bytes, const std::string& modelId);
 void  renderModel(const Mesh& mesh);
 void  destroyModel(Mesh& mesh);

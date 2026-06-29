@@ -594,6 +594,27 @@ bool Renderer_Objects::UpdateAttaLocalPosInMef(
     return true;
 }
 
+void Renderer_Objects::PrePopulateAttaFromParsed(const std::string& modelId, bool isBuilding,
+                                                  const std::vector<MefAttachment>& mefAttachments) {
+    std::string cacheKey = std::to_string(current_level_) + ":" +
+                           (isBuilding ? "building:" : "object:") + modelId;
+    if (attachment_cache_.find(cacheKey) != attachment_cache_.end()) return;
+
+    std::vector<AttachInfo> attaches;
+    for (const auto& a : mefAttachments) {
+        std::string aname(a.name, strnlen(a.name, 16));
+        if (aname.empty()) continue;
+        AttachInfo info;
+        info.modelId = aname;
+        info.px = a.px; info.py = a.py; info.pz = a.pz;
+        info.r[0]=a.r00; info.r[1]=a.r01; info.r[2]=a.r02;
+        info.r[3]=a.r03; info.r[4]=a.r04; info.r[5]=a.r05;
+        info.r[6]=a.r06; info.r[7]=a.r07; info.r[8]=a.r08;
+        attaches.push_back(info);
+    }
+    attachment_cache_[cacheKey] = std::move(attaches);
+}
+
 void Renderer_Objects::LoadAttachmentsRecursive(const std::string& modelId, bool isBuilding,
                                                  std::unordered_set<std::string>& visited) {
     if (!visited.insert(modelId).second) return; // cycle guard
@@ -601,63 +622,120 @@ void Renderer_Objects::LoadAttachmentsRecursive(const std::string& modelId, bool
     std::string cacheKey = std::to_string(current_level_) + ":" +
                            (isBuilding ? "building:" : "object:") + modelId;
 
-    if (attachment_cache_.find(cacheKey) != attachment_cache_.end()) return;
-
-    std::string filepath = FindModelFile(modelId, isBuilding);
-    if (filepath.empty()) {
-        attachment_cache_[cacheKey] = {};
+    // If attachment_cache_ already has this entry (from PrePopulateAttaFromParsed or a
+    // previous call), skip re-parsing the MEF but still ensure every sub-model's mesh
+    // is loaded — PrePopulateAttaFromParsed only fills the structural list, not meshes.
+    auto existingIt = attachment_cache_.find(cacheKey);
+    if (existingIt != attachment_cache_.end()) {
+        for (const auto& att : existingIt->second) {
+            std::string subKey = std::to_string(current_level_) + ":" +
+                                 (isBuilding ? "building:" : "object:") + att.modelId;
+            if (mesh_cache_.find(subKey) == mesh_cache_.end()) {
+                bool loaded = false;
+                std::vector<uint8_t> subBytes = FindMeshData(att.modelId);
+                if (!subBytes.empty()) {
+                    try {
+                        Mesh subMesh = loadObjModelFromMemory(subBytes, att.modelId);
+                        ApplyTexturesToMesh(subMesh, att.modelId, modelId);
+                        mesh_cache_[subKey] = subMesh;
+                        loaded = true;
+                    } catch (...) {}
+                }
+                if (!loaded) {
+                    std::string subFile = FindModelFile(att.modelId, isBuilding);
+                    if (!subFile.empty()) {
+                        try {
+                            Mesh subMesh = loadObjModel(subFile, "");
+                            ApplyTexturesToMesh(subMesh, att.modelId, modelId);
+                            mesh_cache_[subKey] = subMesh;
+                            loaded = true;
+                        } catch (...) {}
+                    }
+                    if (!loaded) {
+                        Mesh empty; mesh_cache_[subKey] = empty;
+                    }
+                }
+            }
+            LoadAttachmentsRecursive(att.modelId, isBuilding, visited);
+        }
         return;
     }
 
+    // Parse the parent MEF to find ATTA records — try res cache first.
+    ParsedGeometry geo;
+    {
+        bool parsedOk = false;
+        std::vector<uint8_t> mefBytes = FindMeshData(modelId);
+        if (!mefBytes.empty()) {
+            try { geo = ParseMefFileFromMemory(mefBytes); parsedOk = true; } catch (...) {}
+        }
+        if (!parsedOk) {
+            std::string filepath = FindModelFile(modelId, isBuilding);
+            if (filepath.empty()) {
+                attachment_cache_[cacheKey] = {};
+                return;
+            }
+            try { geo = ParseMefFile(filepath); } catch (...) {}
+        }
+    }
+
     std::vector<AttachInfo> attaches;
-    try {
-        ParsedGeometry geo = ParseMefFile(filepath);
-        for (const auto& a : geo.mefAttachments) {
-            std::string aname(a.name, strnlen(a.name, 16));
-            if (aname.empty()) continue;
+    for (const auto& a : geo.mefAttachments) {
+        std::string aname(a.name, strnlen(a.name, 16));
+        if (aname.empty()) continue;
 
-            AttachInfo info;
-            info.modelId = aname;
-            info.px = a.px; info.py = a.py; info.pz = a.pz;
-            info.r[0]=a.r00; info.r[1]=a.r01; info.r[2]=a.r02;
-            info.r[3]=a.r03; info.r[4]=a.r04; info.r[5]=a.r05;
-            info.r[6]=a.r06; info.r[7]=a.r07; info.r[8]=a.r08;
-            attaches.push_back(info);
+        AttachInfo info;
+        info.modelId = aname;
+        info.px = a.px; info.py = a.py; info.pz = a.pz;
+        info.r[0]=a.r00; info.r[1]=a.r01; info.r[2]=a.r02;
+        info.r[3]=a.r03; info.r[4]=a.r04; info.r[5]=a.r05;
+        info.r[6]=a.r06; info.r[7]=a.r07; info.r[8]=a.r08;
+        attaches.push_back(info);
 
-            Logger::Get().Log(LogLevel::INFO,
-                "[Renderer_Objects] Attachment '" + aname + "' of '" + modelId +
-                "' pos=(" + std::to_string(a.px) + "," + std::to_string(a.py) +
-                "," + std::to_string(a.pz) + ")");
-
-            // Pre-warm the sub-model mesh
-            std::string subFile = FindModelFile(aname, isBuilding);
-            if (subFile.empty()) {
-                Logger::Get().Log(LogLevel::WARNING,
-                    "[Renderer_Objects] Attachment sub-model NOT FOUND: " + aname);
-            } else {
-                std::string subKey = std::to_string(current_level_) + ":" +
-                                     (isBuilding ? "building:" : "object:") + aname;
-                if (mesh_cache_.find(subKey) == mesh_cache_.end()) {
+        // Pre-warm the sub-model mesh — try res cache first, disk fallback.
+        std::string subKey = std::to_string(current_level_) + ":" +
+                             (isBuilding ? "building:" : "object:") + aname;
+        if (mesh_cache_.find(subKey) == mesh_cache_.end()) {
+            bool loaded = false;
+            std::vector<uint8_t> subBytes = FindMeshData(aname);
+            if (!subBytes.empty()) {
+                try {
+                    Mesh subMesh = loadObjModelFromMemory(subBytes, aname);
+                    ApplyTexturesToMesh(subMesh, aname, modelId);
+                    mesh_cache_[subKey] = subMesh;
+                    Logger::Get().Log(LogLevel::INFO,
+                        "[Renderer_Objects] ATTA sub-model loaded from ResCache: " + aname +
+                        " (" + std::to_string(subMesh.vertexCount) + " verts)");
+                    loaded = true;
+                } catch (const std::exception& se) {
+                    Logger::Get().Log(LogLevel::WARNING,
+                        "[Renderer_Objects] ATTA ResCache parse failed for " + aname + ": " + se.what());
+                }
+            }
+            if (!loaded) {
+                std::string subFile = FindModelFile(aname, isBuilding);
+                if (subFile.empty()) {
+                    Logger::Get().Log(LogLevel::WARNING,
+                        "[Renderer_Objects] ATTA sub-model NOT FOUND: " + aname);
+                    Mesh empty; mesh_cache_[subKey] = empty;
+                } else {
                     try {
                         Mesh subMesh = loadObjModel(subFile, "");
                         ApplyTexturesToMesh(subMesh, aname, modelId);
                         mesh_cache_[subKey] = subMesh;
                         Logger::Get().Log(LogLevel::INFO,
-                            "[Renderer_Objects] Attachment sub-model loaded: " + aname +
+                            "[Renderer_Objects] ATTA sub-model loaded from disk: " + aname +
                             " (" + std::to_string(subMesh.vertexCount) + " verts)");
-                    } catch (const std::exception &se) {
+                    } catch (const std::exception& se) {
                         Logger::Get().Log(LogLevel::ERR,
-                            "[Renderer_Objects] Attachment sub-model load FAILED: " + aname + ": " + se.what());
+                            "[Renderer_Objects] ATTA sub-model load FAILED: " + aname + ": " + se.what());
                         Mesh empty; mesh_cache_[subKey] = empty;
                     }
                 }
-                // Recurse: parse this child's own ATTA section
-                LoadAttachmentsRecursive(aname, isBuilding, visited);
             }
         }
-    } catch (const std::exception &pe) {
-        Logger::Get().Log(LogLevel::WARNING,
-            "[Renderer_Objects] Could not parse ATTA from '" + filepath + "': " + pe.what());
+        // Recurse: parse this child's own ATTA section
+        LoadAttachmentsRecursive(aname, isBuilding, visited);
     }
 
     attachment_cache_[cacheKey] = std::move(attaches);

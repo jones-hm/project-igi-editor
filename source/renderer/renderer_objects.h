@@ -4,9 +4,11 @@
 #include "mef_native.h"
 #include "../level/level_objects.h"
 #include "dat_writer.h"
+#include "res_writer.h"
 #include <map>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <unordered_set>
 #include <set>
 
@@ -68,6 +70,23 @@ public:
 
     void SetLevel(int level) { current_level_ = level; }
     void ClearCaches();
+
+    // Build an in-memory index for the level's .res archives so textures and
+    // models are loaded directly from the archive on demand — no disk extraction.
+    // Call once after level assets are available (replacing EnsureLevelAssets).
+    void LoadResCache(int levelNo, const std::string& igi_path);
+    // Clear all .res indexes (called on level switch before LoadResCache for new level).
+    void ClearResCache();
+
+    // Find texture/mesh bytes from the in-memory .res index.
+    // Returns empty vector if not found (callers fall back to on-disk paths).
+    std::vector<uint8_t> FindTextureData(const std::string& textureId) const;
+    std::vector<uint8_t> FindMeshData(const std::string& modelId) const;
+
+    // Pre-fill the attachment cache from already-parsed geometry (avoids re-reading
+    // MEF bytes that were already loaded for mesh creation in GetOrLoadMesh).
+    void PrePopulateAttaFromParsed(const std::string& modelId, bool isBuilding,
+                                   const std::vector<MefAttachment>& mefAttachments);
 
     // Diagnostics: live cache occupancy (for level-switch logging).
     size_t GetMeshCacheCount() const { return mesh_cache_.size(); }
@@ -139,6 +158,11 @@ public:
     std::string GetModelFilePath(const std::string& modelId, bool isBuilding) {
         return FindModelFile(modelId, isBuilding);
     }
+    // Like GetModelFilePath but falls back to extracting the MEF from the
+    // res cache to a temp file when there are no extracted disk files.
+    // Returns the path (disk or temp). Caller must NOT delete it (temp files
+    // are tracked in tmp_mef_paths_ and cleaned on ClearCaches).
+    std::string GetOrExtractMefTemp(const std::string& modelId, bool isBuilding);
     glm::vec3 GetSunDir() const { return sun_dir_; }
     glm::vec3 GetSunFrontColor() const { return sun_front_color_; }
     glm::vec3 GetSunBackColor() const { return sun_back_color_; }
@@ -167,6 +191,7 @@ public:
     void SetFogParams(const glm::vec3& color, float far_dist) {
         fog_color_ = color; fog_far_ = far_dist;
     }
+    void SetFogEnabled(bool enabled) { fog_enabled_ = enabled; }
 
     // Indoor ambient fallback: each Building/EditRigidObj's LightmapInfo child
     // declares a dim "Indoors ambient light" (e.g. 0.08) used as fallback when
@@ -181,6 +206,16 @@ public:
     }
 
 private:
+    // Per-level .res index (name→offset) — avoids extracting to editor/textures or editor/models.
+    // Multiple .res files (current level + common) are merged into one flat map.
+    struct ResIndex {
+        std::string                                     res_path;
+        std::unordered_map<std::string, ResEntryInfo>  index;
+    };
+    std::vector<ResIndex> res_tex_indexes_;   // level + common texture .res indexes
+    std::vector<ResIndex> res_model_indexes_; // level + common model .res indexes
+    std::vector<std::string> tmp_mef_paths_;  // temp files created by GetOrExtractMefTemp
+
     int current_level_ = 1;
     bool lightmaps_enabled_ = false;
     glm::vec3 sun_dir_ = glm::vec3(0.5f, 1.0f, 0.5f);
@@ -190,6 +225,7 @@ private:
     float global_gamma_ = 1.0f;
     glm::vec3 fog_color_ = glm::vec3(0.15f, 0.15f, 0.15f);
     float fog_far_ = 1e9f; // huge default = no fog until SetupFog() is called from level.cpp
+    bool fog_enabled_ = true;
     std::map<std::string, glm::vec3> indoor_ambient_by_task_; // taskId -> LightmapInfo "Indoors ambient light"
     struct BakePose {
         glm::dvec3 pos;

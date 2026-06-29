@@ -26,8 +26,15 @@ Renderer::~Renderer() { Shutdown(); }
 bool Renderer::Init() {
   ubo_mats_ = GL_CreateBuffer(GL_UNIFORM_BUFFER, sizeof(ubo_mats_s), nullptr,
                               GL_DYNAMIC_DRAW);
-  ubo_fog_ = GL_CreateBuffer(GL_UNIFORM_BUFFER, sizeof(ubo_fog_s), nullptr,
-                             GL_STATIC_DRAW);
+  // Initialize UBO with safe defaults so terrain fog shader never sees g_fog_far=0
+  // (divide-by-zero → NaN → black overlay before SetupFog is called on first level load).
+  {
+    ubo_fog_s safe_fog;
+    safe_fog.color_ = glm::vec4(0.15f, 0.15f, 0.15f, 1.0f);
+    safe_fog.far_   = 1e9f; // enormous distance = no visible fog until level loads
+    ubo_fog_ = GL_CreateBuffer(GL_UNIFORM_BUFFER, sizeof(ubo_fog_s), &safe_fog,
+                               GL_STATIC_DRAW);
+  }
 
   if (!skydome_.Init()) {
     return false;
@@ -89,6 +96,9 @@ void Renderer::BeginLoadLevel() {
   flat_sky_layers_.UnloadAllTexs();
   terrain_.UnloadAllTexs();
   objects_.ClearCaches();
+  // Disable rain until the new level's QSC is parsed — prevents rain from a
+  // prior level bleeding into a level that has no RainEffect task.
+  rain_.SetParams(false, 0.0f, 0.0f, 0.0f);
   graph_overlay_ = GraphFile{};
   graph_overlay_visible_ = false;
   graph_overlay_dirty_ = false;
