@@ -170,12 +170,9 @@ void App::LoadLevel(int level_no) {
 		hover_object_index_ = -1;
 		status_message_.clear();
 
-		// NOTE: We must NOT purge the previous level's extracted assets here. The
-		// texture/model resolver (FindTextureFile step 6 + lazy cross-level extraction)
-		// deliberately searches *other* levels' extracted folders to resolve cross-level
-		// references (e.g. a level-6 object using a level-14 texture). Deleting them on
-		// switch removes legitimate fallback sources. The renderer caches are still fully
-		// torn down by BeginLoadLevel()/ClearCaches() below.
+		// Previous level's extracted disk assets are cleared above (line ~136)
+		// via last_loaded_level_ tracking before this point is reached.
+		// The renderer GL caches are torn down by BeginLoadLevel()/ClearCaches().
 		renderer_.SetLevel(level_no);
 		renderer_.BeginLoadLevel();
 		Logger::Get().Log(LogLevel::INFO, "[App] After BeginLoadLevel teardown: renderer meshCache=" +
@@ -548,11 +545,10 @@ void App::LoadLevel(int level_no) {
 
 		if (Config::Get().musicEnabled) PlayLevelMusic(level_no);
 
-		// Auto-load all baked lightmaps on every level start (whether or not the
-		// Escape-menu checkbox is on) so the level looks lit by default, like the
-		// game. The checkbox is a runtime toggle: OFF clears them (default bright
-		// look), ON re-calculates. Only runs when the level ships a lightmaps.res.
-		{
+		// Auto-load baked lightmaps on level start ONLY when the lightmaps
+		// setting is enabled. Default OFF prevents spawning hundreds of
+		// igi1conv processes on levels like 3 that crash the 32-bit process.
+		if (Config::Get().enableLightmaps) {
 			const std::string lmRes = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
 				std::to_string(level_no) + "\\lightmaps\\lightmaps.res";
 			if (std::filesystem::exists(lmRes)) {

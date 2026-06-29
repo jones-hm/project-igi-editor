@@ -17,7 +17,7 @@ void Renderer_Objects::SetLightmapForTask(const std::string& taskId, std::vector
                                           const glm::dvec3& bakedPos, const glm::dvec3& bakedRot) {
     ClearLightmapForTask(taskId);
     lightmap_textures_by_task_[taskId] = std::move(textures);
-    lightmap_bake_pose_by_task_[taskId] = { bakedPos, bakedRot };
+    lightmap_bake_pose_by_task_[taskId] = { bakedPos, bakedRot, sun_dir_ };
 }
 
 void Renderer_Objects::ClearLightmapForTask(const std::string& taskId) {
@@ -38,12 +38,18 @@ const std::vector<GLuint>* Renderer_Objects::GetLightmapForTask(const std::strin
 bool Renderer_Objects::IsLightmapStale(const std::string& taskId, const glm::dvec3& curPos, const glm::dvec3& curRot) const {
     auto it = lightmap_bake_pose_by_task_.find(taskId);
     if (it == lightmap_bake_pose_by_task_.end()) return false;
-    constexpr double kPosEpsilon = 1.0;   // world units (post kMefNativeScale-equivalent raw QSC units)
-    constexpr double kRotEpsilon = 0.01;  // radians
-    const glm::dvec3& bakedPos = it->second.first;
-    const glm::dvec3& bakedRot = it->second.second;
-    return glm::length(curPos - bakedPos) > kPosEpsilon ||
-           glm::length(curRot - bakedRot) > kRotEpsilon;
+    constexpr double kPosEpsilon = 1.0;    // world units
+    constexpr double kRotEpsilon = 0.01;   // radians
+    constexpr float  kSunEpsilon = 0.05f;  // angle change (dot-product threshold ~3 degrees)
+    const auto& bp = it->second;
+    if (glm::length(curPos - bp.pos) > kPosEpsilon) return true;
+    if (glm::length(curRot - bp.rot) > kRotEpsilon) return true;
+    // Sun direction change: if sun moved more than ~3° since bake, lightmap is stale.
+    if (glm::length(sun_dir_) > 1e-6f && glm::length(bp.sun_dir) > 1e-6f) {
+        float dot = glm::dot(glm::normalize(sun_dir_), glm::normalize(bp.sun_dir));
+        if (dot < 1.0f - kSunEpsilon) return true;
+    }
+    return false;
 }
 
 // ─── Shader Sources ───────────────────────────────────────────────────────────

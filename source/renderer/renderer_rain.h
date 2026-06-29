@@ -18,6 +18,7 @@ public:
     void SetParams(bool active, float startMeters, float endMeters, float alpha);
 
     void Draw(GLuint ubo_mats, const glm::vec3& cameraPos);
+    void SetIndoors(bool indoors) { indoors_ = indoors; }
 
 private:
     GLuint shader_program_ = 0;
@@ -27,6 +28,7 @@ private:
     int num_drops_ = 0;
 
     bool active_ = false;
+    bool indoors_ = false;
     float start_meters_ = 0.0f;
     float end_meters_ = 0.0f;
     float alpha_ = 0.5f;

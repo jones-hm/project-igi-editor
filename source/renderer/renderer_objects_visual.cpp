@@ -211,6 +211,27 @@ void Renderer_Objects::DrawModelPreview(const std::string& modelId, GLuint ubo_m
     if (loc_glass >= 0)     glUniform1f(loc_glass, 0.0f);
     if (loc_baseColor >= 0) glUniform4f(loc_baseColor, 1.0f, 1.0f, 1.0f, 1.0f);
 
+    // Reset uniforms that the scene pass may have left in a non-default state.
+    // Without this, u_useLightmap=1 (set by a building draw) causes the preview
+    // shader to sample texture unit 1 (stale lightmap) instead of the diffuse
+    // texture, producing gray or black output regardless of texture content.
+    {
+        GLint loc_useLightmap = glGetUniformLocation(shader_program_, "u_useLightmap");
+        GLint loc_tint        = glGetUniformLocation(shader_program_, "u_tint");
+        GLint loc_gamma       = glGetUniformLocation(shader_program_, "u_gamma");
+        GLint loc_lightDir    = glGetUniformLocation(shader_program_, "u_lightDir");
+        GLint loc_fogFar      = glGetUniformLocation(shader_program_, "u_fogFar");
+        GLint loc_fogColor    = glGetUniformLocation(shader_program_, "u_fogColor");
+        GLint loc_camPos      = glGetUniformLocation(shader_program_, "u_cameraPos");
+        if (loc_useLightmap >= 0) glUniform1i(loc_useLightmap, 0);
+        if (loc_tint >= 0)        glUniform3f(loc_tint, 1.0f, 1.0f, 1.0f);
+        if (loc_gamma >= 0)       glUniform1f(loc_gamma, 1.0f);
+        if (loc_lightDir >= 0)    glUniform3f(loc_lightDir, 0.5f, 1.0f, 0.8f);
+        if (loc_fogFar >= 0)      glUniform1f(loc_fogFar, 1e9f);
+        if (loc_fogColor >= 0)    glUniform3f(loc_fogColor, 0.0f, 0.0f, 0.0f);
+        if (loc_camPos >= 0)      glUniform3f(loc_camPos, 0.0f, -3.2f, 1.2f);
+    }
+
     // Hash-based fallback color for untextured submeshes (matches the main draw).
     float r = 0.6f, g = 0.6f, b = 0.6f;
     {

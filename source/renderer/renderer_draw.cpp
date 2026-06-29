@@ -235,6 +235,28 @@ void Renderer::Draw(const draw_params_s &params,
                   params.show_magic_obj_spheres_, params.skip_static_draw_indices_);
     splines_.Draw(params.level_objects_->GetObjects(), ubo_mats_,
                   objects_.GetShaderProgram());
+
+    // Suppress rain when the camera is inside a building AABB.
+    // Uses the mesh's local-space halfExtents scaled to world units (BASE_SCALE=40.96).
+    {
+        constexpr float BASE_SCALE = 40.96f;
+        bool indoors = false;
+        const glm::vec3 camPos = params.view_define_->pos_;
+        for (const auto& obj : params.level_objects_->GetObjects()) {
+            if (obj.deleted || !obj.isBuilding || obj.modelId.empty()) continue;
+            Mesh bm = objects_.GetOrLoadMesh(obj.modelId, true);
+            if (bm.vertexCount == 0 && bm.subMeshes.empty()) continue;
+            float ws = BASE_SCALE * obj.scale;
+            glm::vec3 wc = glm::vec3(obj.pos) + bm.center * ws;
+            glm::vec3 hw = bm.halfExtents * ws;
+            glm::vec3 d  = camPos - wc;
+            if (glm::abs(d.x) < hw.x && glm::abs(d.y) < hw.y && glm::abs(d.z) < hw.z) {
+                indoors = true;
+                break;
+            }
+        }
+        rain_.SetIndoors(indoors);
+    }
     rain_.Draw(ubo_mats_, params.view_define_->pos_);
   }
 

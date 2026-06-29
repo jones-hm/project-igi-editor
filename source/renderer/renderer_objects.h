@@ -132,7 +132,7 @@ public:
     bool GetLightmapBakePose(const std::string& taskId, glm::dvec3& pos, glm::dvec3& rot) const {
         auto it = lightmap_bake_pose_by_task_.find(taskId);
         if (it == lightmap_bake_pose_by_task_.end()) return false;
-        pos = it->second.first; rot = it->second.second; return true;
+        pos = it->second.pos; rot = it->second.rot; return true;
     }
     // Public access to model-file resolution + the resolved level sun (for the
     // editor's lightmap recalc pipeline).
@@ -191,7 +191,12 @@ private:
     glm::vec3 fog_color_ = glm::vec3(0.15f, 0.15f, 0.15f);
     float fog_far_ = 1e9f; // huge default = no fog until SetupFog() is called from level.cpp
     std::map<std::string, glm::vec3> indoor_ambient_by_task_; // taskId -> LightmapInfo "Indoors ambient light"
-    std::map<std::string, std::pair<glm::dvec3, glm::dvec3>> lightmap_bake_pose_by_task_; // taskId -> (pos, rot)
+    struct BakePose {
+        glm::dvec3 pos;
+        glm::dvec3 rot;
+        glm::vec3  sun_dir; // sun direction at bake time — stale if sun moved significantly
+    };
+    std::map<std::string, BakePose> lightmap_bake_pose_by_task_;
     std::map<std::string, Mesh> mesh_cache_;
     std::map<std::string, GLuint> texture_cache_;
     std::map<std::string, std::vector<std::string>> model_texture_map_cache_;

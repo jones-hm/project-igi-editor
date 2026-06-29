@@ -129,7 +129,7 @@ void Renderer_Rain::SetParams(bool active, float startMeters, float endMeters, f
 }
 
 void Renderer_Rain::Draw(GLuint ubo_mats, const glm::vec3& cameraPos) {
-    if (!active_ || !shader_program_) return;
+    if (!active_ || !shader_program_ || indoors_) return;
 
     // RainEffect's Traceline start/end are raycast-occlusion heights (sky-to-ground
     // probe), not absolute world Y — re-anchor them to the camera each frame so the
