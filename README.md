@@ -1,6 +1,6 @@
-# IGI Editor
+# Project IGI Editor
 
-**IGI Editor** is a professional 3D world and object manipulation toolkit for Project IGI. Inspired by the official [IGI 2 Editor](https://www.nexusmods.com/igi2covertstrike/mods/1) created by the original IGI Developers, it provides a modern interface for level research, object placement, and terrain modification.
+**Project IGI Editor** is a professional 3D world and object manipulation toolkit for `Project I.G.I 1`. Inspired by the official [IGI 2 Editor](https://www.nexusmods.com/igi2covertstrike/mods/1) created by the original IGI Developers, it provides a modern interface for level research, object placement, and terrain modification.
 
 Professional 3D **modding** suite featuring click-to-select map selection, train and spline tools, a streamlined workspace menu, automated asset extraction, flawless native MEF model loading (including complex buildings and bone structures), integrated QVM decompilation, and a full headless CLI toolchain. It includes an **IGI 2 Style position and orientation properties editor, sliders, pushbuttons, etc.** All asset conversion (DAT, MTP, QSC, QVM, RES, Graph, TEX, FNT, MEF, Terrain) is delegated to the bundled **`igi1conv.exe`** (v1.7.0, located at `editor/tools/igi1conv/`) through a single shared spawner (`source/utils_igi1conv.{h,cpp}`); only the runtime loaders that need data the CLI cannot supply every frame (mef_native, fnt_parser, qsc_lexer/parser, terrain_files) stay in-process. Supports editing and compiling for all 14 original game levels with native asset parity.
 
@@ -292,10 +292,10 @@ See the [CHANGELOGS.md](CHANGELOGS.md) for version history and detailed change l
 
 If you encounter any issues or have suggestions, feel free to reach out:
 
-- **🎮 Discord**: Message me at `Jones_IGI#3954` or join our [Discord Server](https://discord.com/invite/QpbQrRFAER).
+- **🎮 Discord**: Message me at `Jones_IGI#3954` or join our [Discord Server](https://discord.com/invite/9SJucSsyt).
 - **📧 Email**: [igiproz.hm@gmail.com](mailto:igiproz.hm@gmail.com).
-- **🌟 GitHub**: Follow the project on [Jones-HM GitHub](https://github.com/Jones-HM/).
-- **📺 YouTube**: Subscribe to [IGI Research Devs](https://www.youtube.com/@igi-research-devs) for guides and walkthroughs.
+- **🌟 GitHub**: Follow the project on [Jones-HM GitHub](https://github.com/heaven-hm/).
+- **📺 YouTube**: Subscribe to [IGI Research Devs](https://www.youtube.com/@heaven-hm91) for guides and walkthroughs.
 
 ## Author
 Written and maintained by **Heaven-HM**.
