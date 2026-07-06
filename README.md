@@ -290,10 +290,10 @@ See the [CHANGELOGS.md](CHANGELOGS.md) for version history and detailed change l
 
 If you encounter any issues or have suggestions, feel free to reach out:
 
-- **🎮 Discord**: Message me at `Jones_IGI#3954` or join our [Discord Server](https://discord.com/invite/9SJucSsyt).
+- **🎮 Discord**: Message me at `heaven.hm` or join our [Discord Server](https://discord.com/invite/9SJucSsyt).
 - **📧 Email**: [igiproz.hm@gmail.com](mailto:igiproz.hm@gmail.com).
-- **🌟 GitHub**: Follow the project on [Jones-HM GitHub](https://github.com/heaven-hm/).
-- **📺 YouTube**: Subscribe to [IGI Research Devs](https://www.youtube.com/@heaven-hm91) for guides and walkthroughs.
+- **🌟 GitHub**: Follow the project on [Heaven-HM profile](https://github.com/heaven-hm/).
+- **📺 YouTube**: Subscribe to [Heaven-HM channel](https://www.youtube.com/@heaven-hm91) for guides and walkthroughs.
 
 ## Author
 Written and maintained by **Heaven-HM**.
