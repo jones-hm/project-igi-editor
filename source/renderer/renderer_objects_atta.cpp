@@ -819,10 +819,19 @@ void Renderer_Objects::DrawAttachmentsRecursive(
 			const bool isMainRotor = (att.pz >= maxZ - 1.0f);
 			const bool isTailRotor = (!isMainRotor && att.py <= minY + 1.0f);
 			if (isMainRotor) {
-				float angle = -elapsed_time_secs_ * 15.0f;  // reversed to match game rotor direction
-				childWorldMat = childWorldMat * glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0, 0, 1));
+				// Rotate purely around the attachment's placed Y (up) axis, centered at its hub (worldPos).
+				// This guarantees spin in-place on its own axis with no position/translation change.
+				// Negative angle for CCW around the positive Y direction (flip sign per request).
+				glm::vec3 hub = worldPos;
+				glm::vec3 up = glm::vec3(childWorldMat[0][1], childWorldMat[1][1], childWorldMat[2][1]);
+				if (glm::length(up) > 0.0001f) up = glm::normalize(up); else up = glm::vec3(0, 1, 0);
+				float angle = -elapsed_time_secs_ * 15.0f;
+				glm::mat4 R = glm::rotate(glm::mat4(1.0f), angle, up);
+				glm::mat4 spinAtHub =
+				    glm::translate(glm::mat4(1.0f), hub) * R * glm::translate(glm::mat4(1.0f), -hub);
+				childWorldMat = spinAtHub * childWorldMat;
 			} else if (isTailRotor) {
-				float angle = -elapsed_time_secs_ * 25.0f;  // reversed to match game rotor direction
+				float angle = -elapsed_time_secs_ * 25.0f;
 				childWorldMat = childWorldMat * glm::rotate(glm::mat4(1.0f), angle, glm::vec3(1, 0, 0));
 			}
 		}
