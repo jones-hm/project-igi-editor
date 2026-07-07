@@ -97,7 +97,10 @@ bool App::Init(int argc, char** argv) {
 	ConfigData& cfg = Config::Get();
 
 	renderer_.SetLightmapsEnabled(cfg.enableLightmaps);
-	renderer_.SetFogEnabled(cfg.enableFog);
+renderer_.SetFogEnabled(cfg.enableFog);
+	renderer_.SetFogIntensity(cfg.fogIntensity);
+	fog_on_ = cfg.enableFog;
+	fog_intensity_ = cfg.fogIntensity;
 
 	auto_save_enabled_ = cfg.auto_save_enabled;
 	auto_save_interval_seconds_ = cfg.auto_save_interval_seconds;
@@ -107,9 +110,11 @@ bool App::Init(int argc, char** argv) {
 	draw_params_.overlay_wireframe_ = Arg_OptionIdx(argc, argv, "-wireframe") > 0;
 	draw_params_.draw_parts_ = Arg_ReadInt(argc, argv, "-draw_parts", -1);
 	draw_params_.draw_terrain_options_ = Arg_ReadInt(argc, argv, "-draw_terrain_opts", -1);
-	// Apply config fog preference to terrain draw options on startup.
-	if (!cfg.enableFog)
-		draw_params_.draw_terrain_options_ &= ~Renderer_Terrain::DRAW_TERRAIN_OPT_FOG;
+// Apply config fog preference to terrain draw options on startup.
+if (cfg.enableFog)
+	draw_params_.draw_terrain_options_ |= Renderer_Terrain::DRAW_TERRAIN_OPT_FOG;
+else
+	draw_params_.draw_terrain_options_ &= ~Renderer_Terrain::DRAW_TERRAIN_OPT_FOG;
 	terrain_mod_options_ = Arg_ReadInt(argc, argv, "-terrain_mod_opts", terrain_mod_options_);
 	stick_to_ground_ = Arg_OptionIdx(argc, argv, "-stick_to_ground") > 0;
 
@@ -242,6 +247,24 @@ void App::ToggleTerrainDrawOption(int opt) {
 
 void App::SetFogEnabled(bool enabled) {
     renderer_.SetFogEnabled(enabled);
+}
+
+void App::ToggleFog() {
+    fog_on_ = !fog_on_;
+    renderer_.SetFogEnabled(fog_on_);
+    if (fog_on_)
+        draw_params_.draw_terrain_options_ |= Renderer_Terrain::DRAW_TERRAIN_OPT_FOG;
+    else
+        draw_params_.draw_terrain_options_ &= ~Renderer_Terrain::DRAW_TERRAIN_OPT_FOG;
+    Config::Get().enableFog = fog_on_;
+    Config::Save();
+}
+
+void App::SetFogIntensityPct(int pct) {
+    fog_intensity_ = pct;
+    renderer_.SetFogIntensity(pct);
+    Config::Get().fogIntensity = pct;
+    Config::Save();
 }
 
 void App::ToggleTerrainModOption(int opt) {
@@ -469,18 +492,20 @@ void App::Frame(float delta_seconds) {
 			.terrain_brush_          = edit_brush_,
 			.terrain_brush_radius_   = edit_brush_radius_,
 			.terrain_brush_strength_ = edit_brush_strength_,
-			.auto_save_enabled_        = auto_save_enabled_,
-			.auto_save_interval_seconds_ = auto_save_interval_seconds_,
-			.music_on_ = music_playing_,
-			.lightmaps_on_ = Config::Get().enableLightmaps,
-			.anim_status_  = BuildAnimStatusString(),
-			.anim_playing_ = !animPlaybacks_.empty(),
-			.anim_debug_visible_ = show_anim_debug_,
-			.prop_anim_bone_hierarchy_ = propAnimBoneHierarchy,
-			.prop_anim_ids_ = propAnimIds,
-			.prop_anim_active_id_ = propAnimActiveId,
-			.prop_anim_is_playing_ = propAnimIsPlaying,
-		};
+		.auto_save_enabled_        = auto_save_enabled_,
+		.auto_save_interval_seconds_ = auto_save_interval_seconds_,
+		.music_on_ = music_playing_,
+	.lightmaps_on_ = Config::Get().enableLightmaps,
+		.fog_on_ = fog_on_,
+		.fog_intensity_ = fog_intensity_,
+		.anim_status_  = BuildAnimStatusString(),
+		.anim_playing_ = !animPlaybacks_.empty(),
+		.anim_debug_visible_ = show_anim_debug_,
+		.prop_anim_bone_hierarchy_ = propAnimBoneHierarchy,
+		.prop_anim_ids_ = propAnimIds,
+		.prop_anim_active_id_ = propAnimActiveId,
+		.prop_anim_is_playing_ = propAnimIsPlaying,
+	};
 		draw_params_.level_objects_ = &level_.GetLevelObjects();
 		draw_params_.selected_object_index_ = selected_object_index_;
 		draw_params_.show_magic_obj_spheres_ = show_magic_obj_spheres_;
@@ -663,7 +688,9 @@ void App::Frame(float delta_seconds) {
 		.terrain_brush_strength_ = edit_brush_strength_,
 		.auto_save_enabled_        = auto_save_enabled_,
 		.auto_save_interval_seconds_ = auto_save_interval_seconds_,
-		.music_on_ = music_playing_,
+	.music_on_ = music_playing_,
+		.fog_on_ = fog_on_,
+		.fog_intensity_ = fog_intensity_,
 		.anim_status_  = BuildAnimStatusString(),
 		.anim_playing_ = !animPlaybacks_.empty(),
 		.anim_debug_visible_ = show_anim_debug_,

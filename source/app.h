@@ -49,6 +49,8 @@ public:
   void ToggleTerrainDrawOption(int opt);
   void ToggleTerrainModOption(int opt);
   void SetFogEnabled(bool enabled);
+  void ToggleFog();
+  void SetFogIntensityPct(int pct);
 
   void ToggleEditMode();
   bool GetEditMode() const;
@@ -241,6 +243,9 @@ private:
 
 	// Level background music (game_music.wav, converted from ILSF -> PCM, looped via MCI)
 	bool music_playing_ = false;
+	// Fog state for pause menu (synced with Config and renderer)
+	bool fog_on_ = true;
+	int  fog_intensity_ = 10;
 	void PlayLevelMusic(int level_no);
 	void StopLevelMusic();
 	void CheckMusicLoop(); // call every frame: manually restarts playback since MCI "repeat" is unreliable for waveaudio
