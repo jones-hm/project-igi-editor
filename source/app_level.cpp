@@ -227,6 +227,16 @@ void App::LoadLevel(int level_no) {
 			Logger::Get().Log(LogLevel::INFO, "[App] Level " + std::to_string(level_no) + " loaded. Viewer start=(" + std::to_string(viewer_.pos_.x) + "," + std::to_string(viewer_.pos_.y) + "," + std::to_string(viewer_.pos_.z) + ") yaw=" + std::to_string(viewer_.yaw_));
 			last_loaded_level_ = level_no;
 
+			// Re-apply live fog UI state (checkbox + intensity) after level load.
+			// LoadFogInfo calls SetupFog which supplies level fog color/far; we keep the
+			// user's current enabled/intensity choice and ensure the terrain draw bit matches.
+			renderer_.SetFogEnabled(fog_on_);
+			if (fog_on_)
+				draw_params_.draw_terrain_options_ |= Renderer_Terrain::DRAW_TERRAIN_OPT_FOG;
+			else
+				draw_params_.draw_terrain_options_ &= ~Renderer_Terrain::DRAW_TERRAIN_OPT_FOG;
+			renderer_.SetFogIntensity(fog_intensity_);
+
 		}
 		else {
 			std::string errorMsg = "Failed to load level " + std::to_string(level_no) + "\n\nPlease check if the terrain files exist in the correct location.";
