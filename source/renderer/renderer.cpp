@@ -1,4 +1,5 @@
 #include "renderer_internal.h"
+#include <cmath>
 
 /*
 ================================================================================
@@ -119,16 +120,17 @@ void Renderer::SetupFog(const glm::vec4 &color, float fog_far) {
 }
 
 void Renderer::SetFogIntensity(int intensity) {
-  fog_intensity_ = std::max(0, std::min(200, intensity));
+  fog_intensity_ = std::max(0, std::min(1000, intensity));
   ApplyFogIntensity();
 }
 
 void Renderer::ApplyFogIntensity() {
-  // fog_intensity_ is a percentage (0-200); 100% = level default fog distance,
-  // 0% = 2x the distance (thin), 200% = 0.05x the distance (near-total fog).
-  // Clamped away from 0 to avoid (g_fog_far - fog_near) hitting zero in the
-  // fog shader at max intensity.
-  float scale = std::max(0.05f, 2.0f - fog_intensity_ / 100.0f);
+  // fog_intensity_ is a percentage (0-1000); 100% = level default fog distance,
+  // 0% = 2x the distance (thin), higher percentages exponentially shrink the
+  // distance (thicker fog). Exponential decay keeps 0%/100% matching the old
+  // linear formula's values while extending smoothly out to 1000% instead of
+  // saturating at a hard floor around 200%.
+  float scale = std::max(0.001f, 2.0f * std::pow(0.5f, fog_intensity_ / 100.0f));
   float effective_far = fog_base_far_ * scale;
 
   ubo_fog_s ubo_fog;

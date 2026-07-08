@@ -431,10 +431,10 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 						int plus_x  = minus_x + btn_w + gap + val_w + gap;
 						int& fi = Config::Get().fogIntensity;
 						if (x >= minus_x && x < minus_x + btn_w) {
-							fi = std::max(0, fi - 10);
+							fi = std::max(0, fi - 100);
 							SetFogIntensity(fi); Config::Save();
 						} else if (x >= plus_x && x < plus_x + btn_w) {
-							fi = std::min(200, fi + 10);
+							fi = std::min(1000, fi + 100);
 							SetFogIntensity(fi); Config::Save();
 						}
 					}

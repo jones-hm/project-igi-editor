@@ -220,7 +220,7 @@ void Config::Load() {
                 else if (key == "Lod") data_.enableLOD = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Lightmaps") data_.enableLightmaps = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Fog") data_.enableFog = (val == "TRUE" || val == "true" || val == "1");
-                else if (key == "FogIntensity") { int v = std::stoi(val); data_.fogIntensity = std::max(0, std::min(200, v)); }
+                else if (key == "FogIntensity") { int v = std::stoi(val); data_.fogIntensity = std::max(0, std::min(1000, v)); }
                 else if (key == "Music") data_.musicEnabled = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "ConsoleAutoActivate") data_.consoleAutoActivate = std::stoi(val);
                 else if (key == "SearchType") data_.searchType = std::stoll(val);

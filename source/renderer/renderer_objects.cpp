@@ -710,6 +710,13 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
             model = glm::rotate(model, (float)obj.rot.y, glm::vec3(0.0f, 1.0f, 0.0f)); // Roll
         }
 
+        // RotatingObject preview: radar dishes etc. spin continuously in-game via
+        // runtime; we preview the same motion in-editor by adding a live yaw spin
+        // on top of the placed orientation (mirrors the Heli rotor preview above).
+        if (obj.type == "RotatingObject") {
+            model = glm::rotate(model, elapsed_time_secs_ * 1.0f, glm::vec3(0.0f, 0.0f, 1.0f));
+        }
+
         // Weapon/ammo pickups are authored with barrel along model +Y (standing upright).
         // Rotate 90° around world Z so barrel maps to world +X — weapon lies flat on ground.
         bool isWeapon = IsWeaponModel(obj.modelId) || obj.type == "GunPickup" || obj.type == "AmmoPickup" || obj.type == "GenericPickup";

@@ -291,10 +291,30 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
     }
 
     // ALWAYS include the originally-requested model even if the glob missed it.
+    // GetOrExtractMefTemp tries disk first, then falls back to pulling the mesh
+    // bytes straight out of the OWNING level's packed .res (via the cross-level
+    // ResCache) and extracting to a temp file — needed when the foreign model was
+    // never extracted to disk (only lives inside another level's archive).
     if (!familyModels.count(modelId)) {
-        std::string mefPath = FindModelFile(modelId, /*isBuilding=*/false);
-        if (mefPath.empty()) mefPath = FindModelFile(modelId, true);
+        std::string mefPath = GetOrExtractMefTemp(modelId, /*isBuilding=*/false);
+        if (mefPath.empty()) mefPath = GetOrExtractMefTemp(modelId, true);
         if (!mefPath.empty()) familyModels.emplace(modelId, mefPath);
+    }
+
+    // Same fallback for the REST of the family (LODs/sub-parts) when the disk
+    // scan found nothing for them: consult the global model->level map (built
+    // from every level's .dat) for family siblings, load that level's ResCache,
+    // and extract each sibling to a temp file.
+    {
+        EnsureGlobalTextureMapLoaded();
+        for (const auto& gm : global_texture_map_) {
+            const std::string& stem = gm.first;
+            if (familyModels.count(stem)) continue;
+            if (!StemInFamily(stem, prefix)) continue;
+            std::string mefPath = GetOrExtractMefTemp(stem, /*isBuilding=*/false);
+            if (mefPath.empty()) mefPath = GetOrExtractMefTemp(stem, true);
+            if (!mefPath.empty()) familyModels.emplace(stem, mefPath);
+        }
     }
 
     if (familyModels.empty()) {
@@ -338,18 +358,31 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
     std::vector<std::pair<std::string, std::vector<uint8_t>>> looseTextures;  // for editor-content copy
     std::vector<RESEntry> texEntries;
     std::set<std::string> seenTex;
+    EnsureGlobalTextureMapLoaded();
     for (const auto& fm : familyModels) {
         for (const std::string& texId : GetTextureIdsForModel(fm.first)) {
             if (!seenTex.insert(texId).second) continue; // dedupe across the family
+            std::vector<uint8_t> texBytes;
             std::string texPath = FindTextureFile(texId);
-            if (texPath.empty()) {
+            if (!texPath.empty()) {
+                std::ifstream tf(texPath, std::ios::binary);
+                texBytes.assign(std::istreambuf_iterator<char>(tf), std::istreambuf_iterator<char>());
+            }
+            // Foreign texture not on disk: pull it straight from the owning
+            // level's packed .res via the cross-level ResCache (same fallback
+            // GetOrLoadTexture already uses for in-editor rendering).
+            if (texBytes.empty()) {
+                auto tit = texture_level_map_.find(texId);
+                if (tit != texture_level_map_.end() && tit->second != current_level_) {
+                    LoadResCache(tit->second, Utils::GetIGIRootPath());
+                    texBytes = FindTextureData(texId);
+                }
+            }
+            if (texBytes.empty()) {
                 Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: texture " + texId +
-                    " not found on disk, skipping");
+                    " not found on disk or in any level's .res, skipping");
                 continue;
             }
-            std::ifstream tf(texPath, std::ios::binary);
-            std::vector<uint8_t> texBytes((std::istreambuf_iterator<char>(tf)), std::istreambuf_iterator<char>());
-            if (texBytes.empty()) continue;
             looseTextures.emplace_back(texId, texBytes);
             texEntries.push_back(RESEntry{ "LOCAL:textures/" + texId + ".tex", std::move(texBytes) });
         }
