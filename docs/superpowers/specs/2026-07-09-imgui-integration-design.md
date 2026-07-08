@@ -157,16 +157,48 @@ changes:
 6. Resize the window / toggle fullscreen (Alt+Enter) — ImGui's
    `DisplaySize` follows correctly.
 
-## 9. Later Phases (context only, not designed yet)
+## 9. Scope Revision (supersedes the original "full UI overhaul" plan)
 
-- **Phase 2**: Rebuild the pause menu (fog enable/intensity, other settings
-  currently hit-tested by hand in `app_input_mouse.cpp`) as ImGui windows.
-  Demo window/F10 toggle removed here.
-- **Phase 3**: Migrate remaining hand-rolled overlays (progress bar, help
-  text, autocomplete) to ImGui.
-- **Phase 4**: Delete the now-dead hand-rolled pixel hit-testing and overlay
-  drawing code that Phases 2-3 made obsolete.
+The pause menu and TaskTree are **not** being rebuilt in ImGui. They stay
+exactly as they are — hand-rolled GL overlays with pixel-based hit-testing,
+unchanged. The originally-planned Phase 2 (pause menu rebuild) and Phase 3
+(overlay migration) below are cancelled; Phase 4 (dead-code cleanup) no
+longer applies since nothing is being made dead.
 
-Cursor sprites (`App::LoadAllCursors`, `app_ui.cpp`) are explicitly **out of
-scope** for the whole overhaul — those are in-world/game cursor icons, not
-editor chrome, and ImGui does not replace them.
+ImGui's scope is narrowed to exactly two panels, both under one "Dev Tools"
+window toggled by **F9** (replacing the Phase 1 demo window, which is
+deleted from the toggle path — `imgui_demo.cpp` stays vendored but unused,
+in case it's useful for ad-hoc debugging later):
+
+- **Developer Mode / Debug Commands** — checkbox for `developer_mode_`
+  (starts/stops `DebugCommandManager`, the file-watcher-based external
+  command interface) and a separate checkbox for `show_anim_debug_` (the
+  animation skeleton/status overlay). Both are also still toggled together
+  by F10, unchanged — this panel just exposes the same state visually and
+  lets them be toggled independently.
+- **Settings (qedconfig.qsc)** — live-editable UI over the `ConfigData`
+  fields that are genuinely user-facing settings (font, logging, renderer
+  toggles, editor behavior), grouped to match the struct's existing comment
+  sections. Each edit calls `Config::Save()` immediately, matching the
+  existing pause-menu fog-toggle convention (`app_input_mouse.cpp`) rather
+  than a separate save button.
+  - **Excluded, permanently**: every `KeyBinding`-typed field and the
+    `eventBindings_` map. `qedkeybindings.qsc` is the authoritative source
+    for those (parsed last in `Config::Init()`) and `Config::Save()` is
+    deliberately hand-verified to never touch it — see the comment at
+    `config.cpp:417`. No UI path may be added that risks regenerating it.
+  - **Excluded, as not being "settings"**: `level`, `enableLOD` (not
+    currently round-tripped through `Save()`/`Load()` at all), the find-task
+    search fields, `taskFileName`, `objectFilePath`, and the camera
+    orientation/radius/position/matrix fields — these are session/internal
+    state snapshotted by other flows, not something a user tunes via a
+    settings dialog.
+
+Old (cancelled) plan, kept here for history:
+- ~~Phase 2: Rebuild the pause menu as ImGui windows.~~
+- ~~Phase 3: Migrate remaining hand-rolled overlays (progress bar, help
+  text, autocomplete) to ImGui.~~
+- ~~Phase 4: Delete the hand-rolled overlay code Phases 2-3 made obsolete.~~
+
+Cursor sprites (`App::LoadAllCursors`, `app_ui.cpp`) remain out of scope, as
+before.

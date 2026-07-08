@@ -88,6 +88,9 @@ public:
   void OnWindowResize(int width, int height);
   void OnDisplay();
 
+  // Dev Tools ImGui panel: Developer Mode/Debug Commands + qedconfig.qsc Settings
+  void DrawDevToolsUI(bool* p_open);
+
   // input
   void Input_OnMouse(int button, int state, int x, int y);
   void Input_OnMotion(int x, int y);

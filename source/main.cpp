@@ -20,7 +20,7 @@
 ================================================================================
 */
 static App g_app;
-static bool g_show_imgui_demo = false; // F9: ImGui demo window (Phase 1 proof-of-life)
+static bool g_show_dev_tools = false; // F9: Dev Tools (Developer Mode/Debug Commands + qedconfig Settings)
 
 // menu ids
 
@@ -135,7 +135,7 @@ static void OnMenu(int menu);
 static void OnSpecial(int key, int x, int y) {
   ImGui_ImplGlut_SpecialCallback(key, x, y);
   if (key == GLUT_KEY_F9) {
-    g_show_imgui_demo = !g_show_imgui_demo;
+    g_show_dev_tools = !g_show_dev_tools;
     return;
   }
   // F2 is handled in Input_OnSpecial (toggles TaskTree visibility)
@@ -171,8 +171,8 @@ static void OnDisplay() {
   ImGui_ImplGlut_NewFrame();
   ImGui_ImplOpenGL3_NewFrame();
   ImGui::NewFrame();
-  if (g_show_imgui_demo) {
-    ImGui::ShowDemoWindow(&g_show_imgui_demo);
+  if (g_show_dev_tools) {
+    g_app.DrawDevToolsUI(&g_show_dev_tools);
   }
   g_app.OnDisplay();
 }
