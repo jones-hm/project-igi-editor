@@ -41,6 +41,12 @@ file(GLOB SOURCES "source/*.h" "source/*.cpp")
 file(GLOB SOURCES_LEVEL "source/level/*.*")
 file(GLOB SOURCES_RENDERER "source/renderer/*.*")
 file(GLOB SOURCES_CLI "source/cli/*.*")
+file(GLOB SOURCES_IMGUI
+  "third_party/imgui/*.h"
+  "third_party/imgui/*.cpp"
+  "third_party/imgui/backends/imgui_impl_opengl3.h"
+  "third_party/imgui/backends/imgui_impl_opengl3.cpp"
+)
 file(GLOB SHADERS_41 "shaders/41/*.*")
 file(GLOB SHADERS_45 "shaders/45/*.*")
 
@@ -52,10 +58,11 @@ endif()
 source_group("level" FILES ${SOURCES_LEVEL})
 source_group("renderer" FILES ${SOURCES_RENDERER})
 source_group("cli" FILES ${SOURCES_CLI})
+source_group("imgui" FILES ${SOURCES_IMGUI})
 source_group("shaders/41" FILES ${SHADERS_41})
 source_group("shaders/45" FILES ${SHADERS_45})
 
-add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SOURCES_CLI} ${SHADERS_41} ${SHADERS_45})
+add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SOURCES_CLI} ${SOURCES_IMGUI} ${SHADERS_41} ${SHADERS_45})
 
 if (WIN32)
   set_target_properties(igi-editor PROPERTIES
@@ -119,12 +126,17 @@ set_source_files_properties(
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
+# Vendored Dear ImGui sources don't include pch.h and shouldn't be forced to
+# compile against the project's PCH (foreign code, different header graph).
+set_source_files_properties(${SOURCES_IMGUI} PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/tinygltf)
+target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/imgui)
 
 
 if (WIN32)

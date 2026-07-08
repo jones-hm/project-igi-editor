@@ -53,10 +53,15 @@ window; nothing in Phase 1-4 requires multi-viewport or OS-level dockable
 panels. If a future phase needs docking, that's a separate, additive
 upgrade — not blocking now.
 
-`imgui_impl_opengl3` is built with `IMGUI_IMPL_OPENGL_LOADER_GLEW` defined,
-since `gl_helper.cpp` already loads all GL entry points via GLEW
-(`GL_Init()`). This avoids linking ImGui's own bundled loader alongside
-GLEW.
+This ImGui version (1.92.8) dropped the old `IMGUI_IMPL_OPENGL_LOADER_GLEW`
+convenience define — it only recognizes `IMGUI_IMPL_OPENGL_LOADER_CUSTOM`
+now, which tells `imgui_impl_opengl3.cpp` to skip including its own bundled
+gl3w-based loader and assume GL types/prototypes are already visible.
+`third_party/imgui/imconfig.h` (included by `imgui.h` before the backend's
+loader-selection code runs) defines `IMGUI_IMPL_OPENGL_LOADER_CUSTOM` and
+`#include <glew.h>`, so the backend shares GLEW's already-loaded function
+pointers (`GL_Init()` in `gl_helper.cpp`) instead of pulling in a second,
+conflicting loader.
 
 ## 4. Custom GLUT Input Glue
 
@@ -85,14 +90,21 @@ call is removed or reordered relative to itself.
   existing `g_app.Input_On...()` call.
 - `ImGui::NewFrame()` is called at the top of `OnDisplay()` (`main.cpp:137`),
   before `g_app.OnDisplay()` runs.
-- `App::OnDisplay()` calls `glutSwapBuffers()` from three call sites
-  (`app.cpp:505`, `app.cpp:802`, `app_ui.cpp:359` — normal frame path,
-  loading/progress path, and one more). A new helper,
-  `GL_SwapBuffersWithImGui()` in `gl_helper.cpp`, does `ImGui::Render()` +
-  `ImGui_ImplOpenGL3_RenderDrawData()` then `glutSwapBuffers()`. All three
-  call sites are switched to call this helper instead of `glutSwapBuffers()`
-  directly. This avoids restructuring `App::OnDisplay()`'s three separate
-  render paths into one.
+- `App::OnDisplay()` calls `glutSwapBuffers()` from two mutually-exclusive
+  exit points (`app.cpp:505` early-return, `app.cpp:802` normal end) — each
+  `App::OnDisplay()` call hits exactly one, so both are a clean 1:1 pairing
+  with the single `ImGui::NewFrame()` in `main.cpp`'s `OnDisplay()`. A new
+  helper, `GL_SwapBuffersWithImGui()` in `gl_helper.cpp`, does
+  `ImGui::Render()` + `ImGui_ImplOpenGL3_RenderDrawData()` then
+  `glutSwapBuffers()`; both sites are switched to call it instead of
+  `glutSwapBuffers()` directly.
+  `app_ui.cpp:359`'s `glutSwapBuffers()` (inside `DrawProgressOverlay`) is
+  **left unchanged** — that function is called repeatedly and reentrantly
+  from blocking operations (level loads, lightmap bakes) outside the normal
+  `OnDisplay()`/`NewFrame()` pairing, so routing it through `ImGui::Render()`
+  would call `Render()` multiple times per `NewFrame()`, which ImGui asserts
+  against. No ImGui content needs to render during that blocking loop in
+  Phase 1 anyway.
 - `ImGui_ImplOpenGL3_Shutdown()` + `ImGui::DestroyContext()` run in
   `App::Shutdown()` (`app.cpp:186`).
 
@@ -108,11 +120,13 @@ Until Phase 2 adds real panels, the only ImGui content is the demo window
 below, so this gating is inert during normal use and only activates while
 the demo window is open.
 
-**Proof of life**: pressing **F10** toggles `ImGui::ShowDemoWindow()`. This
-is the Phase 1 acceptance check — confirms rendering, input routing,
-resizing, and non-interference with existing camera/pause-menu controls all
-work. The demo window and its F10 toggle are deleted in Phase 2 once real
-panels exist; noting that here so it isn't mistaken for permanent scope.
+**Proof of life**: pressing **F9** toggles `ImGui::ShowDemoWindow()` (F10 is
+already bound to the existing Animation Debug overlay — see
+`app_input_keyboard.cpp:363` — so F9 is used instead). This is the Phase 1
+acceptance check — confirms rendering, input routing, resizing, and
+non-interference with existing camera/pause-menu controls all work. The
+demo window and its F9 toggle are deleted in Phase 2 once real panels
+exist; noting that here so it isn't mistaken for permanent scope.
 
 ## 7. Build System
 

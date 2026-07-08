@@ -15,6 +15,10 @@
 # include <X11/Xlib.h>
 #endif
 
+#include <freeglut.h>
+#include <imgui.h>
+#include <backends/imgui_impl_opengl3.h>
+
 /*
 ================================================================================
 GL Helper
@@ -55,6 +59,12 @@ bool GL_Init() {
 #endif
 
 	return true;
+}
+
+void GL_SwapBuffersWithImGui() {
+	ImGui::Render();
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+	glutSwapBuffers();
 }
 
 void GL_TryEnableVSync() {

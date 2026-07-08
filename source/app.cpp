@@ -1,4 +1,7 @@
 #include "app_internal.h"
+#include <imgui.h>
+#include <backends/imgui_impl_opengl3.h>
+#include "imgui_glut_backend.h"
 
 // GameMonitorParam, GameMonitorProc, and HOTKEY_ID_TOGGLE_GAME live in
 // app_internal.h (shared with app_editor.cpp's LaunchGame). The mutable window
@@ -205,6 +208,9 @@ void App::Shutdown() {
 	if (!g_isCLIMode) {
 		AssetExtractor::CleanupExtractedAssets(Utils::GetExeDirectory());
 	}
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplGlut_Shutdown();
+	ImGui::DestroyContext();
 }
 
 // ── C1: Custom SPR cursor — multi-mode ────────────────────────────────────────
@@ -502,7 +508,7 @@ void App::Frame(float delta_seconds) {
 	renderer_.Draw(draw_params_, task_tree_view);
 
 	DrawCustomCursor();
-	glutSwapBuffers();
+	GL_SwapBuffersWithImGui();
 	return;
     }
 
@@ -799,7 +805,7 @@ void App::Frame(float delta_seconds) {
     }
 
 	DrawCustomCursor();
-	glutSwapBuffers();
+	GL_SwapBuffersWithImGui();
 }
 
 void App::ToggleShowHUD() {

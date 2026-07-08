@@ -10,6 +10,9 @@
 #include "utils.h"
 #include <freeglut.h>
 #include <filesystem>
+#include <imgui.h>
+#include <backends/imgui_impl_opengl3.h>
+#include "imgui_glut_backend.h"
 
 /*
 ================================================================================
@@ -17,6 +20,7 @@
 ================================================================================
 */
 static App g_app;
+static bool g_show_imgui_demo = false; // F9: ImGui demo window (Phase 1 proof-of-life)
 
 // menu ids
 
@@ -101,41 +105,73 @@ constexpr int UPDATE_MENU_SCALE = FLAG_BIT(4);
 */
 
 static void OnReshape(int width, int height) {
+  ImGui_ImplGlut_ReshapeCallback(width, height);
   g_app.OnWindowResize(width, height);
 }
 
 static void OnMouse(int button, int state, int x, int y) {
-  g_app.Input_OnMouse(button, state, x, y);
+  ImGui_ImplGlut_MouseButtonCallback(button, state, x, y);
+  if (!ImGui::GetIO().WantCaptureMouse) {
+    g_app.Input_OnMouse(button, state, x, y);
+  }
 }
 
 static void OnMouseWheel(int wheel, int direction, int x, int y) {
-  g_app.Input_OnMouseWheel(wheel, direction, x, y);
+  ImGui_ImplGlut_MouseWheelCallback(wheel, direction, x, y);
+  if (!ImGui::GetIO().WantCaptureMouse) {
+    g_app.Input_OnMouseWheel(wheel, direction, x, y);
+  }
 }
 
-static void OnMotion(int x, int y) { g_app.Input_OnMotion(x, y); }
+static void OnMotion(int x, int y) {
+  ImGui_ImplGlut_MotionCallback(x, y);
+  g_app.Input_OnMotion(x, y); // always forwarded: camera-look motion isn't a "capture" concern
+}
 
 static void OnMenu(int menu);
 
 static void OnSpecial(int key, int x, int y) {
+  ImGui_ImplGlut_SpecialCallback(key, x, y);
+  if (key == GLUT_KEY_F9) {
+    g_show_imgui_demo = !g_show_imgui_demo;
+    return;
+  }
   // F2 is handled in Input_OnSpecial (toggles TaskTree visibility)
   // Wireframe can be toggled via right-click menu instead
-  g_app.Input_OnSpecial(key, x, y);
+  if (!ImGui::GetIO().WantCaptureKeyboard) {
+    g_app.Input_OnSpecial(key, x, y);
+  }
 }
 
 static void OnSpecialUp(int key, int x, int y) {
-  g_app.Input_OnSpecialUp(key, x, y);
+  ImGui_ImplGlut_SpecialUpCallback(key, x, y);
+  if (!ImGui::GetIO().WantCaptureKeyboard) {
+    g_app.Input_OnSpecialUp(key, x, y);
+  }
 }
 
 static void OnKeyboard(unsigned char key, int x, int y) {
-  g_app.Input_OnKeyboard(key, x, y);
+  ImGui_ImplGlut_KeyboardCallback(key, x, y);
+  if (!ImGui::GetIO().WantCaptureKeyboard) {
+    g_app.Input_OnKeyboard(key, x, y);
+  }
 }
 
 static void OnKeyboardUp(unsigned char key, int x, int y) {
-  g_app.Input_OnKeyboardUp(key, x, y);
+  ImGui_ImplGlut_KeyboardUpCallback(key, x, y);
+  if (!ImGui::GetIO().WantCaptureKeyboard) {
+    g_app.Input_OnKeyboardUp(key, x, y);
+  }
 }
 
 static void OnDisplay() {
   glutSetCursor(GLUT_CURSOR_NONE);  // keep system cursor hidden; SPR cursor draws it
+  ImGui_ImplGlut_NewFrame();
+  ImGui_ImplOpenGL3_NewFrame();
+  ImGui::NewFrame();
+  if (g_show_imgui_demo) {
+    ImGui::ShowDemoWindow(&g_show_imgui_demo);
+  }
   g_app.OnDisplay();
 }
 
@@ -695,6 +731,10 @@ int main(int argc, char **argv) {
   if (!GL_Init()) {
     return 1;
   }
+
+  ImGui::CreateContext();
+  ImGui_ImplGlut_Init();
+  ImGui_ImplOpenGL3_Init(g_gl_info.support_version_45_ ? "#version 450" : "#version 410");
 
   if (g_gl_info.support_version_45_) {
     Str_Cat(g_folders.shader_folder_, count_of(g_folders.shader_folder_),

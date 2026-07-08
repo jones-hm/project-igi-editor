@@ -20,6 +20,12 @@ extern gl_info_s g_gl_info;
 bool	GL_Init();
 void	GL_TryEnableVSync();
 
+// ImGui::Render() + ImGui_ImplOpenGL3_RenderDrawData() then glutSwapBuffers().
+// Use this instead of calling glutSwapBuffers() directly so the ImGui draw
+// data (built up during the frame via ImGui:: calls) actually reaches the
+// screen.
+void	GL_SwapBuffersWithImGui();
+
 // buf
 GLuint	GL_CreateBuffer(GLenum target, GLsizeiptr size, const void * data, GLenum usage);
 void	GL_BufferData(GLuint obj, GLenum target, GLsizeiptr size, const void* data, GLenum usage);
