@@ -13,6 +13,11 @@ bool Renderer_Objects::IsSkippedModelId(const std::string& modelId) {
     return modelId == "colbox" || modelId == "colbox2" || modelId == "colbox4" || modelId == "colbox66";
 }
 
+// Per-frame delta seconds feeder for continuous animations (e.g. helicopter rotor spin).
+// Written by App::Frame before each Draw; consumed inside DrawAttachmentsRecursive via the
+// elapsed_time_secs_ accumulator. Defined here so the extern reference in the draw path links.
+float g_renderer_delta_secs = 0.0f;
+
 void Renderer_Objects::SetLightmapForTask(const std::string& taskId, std::vector<GLuint> textures,
                                           const glm::dvec3& bakedPos, const glm::dvec3& bakedRot) {
     ClearLightmapForTask(taskId);

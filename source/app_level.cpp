@@ -227,16 +227,6 @@ void App::LoadLevel(int level_no) {
 			Logger::Get().Log(LogLevel::INFO, "[App] Level " + std::to_string(level_no) + " loaded. Viewer start=(" + std::to_string(viewer_.pos_.x) + "," + std::to_string(viewer_.pos_.y) + "," + std::to_string(viewer_.pos_.z) + ") yaw=" + std::to_string(viewer_.yaw_));
 			last_loaded_level_ = level_no;
 
-			// Re-apply live fog UI state (checkbox + intensity) after level load.
-			// LoadFogInfo calls SetupFog which supplies level fog color/far; we keep the
-			// user's current enabled/intensity choice and ensure the terrain draw bit matches.
-			renderer_.SetFogEnabled(fog_on_);
-			if (fog_on_)
-				draw_params_.draw_terrain_options_ |= Renderer_Terrain::DRAW_TERRAIN_OPT_FOG;
-			else
-				draw_params_.draw_terrain_options_ &= ~Renderer_Terrain::DRAW_TERRAIN_OPT_FOG;
-			renderer_.SetFogIntensity(fog_intensity_);
-
 		}
 		else {
 			std::string errorMsg = "Failed to load level " + std::to_string(level_no) + "\n\nPlease check if the terrain files exist in the correct location.";
@@ -413,52 +403,48 @@ void App::LoadLevel(int level_no) {
 			}
 		}
 
-		// RainEffect gating (strict): ONLY enable rain for levels whose objects.qvm
-		// (parsed into LevelObjects) explicitly contains a RainEffect task with rain
-		// enabled. Levels without any RainEffect declaration in their objects.qvm
-		// must have zero rain — no carry-over, no default rain.
-		// argTokens layout from Task_DeclareParameters + Task_New as documented.
+		// RainEffect (Task_DeclareParameters("RainEffect","Is Rain","bool8",
+		// "Traceline start","Real32","Traceline end","Real32","Is Active","VarString",
+		// "Rain Alpha","Real32")) is per-level: present+active on levels with rain
+		// (e.g. level3), entirely absent on levels without it (e.g. level2) — absence
+		// just means no rain, not a parse failure. argTokens: [0]=taskId,
+		// [1]="RainEffect",[2]=name,[3]=IsRain(BOOL "TRUE"/"FALSE"),
+		// [4]=TracelineStart(meters),[5]=TracelineEnd(meters),
+		// [6]=IsActive(quoted VarString "0"/"1"),[7]=RainAlpha.
 		{
 			bool rainActive = false;
 			float rainStartM = 0.0f, rainEndM = 0.0f, rainAlpha = 0.0f;
 			bool foundRainEffect = false;
-			// Only trust objects for the successfully loaded level (prevents using stale
-			// objects from a previous level if load failed or was interrupted).
-			if (last_loaded_level_ == level_no) {
-				for (const auto& re : objects) {
-					if (re.type != "RainEffect" || re.argTokens.size() < 8) continue;
-					foundRainEffect = true;
-					try {
-						// IsRain stored as bare TRUE/FALSE in QSC (not quoted)
-						std::string isRainTok = re.argTokens[3];
-						if (!isRainTok.empty() && isRainTok.front() == '"')
-							isRainTok = isRainTok.substr(1, isRainTok.size() - 2);
-						bool isRain = (isRainTok == "TRUE" || isRainTok == "true");
-						std::string isActiveTok = re.argTokens[6];
-						if (isActiveTok.size() >= 2 && isActiveTok.front() == '"' && isActiveTok.back() == '"')
-							isActiveTok = isActiveTok.substr(1, isActiveTok.size() - 2);
-						bool isActive = !isActiveTok.empty() && isActiveTok != "0";
-						rainStartM = std::stof(re.argTokens[4]);
-						rainEndM = std::stof(re.argTokens[5]);
-						rainAlpha = std::stof(re.argTokens[7]);
-						rainActive = isRain && isActive;
-						Logger::Get().Log(LogLevel::INFO, "[App] RainEffect resolved: active=" +
-							std::to_string(rainActive) + " isRain=" + isRainTok +
-							" isActive=" + isActiveTok +
-							" start=" + std::to_string(rainStartM) +
-							"m end=" + std::to_string(rainEndM) + "m alpha=" + std::to_string(rainAlpha));
-					} catch (const std::exception& e) {
-						Logger::Get().Log(LogLevel::WARNING, std::string("[App] RainEffect unparsable (") + e.what() + ")");
-					}
-					break; // first RainEffect task only
+			for (const auto& re : objects) {
+				if (re.type != "RainEffect" || re.argTokens.size() < 8) continue;
+				foundRainEffect = true;
+				try {
+					// IsRain stored as bare TRUE/FALSE in QSC (not quoted)
+					std::string isRainTok = re.argTokens[3];
+					if (!isRainTok.empty() && isRainTok.front() == '"')
+						isRainTok = isRainTok.substr(1, isRainTok.size() - 2);
+					bool isRain = (isRainTok == "TRUE" || isRainTok == "true");
+					std::string isActiveTok = re.argTokens[6];
+					if (isActiveTok.size() >= 2 && isActiveTok.front() == '"' && isActiveTok.back() == '"')
+						isActiveTok = isActiveTok.substr(1, isActiveTok.size() - 2);
+					bool isActive = !isActiveTok.empty() && isActiveTok != "0";
+					rainStartM = std::stof(re.argTokens[4]);
+					rainEndM = std::stof(re.argTokens[5]);
+					rainAlpha = std::stof(re.argTokens[7]);
+					rainActive = isRain && isActive;
+					Logger::Get().Log(LogLevel::INFO, "[App] RainEffect resolved: active=" +
+						std::to_string(rainActive) + " isRain=" + isRainTok +
+						" isActive=" + isActiveTok +
+						" start=" + std::to_string(rainStartM) +
+						"m end=" + std::to_string(rainEndM) + "m alpha=" + std::to_string(rainAlpha));
+				} catch (const std::exception& e) {
+					Logger::Get().Log(LogLevel::WARNING, std::string("[App] RainEffect unparsable (") + e.what() + ")");
 				}
+				break; // first RainEffect task only
 			}
-			if (!foundRainEffect) {
-				Logger::Get().Log(LogLevel::INFO, "[App] No RainEffect declaration in level's objects.qvm — rain disabled");
-				renderer_.SetRainEffect(false, 0.0f, 0.0f, 0.0f);
-			} else {
-				renderer_.SetRainEffect(rainActive, rainStartM, rainEndM, rainAlpha);
-			}
+			if (!foundRainEffect)
+				Logger::Get().Log(LogLevel::INFO, "[App] No RainEffect in level — rain disabled");
+			renderer_.SetRainEffect(rainActive, rainStartM, rainEndM, rainAlpha);
 		}
 
 		// Log all loaded objects for verification script
@@ -494,12 +480,14 @@ void App::LoadLevel(int level_no) {
 				(ok ? std::to_string(entryCount) + " entries (streamed)"
 				    : "UNAVAILABLE (" + gameRes + "): " + resErr));
 		}
-		// ── After all objects loaded: auto-import animations for HumanSoldier-family NPCs ──
+	// ── After all objects loaded: auto-import animations for HumanSoldier-family NPCs ──
 		// Every eligible AI auto-plays its real animation (Stand Animation, AI script,
 		// or PatrolPath command) in parallel from the start — not just the one being
 		// inspected. Resolving each AI's animation is heavy (it can spawn igi1conv.exe
 		// to decompile that AI's .qvm script), so resolution runs on worker threads;
 		// only the result merge touches shared state, and only on this (main) thread.
+		// Wrapped to be resilient on very heavy levels (e.g. level 13) where parallel
+		// igi1conv work or result merge can exhaust 32-bit address space / resources.
 		Logger::Get().Log(LogLevel::INFO, "[App] Auto-importing animations for AI NPCs...");
 		animPlaybacks_.clear();
 		animIdsCache_.clear();
@@ -510,61 +498,75 @@ void App::LoadLevel(int level_no) {
 			eligible.push_back(i);
 		}
 
-		// Phase 1 (sequential, main thread): import every distinct bone hierarchy's
-		// animation set BEFORE any worker thread touches AnimationRegistry — its
-		// internal cache map is written lazily on first import and is not safe to
-		// write concurrently for the same or different bone hierarchies.
-		std::set<int> hierarchiesToImport;
-		for (int i : eligible) hierarchiesToImport.insert(objects[i].boneHierarchy);
-		for (int h : hierarchiesToImport) animRegistry_.ImportAnimations(h);
+		try {
+			// Phase 1 (sequential, main thread): import every distinct bone hierarchy's
+			// animation set BEFORE any worker thread touches AnimationRegistry — its
+			// internal cache map is written lazily on first import and is not safe to
+			// write concurrently for the same or different bone hierarchies.
+			std::set<int> hierarchiesToImport;
+			for (int i : eligible) hierarchiesToImport.insert(objects[i].boneHierarchy);
+			for (int h : hierarchiesToImport) animRegistry_.ImportAnimations(h);
 
-		// Phase 2 (parallel, worker threads): resolve each AI's animation ids + first
-		// matching clip. Read-only against AnimationRegistry (already fully imported
-		// above) and LevelObjects; writes only to each task's own local result.
-		struct AnimResolveResult { int objIndex; std::vector<int> ids; const AnimationClip* clip = nullptr; bool usedDefault = false; };
-		std::vector<std::future<AnimResolveResult>> futures;
-		futures.reserve(eligible.size());
-		for (int i : eligible) {
-			futures.push_back(std::async(std::launch::async, [this, i]() -> AnimResolveResult {
-				AnimResolveResult r{i};
-				r.ids = ComputeAnimationIdsForObject(i);
-				const auto& o = level_.GetLevelObjects().GetObjects()[i];
-				for (int id : r.ids) {
-					r.clip = animRegistry_.GetClipByAnimId(o.boneHierarchy, id);
-					if (r.clip) break;
-				}
-				// No specific referenced animation resolved -> fall back to the bone
-				// hierarchy's default (lowest-animId) clip so EVERY AI animates by
-				// default, not just those whose QSC/AI-script names an animation.
-				if (!r.clip) {
-					r.clip = animRegistry_.GetDefaultClip(o.boneHierarchy);
-					r.usedDefault = (r.clip != nullptr);
-				}
-				return r;
-			}));
-		}
-		Logger::Get().Log(LogLevel::INFO, "[Anim] Resolving animations for " +
-			std::to_string(eligible.size()) + " AI NPC(s) across " +
-			std::to_string(futures.size()) + " worker thread(s) in parallel...");
+			// Phase 2 (parallel, worker threads): resolve each AI's animation ids + first
+			// matching clip. Read-only against AnimationRegistry (already fully imported
+			// above) and LevelObjects; writes only to each task's own local result.
+			struct AnimResolveResult { int objIndex; std::vector<int> ids; const AnimationClip* clip = nullptr; bool usedDefault = false; };
+			std::vector<std::future<AnimResolveResult>> futures;
+			futures.reserve(eligible.size());
+			for (int i : eligible) {
+				futures.push_back(std::async(std::launch::async, [this, i]() -> AnimResolveResult {
+					AnimResolveResult r{i};
+					r.ids = ComputeAnimationIdsForObject(i);
+					const auto& o = level_.GetLevelObjects().GetObjects()[i];
+					for (int id : r.ids) {
+						r.clip = animRegistry_.GetClipByAnimId(o.boneHierarchy, id);
+						if (r.clip) break;
+					}
+					// No specific referenced animation resolved -> fall back to the bone
+					// hierarchy's default (lowest-animId) clip so EVERY AI animates by
+					// default, not just those whose QSC/AI-script names an animation.
+					if (!r.clip) {
+						r.clip = animRegistry_.GetDefaultClip(o.boneHierarchy);
+						r.usedDefault = (r.clip != nullptr);
+					}
+					return r;
+				}));
+			}
+			Logger::Get().Log(LogLevel::INFO, "[Anim] Resolving animations for " +
+				std::to_string(eligible.size()) + " AI NPC(s) across " +
+				std::to_string(futures.size()) + " worker thread(s) in parallel...");
 
-		// Phase 3 (sequential, main thread): merge results — animPlaybacks_ /
-		// animIdsCache_ are plain maps, never written from worker threads directly,
-		// so there is no clash here even though Phase 2 ran fully concurrently.
-		for (auto& f : futures) {
-			AnimResolveResult r = f.get();
-			animIdsCache_[r.objIndex] = r.ids;
-			if (!r.clip) continue;
-			AnimPlayback pb;
-			pb.Start(r.clip);
-			pb.forceLoop = true;  // every AI animates continuously, not just once
-			animPlaybacks_[r.objIndex] = pb;
-			Logger::Get().Log(LogLevel::INFO, "[Anim] Auto-playing '" + r.clip->name + "'" +
-				(r.usedDefault ? " (DEFAULT fallback — no referenced animation)" : "") +
-				" for object " + std::to_string(r.objIndex) + " (" + objects[r.objIndex].type + ")");
+			// Phase 3 (sequential, main thread): merge results — animPlaybacks_ /
+			// animIdsCache_ are plain maps, never written from worker threads directly,
+			// so there is no clash here even though Phase 2 ran fully concurrently.
+			for (auto& f : futures) {
+				AnimResolveResult r = f.get();
+				animIdsCache_[r.objIndex] = r.ids;
+				if (!r.clip) continue;
+				AnimPlayback pb;
+				pb.Start(r.clip);
+				pb.forceLoop = true;  // every AI animates continuously, not just once
+				animPlaybacks_[r.objIndex] = pb;
+				Logger::Get().Log(LogLevel::INFO, "[Anim] Auto-playing '" + r.clip->name + "'" +
+					(r.usedDefault ? " (DEFAULT fallback — no referenced animation)" : "") +
+					" for object " + std::to_string(r.objIndex) + " (" + objects[r.objIndex].type + ")");
+			}
+			Logger::Get().Log(LogLevel::INFO, "[App] Animation init complete: " +
+				std::to_string(animPlaybacks_.size()) + " of " + std::to_string(eligible.size()) +
+				" eligible AI NPCs have a real animation and are now playing in parallel.");
+		} catch (const std::bad_alloc&) {
+			Logger::Get().Log(LogLevel::ERR, "[App] Out of memory during AI animation auto-import for level " + std::to_string(level_no) + "; continuing without animations.");
+			animPlaybacks_.clear();
+			animIdsCache_.clear();
+		} catch (const std::exception& e) {
+			Logger::Get().Log(LogLevel::WARNING, std::string("[App] AI animation auto-import failed (non-fatal): ") + e.what());
+			animPlaybacks_.clear();
+			animIdsCache_.clear();
+		} catch (...) {
+			Logger::Get().Log(LogLevel::ERR, "[App] AI animation auto-import failed with unknown exception for level " + std::to_string(level_no) + "; continuing without animations.");
+			animPlaybacks_.clear();
+			animIdsCache_.clear();
 		}
-		Logger::Get().Log(LogLevel::INFO, "[App] Animation init complete: " +
-			std::to_string(animPlaybacks_.size()) + " of " + std::to_string(eligible.size()) +
-			" eligible AI NPCs have a real animation and are now playing in parallel.");
 
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 		Logger::Get().Log(LogLevel::INFO, "[App] LoadLevel() COMPLETE for level " + std::to_string(level_no));
@@ -581,7 +583,17 @@ void App::LoadLevel(int level_no) {
 				std::to_string(level_no) + "\\lightmaps\\lightmaps.res";
 			if (std::filesystem::exists(lmRes)) {
 				Logger::Get().Log(LogLevel::INFO, "[Lightmap] Auto-loading baked lightmaps for level " + std::to_string(level_no));
-				CalculateLightmapsForAllObjects();
+				try {
+					CalculateLightmapsForAllObjects();
+				} catch (const std::bad_alloc&) {
+					Logger::Get().Log(LogLevel::ERR, "[Lightmap] Out of memory while auto-loading lightmaps for level " + std::to_string(level_no) + "; disabling for this session.");
+					Config::Get().enableLightmaps = false;
+				} catch (const std::exception& e) {
+					Logger::Get().Log(LogLevel::WARNING, std::string("[Lightmap] Auto lightmap load failed (non-fatal): ") + e.what());
+				} catch (...) {
+					Logger::Get().Log(LogLevel::ERR, "[Lightmap] Auto lightmap load failed with unknown exception for level " + std::to_string(level_no) + "; disabling for this session.");
+					Config::Get().enableLightmaps = false;
+				}
 			}
 		}
 	}

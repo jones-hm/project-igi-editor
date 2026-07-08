@@ -1,5 +1,60 @@
 # Changelogs
 
+## 3.6.7-pre — Fog Intensity (0-200%) + Lightmap Crash Fixes
+
+### ✨ New Feature
+- **Fog Intensity spinner in Terrain Options**, `Fog Intensity  [-] [N%] [+]`, under the existing Fog checkbox in the pause menu's expanded "Terrain Options" section. Value is a **percentage, 0-200%, step 10, defaults to 200%** (maximum thickness) — persists to `qedconfig.qsc` as `FogIntensity` and scales fog distance live, no level reload needed.
+- 100% = the level's original fog distance, 0% = 2x distance (thinnest), 200% = 0.05x distance (thickest, clamped so the fog shader's `far - near` never hits zero). Pure CPU-side distance scaling — no shader changes.
+
+### 🐛 Bug Fixes
+- **Fixed fog scale inverted at low percentages.** An earlier build's `100/percent` formula made the (then-)default 20% setting push fog *five times farther away* instead of thickening it, making fog effectively invisible. Replaced with a linear scale anchored at 100% = unchanged, and changed the shipped default to 200% (thickest) enabled by default.
+- **Fixed pause-menu mouse hit-test offset.** `Input_OnMouse`'s local `menu_h` had drifted out of sync with the actual rendered menu height in `renderer_draw.cpp` after the Fog Intensity row was added, misaligning every click target below it by ~19px. Both now agree on `menu_h = 676`.
+- **Fixed Lightmaps checkbox silently doing nothing on large levels.** `CalculateLightmapsForAllObjects()` had a hardcoded `targets.size() > 350` guard that skipped the *entire* bulk lightmap bake on any level with more than 350 Building/EditRigidObj/EditObj targets (e.g. level1 = 481) — so toggling "Lightmaps" ON in the pause menu did nothing at all on those levels. The guard's stated rationale (concurrent `CreateProcess` resource exhaustion) didn't match the code, which shells `igi1conv.exe` synchronously and closes all process/thread handles correctly. Removed the guard entirely so all objects are processed regardless of level size.
+- **Fixed crash on very large levels (e.g. level 13, 1023 targets) during bulk lightmap bake.** `igi1ed.exe` is a 32-bit process; baking lightmaps for 1000+ objects (many with 70-100+ `.olm` textures each) could exhaust its virtual address space and crash. The existing per-object `bad_alloc` catch logged and broke out of the loop correctly, but by then the process was already so close to its address-space ceiling that an unrelated allocation elsewhere crashed it moments later. `CalculateLightmapsForAllObjects()` now checks `GlobalMemoryStatusEx().ullAvailVirtual` before each object and stops the bake gracefully (logged, no crash) with 300MB of headroom still free, instead of racing toward the first failure.
+
+### 🔧 Technical
+- `source/config.h` / `source/config.cpp`: `fogIntensity` field, default 200, clamped 0-200, loaded/saved as `FogIntensity` / `QEDFogIntensity`.
+- `source/renderer/renderer.h` / `.cpp`: `Renderer` keeps the level-computed fog color/far as a base (`fog_base_color_`/`fog_base_far_`) and re-derives the effective UBO/objects/skydome fog via `ApplyFogIntensity()` whenever the base (level load) or intensity (pause-menu spinner) changes. New `SetFogIntensity(int)`.
+- `source/app.h` / `source/app.cpp`: `App::SetFogIntensity` wrapper; applied from saved config on `Init()`.
+- `source/renderer/renderer_draw.cpp`: Spinner row drawn under the Fog checkbox when Terrain Options is expanded, showing `N%`; menu height bumped to 676.
+- `source/app_input_mouse.cpp`: Hit-test + `-`/`+` click handling for the new row (±10 per click, clamped 0-200), corrected `menu_h`.
+- `source/app_editor.cpp`: Removed the `targets.size() > 350` bulk-skip guard; added a `GlobalMemoryStatusEx` virtual-address-space check inside the per-object bake loop; quieted expected benign lightmap-resolve misses (no bindings/no placement/no model) to INFO instead of WARNING.
+
+### ✅ Preserved
+- Existing Fog enable/disable checkbox and exact v3.6.0-pre fog code paths untouched.
+- Helicopter rotor animation unchanged.
+
+---
+
+## 3.6.5-pre — Stability: Level 13 / Heavy Lightmap Crash Fix + Polish
+
+### 🐛 Bug Fixes
+- **Fixed "Error loading level 13: bad allocation" crash.** Heavy levels (e.g. level 13) with many small .olm lightmaps could exhaust the 32-bit address space during auto lightmap upload at LoadLevel when `enableLightmaps` was ON. 
+  - Guarded the auto-bulk lightmap path (`LoadLevel`) with try/catch around `CalculateLightmapsForAllObjects()`: on `std::bad_alloc` we now disable lightmaps for the session and continue loading the level cleanly; other exceptions are logged as warnings.
+  - Hardened `CalculateLightmapsForAllObjects()` to catch per-object allocation/resource failures and skip remaining objects instead of aborting the whole load.
+- **Reduced log spam from expected lightmap misses.** "no bindings found", "no placement of", and "--model is required" failures from `lightmap resolve` are now logged at INFO (not ERR) because many objects legitimately have no baked lightmap.
+
+### 🔧 Technical
+- `source/app_level.cpp`: Wrapped auto-lightmap call in LoadLevel with bad_alloc + general exception guards.
+- `source/app_editor.cpp`: Per-object try/catch in bulk calculate; quiet benign resolve misses.
+- `source/utils_igi1conv.cpp`: Quiet benign lightmap-resolve igi1conv failures.
+
+### ✨ Polish / UX
+- **Pause-menu Fog toggle visible in Terrain Options.** Added a matching `[X] Fog` / `[ ] Fog` row inside the expanded "Terrain Options" section of the Escape (pause) menu. Clicking toggles the existing terrain fog flag (DRAW_TERRAIN_OPT_FOG), calls SetFogEnabled, and persists `Config::enableFog`. Matches the exact v3.6.0-pre fog implementation paths; no new fog state, intensity spinner, or shader changes.
+
+### ✅ Preserved
+- Helicopter main-rotor animation fix (pitch animates on fixed hub; yaw/roll locked).
+- Exact v3.6.0-pre terrain-only fog implementation (no new UI or code).
+
+### 🔧 Technical
+- `source/renderer/renderer.h`: Added `terrain_draw_options_` to `task_tree_view_params_s` for pause rendering.
+- `source/app.cpp`: Populate `terrain_draw_options_` in both paused and live task_tree_view construction.
+- `source/renderer/renderer_draw.cpp`: Layout Fog row when `pause_terrain_expanded_`; bumped menu height.
+- `source/app_input_mouse.cpp`: Hit-test + handler for the new Fog row inside expanded Terrain Options (calls ToggleTerrainDrawOption + SetFogEnabled + Config save).
+- `source/app_level.cpp`: Wrapped AI animation auto-import (heavy parallel igi1conv work) in try/catch (bad_alloc / exception) so OOM/resource exhaustion on heavy levels does not abort the whole LoadLevel.
+
+---
+
 ## 3.6.0-pre — Animations, Music, Lightmapping & More
 
 ### ✨ Major Highlights

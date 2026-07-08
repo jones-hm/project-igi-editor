@@ -343,7 +343,15 @@ size_t App::ResolveAndApplyLightmap(LevelObject& obj, const std::string& qscPath
 		? igi1conv::LightmapResolveByPos(obj.modelId, qscPath, obj.original_pos.x, obj.original_pos.y, obj.original_pos.z, err)
 		: igi1conv::LightmapResolve(obj.modelId, qscPath, obj.taskId, err);
 	if (olmPaths.empty()) {
-		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] resolve failed for " + key + ": " + err);
+		// Benign cases (no baked lightmap for this object, ATTA children, cross-level refs, etc.)
+		// are expected and very common — keep logs quiet.
+		const bool benign =
+		    err.find("no bindings found") != std::string::npos ||
+		    err.find("no placement of") != std::string::npos ||
+		    err.find("--model is required") != std::string::npos ||
+		    err.find("no .olm file paths") != std::string::npos;
+		Logger::Get().Log(benign ? LogLevel::INFO : LogLevel::WARNING,
+		    "[Lightmap] resolve " + std::string(benign ? "(no lightmap) " : "failed ") + "for " + key + ": " + err);
 		return 0;
 	}
 
@@ -665,11 +673,30 @@ void App::CalculateLightmapsForAllObjects() {
 
 	size_t objectsWithLightmaps = 0;
 	for (size_t n = 0; n < targets.size(); ++n) {
+		// igi1ed is a 32-bit process; on large levels (1000+ objects, each with up to
+		// ~100 lightmap textures) its virtual address space runs out well before this
+		// loop's own bad_alloc catch below fires elsewhere in the frame — bail out with
+		// headroom to spare instead of racing the process toward a hard crash.
+		MEMORYSTATUSEX memStatus{};
+		memStatus.dwLength = sizeof(memStatus);
+		if (GlobalMemoryStatusEx(&memStatus) && memStatus.ullAvailVirtual < 300ull * 1024 * 1024) {
+			Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Stopping bulk bake early at " +
+				std::to_string(n) + "/" + std::to_string(targets.size()) +
+				": process is low on virtual address space (32-bit build).");
+			break;
+		}
 		LevelObject& obj = objects[targets[n]];
 		DrawProgressOverlay("Calculating Lightmaps",
 			2 + static_cast<int>(98 * (n + 1) / targets.size()),
 			(std::to_string(n + 1) + "/" + std::to_string(targets.size()) + ": " + obj.name).c_str());
-		if (ResolveAndApplyLightmap(obj, qscPath) > 0) ++objectsWithLightmaps;
+		try {
+			if (ResolveAndApplyLightmap(obj, qscPath) > 0) ++objectsWithLightmaps;
+		} catch (const std::bad_alloc&) {
+			Logger::Get().Log(LogLevel::ERR, "[Lightmap] Out of memory loading lightmap for " + obj.name + "; skipping remaining.");
+			break;
+		} catch (const std::exception& e) {
+			Logger::Get().Log(LogLevel::WARNING, std::string("[Lightmap] Skipped object " + obj.name + " due to: ") + e.what());
+		}
 	}
 
 	std::error_code qscEc;

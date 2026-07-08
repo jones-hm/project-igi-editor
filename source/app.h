@@ -49,8 +49,7 @@ public:
   void ToggleTerrainDrawOption(int opt);
   void ToggleTerrainModOption(int opt);
   void SetFogEnabled(bool enabled);
-  void ToggleFog();
-  void SetFogIntensityPct(int pct);
+  void SetFogIntensity(int intensity);
 
   void ToggleEditMode();
   bool GetEditMode() const;
@@ -152,7 +151,7 @@ private:
   std::string pause_level_input_ = "";
   std::string pause_search_input_ = "";
   int pause_active_input_ = -1; // -1: none, 1: search
-  bool pause_terrain_expanded_ = false;
+	bool pause_terrain_expanded_ = false;
   int edit_brush_;
   double edit_brush_radius_ = 5000.0;
   double edit_brush_strength_ = 7.0;
@@ -243,9 +242,6 @@ private:
 
 	// Level background music (game_music.wav, converted from ILSF -> PCM, looped via MCI)
 	bool music_playing_ = false;
-	// Fog state for pause menu (synced with Config and renderer)
-	bool fog_on_ = true;
-	int  fog_intensity_ = 10;
 	void PlayLevelMusic(int level_no);
 	void StopLevelMusic();
 	void CheckMusicLoop(); // call every frame: manually restarts playback since MCI "repeat" is unreliable for waveaudio

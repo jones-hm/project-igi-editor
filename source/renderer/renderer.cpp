@@ -29,10 +29,9 @@ bool Renderer::Init() {
   // Initialize UBO with safe defaults so terrain fog shader never sees g_fog_far=0
   // (divide-by-zero → NaN → black overlay before SetupFog is called on first level load).
   {
-    ubo_fog_s safe_fog = {};
+    ubo_fog_s safe_fog;
     safe_fog.color_ = glm::vec4(0.15f, 0.15f, 0.15f, 1.0f);
     safe_fog.far_   = 1e9f; // enormous distance = no visible fog until level loads
-    safe_fog.intensity_ = 0.10f;
     ubo_fog_ = GL_CreateBuffer(GL_UNIFORM_BUFFER, sizeof(ubo_fog_s), &safe_fog,
                                GL_STATIC_DRAW);
   }
@@ -114,37 +113,35 @@ void Renderer::SetupClearColor(const glm::vec4 &color) {
 }
 
 void Renderer::SetupFog(const glm::vec4 &color, float fog_far) {
+  fog_base_color_ = color;
+  fog_base_far_ = fog_far;
+  ApplyFogIntensity();
+}
+
+void Renderer::SetFogIntensity(int intensity) {
+  fog_intensity_ = std::max(0, std::min(200, intensity));
+  ApplyFogIntensity();
+}
+
+void Renderer::ApplyFogIntensity() {
+  // fog_intensity_ is a percentage (0-200); 100% = level default fog distance,
+  // 0% = 2x the distance (thin), 200% = 0.05x the distance (near-total fog).
+  // Clamped away from 0 to avoid (g_fog_far - fog_near) hitting zero in the
+  // fog shader at max intensity.
+  float scale = std::max(0.05f, 2.0f - fog_intensity_ / 100.0f);
+  float effective_far = fog_base_far_ * scale;
+
   ubo_fog_s ubo_fog;
-
-  ubo_fog.color_ = color;
-  ubo_fog.far_ = fog_far;
-  ubo_fog.pad0_ = ubo_fog.pad1_ = ubo_fog.pad2_ = 0.0f;
-
-  // Preserve prior user-set intensity (from pause menu) across level fog loads.
-  // Read existing intensity at std140 offset 32 if UBO already exists; else default 10%.
-  float prev_intensity = 0.10f;
-  if (ubo_fog_) {
-    glBindBuffer(GL_UNIFORM_BUFFER, ubo_fog_);
-    glGetBufferSubData(GL_UNIFORM_BUFFER, 32, sizeof(float), &prev_intensity);
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
-  }
-  ubo_fog.intensity_ = prev_intensity;
+  ubo_fog.color_ = fog_base_color_;
+  ubo_fog.far_ = effective_far;
 
   GL_BufferData(ubo_fog_, GL_UNIFORM_BUFFER, sizeof(ubo_fog), &ubo_fog,
                 GL_STATIC_DRAW);
 
   // Propagate fog to object shader (warm atmospheric haze) and skydome
   // (blend horizon with fog color so sky matches the game's hazy look).
-  objects_.SetFogParams(glm::vec3(color), fog_far);
-  skydome_.SetFogColor(glm::vec3(color));
-}
-
-void Renderer::SetFogIntensity(int pct) {
-  // Update only the intensity field in the UBO (std140: after vec4+3 floats padding = 32).
-  float intensity = static_cast<float>(pct) / 100.0f; // 0.0-2.0
-  glBindBuffer(GL_UNIFORM_BUFFER, ubo_fog_);
-  glBufferSubData(GL_UNIFORM_BUFFER, 32, sizeof(float), &intensity);
-  glBindBuffer(GL_UNIFORM_BUFFER, 0);
+  objects_.SetFogParams(glm::vec3(fog_base_color_), effective_far);
+  skydome_.SetFogColor(glm::vec3(fog_base_color_));
 }
 
 void Renderer::SetupSkydome(const skydome_define_s &d) {

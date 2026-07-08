@@ -1430,7 +1430,7 @@ void Renderer::Draw(const draw_params_s &params,
 
     if (task_tree_view.pause_mode_) {
       const int menu_w = 460;
-      const int menu_h = 640; // +80 vs. original 560 to fit Lightmaps + Fog rows
+      const int menu_h = 676; // +38 for Fog Intensity row inside expanded Terrain Options (plus prior Fog/Lightmaps additions)
       const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
       const int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
       const int viewport_h = params.view_define_->viewport_height_;
@@ -1488,6 +1488,10 @@ void Renderer::Draw(const draw_params_s &params,
       snprintf(bufTex, sizeof(bufTex), "  [%c] Texture", tex ? 'X' : ' ');
       snprintf(bufHgt, sizeof(bufHgt), "  [%c] Height", hgt ? 'X' : ' ');
       snprintf(bufDsc, sizeof(bufDsc), "  [%c] Discard", dsc ? 'X' : ' ');
+      int draws = task_tree_view.terrain_draw_options_;
+      bool fog = (draws & Renderer_Terrain::DRAW_TERRAIN_OPT_FOG) != 0;
+      char bufFog[32];
+      snprintf(bufFog, sizeof(bufFog), "  [%c] Fog", fog ? 'X' : ' ');
 
       std::vector<const char*> btn_labels;
       btn_labels.push_back("Resume");
@@ -1503,17 +1507,18 @@ void Renderer::Draw(const draw_params_s &params,
       btn_labels.push_back("Music");
       const int LIGHTMAPS_ROW = btn_labels.size();
       btn_labels.push_back("Lightmaps");
-      const int FOG_ROW = btn_labels.size();
-      btn_labels.push_back("Fog");
-      bool exp = task_tree_view.pause_terrain_expanded_;
       const int TERRAIN_HEADER_ROW = btn_labels.size();
+
+      bool exp = task_tree_view.pause_terrain_expanded_;
       btn_labels.push_back(exp ? "Terrain Options: [-]" : "Terrain Options: [+]");
 
-      int TERRAIN_TEX_ROW = -1, TERRAIN_HGT_ROW = -1, TERRAIN_DSC_ROW = -1;
+      int TERRAIN_TEX_ROW = -1, TERRAIN_HGT_ROW = -1, TERRAIN_DSC_ROW = -1, TERRAIN_FOG_ROW = -1, TERRAIN_FOGINT_ROW = -1;
       if (exp) {
         TERRAIN_TEX_ROW = btn_labels.size(); btn_labels.push_back(bufTex);
         TERRAIN_HGT_ROW = btn_labels.size(); btn_labels.push_back(bufHgt);
         TERRAIN_DSC_ROW = btn_labels.size(); btn_labels.push_back(bufDsc);
+        TERRAIN_FOG_ROW = btn_labels.size(); btn_labels.push_back(bufFog);
+        TERRAIN_FOGINT_ROW = btn_labels.size(); btn_labels.push_back("Fog Intensity");
       }
 
       const int RESET_ROW = btn_labels.size();
@@ -1664,10 +1669,13 @@ void Renderer::Draw(const draw_params_s &params,
           draw_text_sys(menu_x + (menu_w - lmtw) / 2, screen_btn_y, lmbuf,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
-        } else if (i == FOG_ROW) {
-          // Fog: "Fog Enable/Disable  [-] [NN%] [+]" — label left, spinner group right (matches Auto Save layout)
-          const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
-          const char* lbl = task_tree_view.fog_on_ ? "Fog Enable" : "Fog Disable";
+        } else if (i == TERRAIN_HEADER_ROW) {
+          draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 3),
+                        screen_btn_y, btn_labels[i], 0.0f, 0.8f, 0.0f);
+        } else if (i == TERRAIN_FOGINT_ROW) {
+          // Fog Intensity: "Fog Intensity  [-] [N%] [+]" — same spinner layout as Auto Save
+          const int btn_w = 22, gap = 6, val_w = 56, label_gap = 14;
+          const char* lbl = "Fog Intensity";
           int label_px = (int)strlen(lbl) * 6;
           int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
           int gx = menu_x + (menu_w - group_w) / 2;
@@ -1677,15 +1685,12 @@ void Renderer::Draw(const draw_params_s &params,
           int box_x   = minus_x + btn_w + gap;
           int plus_x  = box_x + val_w + gap;
           int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
-          char pctbuf[16];
-          snprintf(pctbuf, sizeof(pctbuf), "%d%%", task_tree_view.fog_intensity_);
-          sbox(minus_x, btn_w, "-",     rt, rb, screen_btn_y);
-          sbox(box_x,   val_w, pctbuf,  rt, rb, screen_btn_y);
-          sbox(plus_x,  btn_w, "+",     rt, rb, screen_btn_y);
+          char fibuf[8];
+          snprintf(fibuf, sizeof(fibuf), "%d%%", Config::Get().fogIntensity);
+          sbox(minus_x, btn_w, "-",    rt, rb, screen_btn_y);
+          sbox(box_x,   val_w, fibuf,  rt, rb, screen_btn_y);
+          sbox(plus_x,  btn_w, "+",    rt, rb, screen_btn_y);
 
-        } else if (i == TERRAIN_HEADER_ROW) {
-          draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 3),
-                        screen_btn_y, btn_labels[i], 0.0f, 0.8f, 0.0f);
         } else if (i == TERRAIN_TEX_ROW || i == TERRAIN_HGT_ROW || i == TERRAIN_DSC_ROW) {
           if (hovered) {
             glEnable(GL_BLEND);

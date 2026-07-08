@@ -217,8 +217,6 @@ private:
     std::vector<std::string> tmp_mef_paths_;  // temp files created by GetOrExtractMefTemp
 
     int current_level_ = 1;
-    float elapsed_time_secs_ = 0.0f;  // accumulated frame time for rotor spin animation
-    std::string current_draw_obj_type_;  // set per-object in Draw so ATTA children know parent type
     bool lightmaps_enabled_ = false;
     glm::vec3 sun_dir_ = glm::vec3(0.5f, 1.0f, 0.5f);
     glm::vec3 sun_front_color_ = glm::vec3(0.6f, 0.6f, 0.6f);
@@ -227,8 +225,10 @@ private:
     float global_gamma_ = 1.0f;
     glm::vec3 fog_color_ = glm::vec3(0.15f, 0.15f, 0.15f);
     float fog_far_ = 1e9f; // huge default = no fog until SetupFog() is called from level.cpp
-    bool fog_enabled_ = true;
-    std::map<std::string, glm::vec3> indoor_ambient_by_task_; // taskId -> LightmapInfo "Indoors ambient light"
+	bool fog_enabled_ = true;
+	float elapsed_time_secs_ = 0.0f;      // rotor animation accumulator (Heli main/tail)
+	std::string current_draw_obj_type_; // set before DrawAttachmentsRecursive for Heli rotor spin
+	std::map<std::string, glm::vec3> indoor_ambient_by_task_; // taskId -> LightmapInfo "Indoors ambient light"
     struct BakePose {
         glm::dvec3 pos;
         glm::dvec3 rot;

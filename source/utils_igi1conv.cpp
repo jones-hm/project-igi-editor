@@ -130,12 +130,20 @@ static bool RunCaptureStdout(const std::string& args, std::string& stdoutOut,
     CloseHandle(pi.hThread);
 
     stdoutOut = output;
-    if (code != 0) {
-        err = "igi1conv exit code " + std::to_string(code) + " for: " + args +
-              (output.empty() ? "" : ("\n" + output));
-        Logger::Get().Log(LogLevel::ERR, "[igi1conv] " + err);
-        return false;
-    }
+	if (code != 0) {
+		err = "igi1conv exit code " + std::to_string(code) + " for: " + args +
+		      (output.empty() ? "" : ("\n" + output));
+		// Lightmap resolve often legitimately fails for objects without baked lightmaps.
+		// Do not spam ERR for common benign cases.
+		const bool lightmapResolve = (args.find("lightmap resolve") != std::string::npos);
+		const bool benignLightmap =
+		    lightmapResolve &&
+		    (err.find("no bindings found") != std::string::npos ||
+		     err.find("no placement of") != std::string::npos ||
+		     err.find("--model is required") != std::string::npos);
+		Logger::Get().Log(benignLightmap ? LogLevel::INFO : LogLevel::ERR, "[igi1conv] " + err);
+		return false;
+	}
     return true;
 }
 
