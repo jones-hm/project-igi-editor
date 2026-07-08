@@ -125,7 +125,9 @@ static void OnMouseWheel(int wheel, int direction, int x, int y) {
 
 static void OnMotion(int x, int y) {
   ImGui_ImplGlut_MotionCallback(x, y);
-  g_app.Input_OnMotion(x, y); // always forwarded: camera-look motion isn't a "capture" concern
+  if (!ImGui::GetIO().WantCaptureMouse) {
+    g_app.Input_OnMotion(x, y);
+  }
 }
 
 static void OnMenu(int menu);
