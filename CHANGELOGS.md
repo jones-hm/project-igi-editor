@@ -1,5 +1,22 @@
 # Changelogs
 
+## 3.6.8-pre — Fix "VirModel not available" for Cross-Family ATTA Dependencies
+
+### 🐛 Bug Fixes
+- **Fixed in-game `VirModel "235_01_1" not available` warning when adding foreign models.** `AddModelToLevelRes` (the pipeline that packs a foreign model's `.mef`/textures into a level's `.res`/`.dat`/`.mtp` when it's added via the editor) only ever scanned for other models sharing the same leading numeric prefix (e.g. adding `420_01_1` also swept in `420_04_1`). It had no mechanism to detect that a swept-in model's `.mef` could itself contain an `ATTA` sub-model reference into a *completely different* prefix family (`420_04_1` → `235_01_1`). That dependency was silently never packed, so the game reported the model as an unresolved virtual model at runtime even though it rendered fine in the editor.
+- **Fixed ATTA sub-models from other levels not rendering in the editor viewport.** `LoadAttachmentsRecursive` looked up sub-model bytes via the in-memory `FindMeshData` ResCache *before* calling `FindModelFile`, but it's `FindModelFile`'s lazy cross-level `.res` indexing side effect that actually populates that cache for models living in another level's archive — so the retry never happened and the lookup failed even though the indexing had just succeeded.
+
+### 🔧 Technical
+- `source/renderer/renderer_objects_atta.cpp`:
+  - `LoadAttachmentsRecursive`: both the cached (`existingIt`) and fresh ATTA-parsing code paths now retry `FindMeshData(modelId)` *after* `FindModelFile` runs, so its lazy cross-level index load is actually used.
+  - `AddModelToLevelRes`: after the existing same-prefix family scan, a new worklist-based pass parses each family model's `.mef` for `ATTA` records and recursively resolves any sub-model referencing a different numeric prefix via `GetOrExtractMefTemp`, adding it to `familyModels` so it flows through the existing `.res`/`.dat`/`.mtp` packing steps automatically.
+
+### ✅ Preserved
+- Same-family (same-prefix) model resolution behavior unchanged.
+- No changes to `.dat`/`.mtp` binary formats — new dependencies are packed using the exact existing `DAT_AddModel` / `igi1conv dat to-mtp` mechanics.
+
+---
+
 ## 3.6.7-pre — Fog Intensity (0-200%) + Lightmap Crash Fixes
 
 ### ✨ New Feature

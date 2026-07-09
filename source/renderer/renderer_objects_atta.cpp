@@ -317,6 +317,51 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
         }
     }
 
+    // ── Resolve ATTA sub-model dependencies across families ──────────────────
+    // A family model's .mef can ATTA-reference a sub-model in a completely
+    // different numeric prefix (e.g. hull "420_04_1" references "235_01_1").
+    // Without pulling those in too, the dependency is never packed into this
+    // level's .res/.dat/.mtp, so the game reports "VirModel not available"
+    // even though the parent renders fine in the editor (via the cross-level
+    // ResCache fallback used only for in-viewport preview).
+    {
+        std::vector<std::string> worklist;
+        for (const auto& fm : familyModels) worklist.push_back(fm.first);
+        std::unordered_set<std::string> visited(worklist.begin(), worklist.end());
+
+        while (!worklist.empty()) {
+            std::string cur = worklist.back();
+            worklist.pop_back();
+            auto it = familyModels.find(cur);
+            if (it == familyModels.end()) continue;
+
+            std::ifstream mf(it->second, std::ios::binary);
+            std::vector<uint8_t> mefBytes((std::istreambuf_iterator<char>(mf)), std::istreambuf_iterator<char>());
+            if (mefBytes.empty()) continue;
+
+            ParsedGeometry geo;
+            try { geo = ParseMefFileFromMemory(mefBytes); } catch (...) { continue; }
+
+            for (const auto& a : geo.mefAttachments) {
+                std::string aname(a.name, strnlen(a.name, 16));
+                if (aname.empty() || !visited.insert(aname).second) continue;
+                if (familyModels.count(aname)) continue;
+
+                std::string mefPath = GetOrExtractMefTemp(aname, /*isBuilding=*/false);
+                if (mefPath.empty()) mefPath = GetOrExtractMefTemp(aname, true);
+                if (mefPath.empty()) {
+                    Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: ATTA dependency '" +
+                        aname + "' (needed by '" + cur + "') not found anywhere; skipping");
+                    continue;
+                }
+                familyModels.emplace(aname, mefPath);
+                worklist.push_back(aname);
+                Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: pulling in ATTA dependency '" +
+                    aname + "' (needed by '" + cur + "')");
+            }
+        }
+    }
+
     if (familyModels.empty()) {
         Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: no .mef found for family '" +
             prefix + "' (requested " + modelId + ")");
@@ -683,6 +728,19 @@ void Renderer_Objects::LoadAttachmentsRecursive(const std::string& modelId, bool
                             mesh_cache_[subKey] = subMesh;
                             loaded = true;
                         } catch (...) {}
+                    } else {
+                        // FindModelFile may have lazily indexed a cross-level .res as a
+                        // side effect (its cross-level lookup block) -- retry the ResCache
+                        // now that the owning level's models.res is indexed.
+                        std::vector<uint8_t> lazyBytes = FindMeshData(att.modelId);
+                        if (!lazyBytes.empty()) {
+                            try {
+                                Mesh subMesh = loadObjModelFromMemory(lazyBytes, att.modelId);
+                                ApplyTexturesToMesh(subMesh, att.modelId, modelId);
+                                mesh_cache_[subKey] = subMesh;
+                                loaded = true;
+                            } catch (...) {}
+                        }
                     }
                     if (!loaded) {
                         Mesh empty; mesh_cache_[subKey] = empty;
@@ -748,9 +806,29 @@ void Renderer_Objects::LoadAttachmentsRecursive(const std::string& modelId, bool
             if (!loaded) {
                 std::string subFile = FindModelFile(aname, isBuilding);
                 if (subFile.empty()) {
-                    Logger::Get().Log(LogLevel::WARNING,
-                        "[Renderer_Objects] ATTA sub-model NOT FOUND: " + aname);
-                    Mesh empty; mesh_cache_[subKey] = empty;
+                    // FindModelFile may have lazily indexed a cross-level .res as a side
+                    // effect (its cross-level lookup block) -- retry the ResCache now that
+                    // the owning level's models.res is indexed, before giving up.
+                    std::vector<uint8_t> lazyBytes = FindMeshData(aname);
+                    if (!lazyBytes.empty()) {
+                        try {
+                            Mesh subMesh = loadObjModelFromMemory(lazyBytes, aname);
+                            ApplyTexturesToMesh(subMesh, aname, modelId);
+                            mesh_cache_[subKey] = subMesh;
+                            Logger::Get().Log(LogLevel::INFO,
+                                "[Renderer_Objects] ATTA sub-model loaded from ResCache (lazy): " + aname +
+                                " (" + std::to_string(subMesh.vertexCount) + " verts)");
+                            loaded = true;
+                        } catch (const std::exception& se) {
+                            Logger::Get().Log(LogLevel::WARNING,
+                                "[Renderer_Objects] ATTA lazy ResCache parse failed for " + aname + ": " + se.what());
+                        }
+                    }
+                    if (!loaded) {
+                        Logger::Get().Log(LogLevel::WARNING,
+                            "[Renderer_Objects] ATTA sub-model NOT FOUND: " + aname);
+                        Mesh empty; mesh_cache_[subKey] = empty;
+                    }
                 } else {
                     try {
                         Mesh subMesh = loadObjModel(subFile, "");
